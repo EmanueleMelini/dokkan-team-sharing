@@ -312,6 +312,32 @@ try {
             tutti.every((x, i) => i === 0 || tutti[i - 1].starts_at.getTime() >= x.starts_at.getTime()))
     })
 
+    await sezione('getMissions: le missioni della ricorrenza mostrata', async () => {
+      // un evento con missioni legate a una run e altre senza scadenza propria
+      const [ev] = await righe<{ ev: string; run: string }>(`
+        select m.event_id::text as ev, min(m.run_id)::text as run from mission m
+        where m.run_id is not null
+          and exists (select 1 from mission n where n.event_id = m.event_id and n.run_id is null)
+        group by m.event_id order by m.event_id limit 1`)
+      if (!check('c\'e\' un evento con missioni di una run e missioni senza scadenza', !!ev)) return
+      const lista = await Q.getMissions(ev.ev, ev.run)
+      const attese = await righe<{ id: string }>(`select id::text from mission
+        where event_id = $1::bigint and (run_id is null or run_id = $2::bigint)`, [ev.ev, ev.run])
+      check('tutte e sole le missioni della run e quelle senza scadenza',
+            stessi(lista.map((m) => m.id).sort(), attese.map((m) => m.id).sort()), `${lista.length} contro ${attese.length}`)
+      const altre = await righe<{ id: string }>(`select id::text from mission
+        where event_id = $1::bigint and run_id is not null and run_id <> $2::bigint`, [ev.ev, ev.run])
+      check('nessuna missione di un\'altra run', !lista.some((m) => altre.some((a) => a.id === m.id)))
+      const seq = lista.map((m) => m.seq ?? Infinity)
+      check('in ordine di gioco (seq)', seq.every((x, i) => i === 0 || seq[i - 1] <= x))
+      tutte('ogni missione ha una descrizione e premi con nome e quantita\' numerica', lista,
+            (m) => typeof m.description === 'string' && m.description.length > 0 && Array.isArray(m.rewards)
+              && m.rewards.every((r) => typeof r.name === 'string' && r.name.length > 0 && typeof r.quantity === 'number'))
+      const det = await Q.getEvent(ev.ev, 'global')
+      check('getEvent espone la run mostrata', typeof det?.run_id === 'string' && det.run_id.length > 0, `${det?.run_id}`)
+      check('nessuna missione per un evento che non ne ha', (await Q.getMissions(T.ricerca, null)).length === 0)
+    })
+
     await sezione('copertina e legami fra EZA e Super EZA', async () => {
       // Il database di test non scarica le immagini: nessuna carta ha una
       // miniatura, e null contro null passerebbe anche con il join rotto.

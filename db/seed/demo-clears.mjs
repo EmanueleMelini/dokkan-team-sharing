@@ -100,7 +100,7 @@ try {
          values ($1,$2,$3,$4,$5::slot_role)`, [lineup.id, rot, pos, card.id, role])
     }
 
-    const { rows: [res] } = await c.query(
+    await c.query(
       `select submit_clear($1::uuid, $2::bigint, $3::bigint, $4::uuid,
                            $5, $6, $7::smallint, $8, 'en', $9::jsonb) as id`,
       [owner, target.run_id, target.tier_id, lineup.id,

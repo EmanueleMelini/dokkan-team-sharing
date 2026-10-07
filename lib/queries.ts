@@ -117,6 +117,8 @@ export type EventDetail = {
   ends_at: Date | null
   ends_at_known: boolean | null
   source: RunSource | null
+  // La ricorrenza mostrata: le missioni si scelgono su questa
+  run_id: string | null
 }
 
 export async function getEvent(id: string, reg: Region): Promise<EventDetail | null> {
@@ -124,12 +126,12 @@ export async function getEvent(id: string, reg: Region): Promise<EventDetail | n
     `select e.id::text, et.name, e.kind::text as kind,
             et.official_description as description, e.banner_key,
             cv.thumb_key as cover_thumb_key,
-            u.status, u.starts_at, u.ends_at, u.ends_at_known, u.source
+            u.status, u.starts_at, u.ends_at, u.ends_at_known, u.source, u.run_id
      from event e
      join event_text et on et.event_id = e.id and et.locale = 'en'
      left join card cv on cv.id = e.cover_card_id
      left join lateral (
-       select es.status, es.starts_at, es.ends_at, r.ends_at_known, r.source
+       select es.status, es.starts_at, es.ends_at, r.ends_at_known, r.source, es.run_id::text as run_id
        from event_status es
        join event_run r on r.id = es.run_id
        where es.event_id = e.id and es.reg = $2
@@ -137,6 +139,54 @@ export async function getEvent(id: string, reg: Region): Promise<EventDetail | n
      ) u on true
      where e.id = $1::bigint`,
     [id, reg],
+  )
+}
+
+export type MissionReward = {
+  name: string
+  quantity: number
+  // l'icona del catalogo premi, o la miniatura se il premio è una carta
+  icon_key: string | null
+}
+
+export type MissionRow = {
+  id: string
+  seq: number | null
+  name: string | null
+  description: string
+  ends_at: Date | null
+  rewards: MissionReward[]
+}
+
+/**
+ * Le missioni di una ricorrenza: quelle legate a lei, più quelle senza una
+ * scadenza propria (run_id nullo), che nel gioco ci sono ogni volta che
+ * l'evento è aperto. Le missioni di una ricorrenza passata restano fuori:
+ * appartenevano a quella, non a questa.
+ */
+export async function getMissions(eventId: string, runId: string | null): Promise<MissionRow[]> {
+  return sql<MissionRow>(
+    `select m.id::text, m.seq, mt.name, mt.description, m.ends_at,
+            coalesce((
+              select json_agg(json_build_object(
+                       'name', coalesce(git.name, r.item_type),
+                       'quantity', r.quantity,
+                       'icon_key', coalesce(ri.asset_key, c.thumb_key))
+                     order by r.seq)
+              from mission_reward r
+              join game_item gi on gi.item_type = r.item_type and gi.item_id = r.item_id
+              left join game_item_text git on git.item_type = r.item_type
+                    and git.item_id = r.item_id and git.locale = 'en'
+              left join reward_item ri on ri.slug = gi.reward_item_slug
+              left join card c on c.id = gi.card_id
+              where r.mission_id = m.id
+            ), '[]'::json) as rewards
+     from mission m
+     join mission_text mt on mt.mission_id = m.id and mt.locale = 'en'
+     where m.event_id = $1::bigint
+       and (m.run_id is null or m.run_id = $2::bigint)
+     order by m.seq nulls last, m.id`,
+    [eventId, runId],
   )
 }
 

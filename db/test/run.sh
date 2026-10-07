@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # npm run db:test: tutte le verifiche, in fila, su un database di test.
 #
-#   reset -> schema -> API di scrittura -> id delle carte dal wiki ->
+#   reset -> schema -> API di scrittura -> account -> id delle carte dal wiki ->
 #   import dei dati veri -> query
 #   delle pagine (lib/queries.ts vero) -> parametri dell'URL (lib/parametri.ts)
 #   -> finestre degli eventi dal gioco (load-windows) -> eventi creati dal
-#   gioco (load-game-events) -> classificazione (story, SBR, archivi)
+#   gioco (load-game-events) -> classificazione (story, SBR, archivi) ->
+#   missioni dal gioco (load-missions)
 #
 # Gira su dokkan_test, o su TEST_DATABASE_URL se c'e' (il nome deve finire
 # per _test): il database di sviluppo non si tocca. Prima db:test lo
@@ -44,6 +45,10 @@ riepilogo () {
 passo "reset del database di test" prepara node db/reset.mjs --fixture
 passo "schema e vincoli" verifica env DB_TEST_SENZA_RESET=1 ./db/test/schema.test.sh
 passo "API di scrittura" verifica ./db/test/write_api.test.sh
+# Gli account (0014): vincoli e verbi SQL, poi better-auth vero sulla pool
+# di lib/db.ts con un mittente che cattura i magic link. Prima degli
+# import: non dipende dalle carte, e crea solo utenti che poi toglie.
+passo "account" verifica node_ts db/test/auth.test.mts
 # Funzioni pure, niente database: come load-cards e fetch-assets ricavano
 # l'id di una carta dalla pagina del wiki (db/import/wiki-card.mjs).
 passo "id delle carte dal wiki" verifica node db/test/wiki-card.test.mjs
@@ -56,6 +61,7 @@ passo "import eventi (cache)" prepara node db/import/load-events.mjs
 passo "import datamine (cache)" prepara node db/import/load-datamine.mjs
 passo "import eventi dal gioco (cache)" prepara node db/import/load-game-events.mjs
 passo "import finestre (cache)" prepara node db/import/load-windows.mjs
+passo "import missioni (cache)" prepara node db/import/load-missions.mjs
 passo "query delle pagine" verifica node_ts db/test/queries.test.mts
 passo "parametri dell'URL" verifica node_ts db/test/parametri.test.mts
 # Per ultima: rilancia load-windows e set-event-window, e ritocca qualche
@@ -68,6 +74,10 @@ passo "eventi dal gioco" verifica node_ts db/test/game-events.test.mts
 # archivi delle edizioni (legami per quest): rilancia load-events e
 # load-windows, e ritocca una run e un clear (rimettendoli a posto).
 passo "classificazione" verifica node_ts db/test/classification.test.mts
+# Per ultima davvero: le suite prima ritoccano le run, e le missioni ci
+# puntano. Rilancia load-missions, poi confronta un evento con i CSV,
+# controlla corse, premi e nomi, e che un secondo giro non cambi niente.
+passo "missioni" verifica node_ts db/test/missions.test.mts
 
 riepilogo
 if [ "$rosso" -eq 0 ]; then echo "TUTTO VERDE"; else echo "$rosso passi rossi"; exit 1; fi

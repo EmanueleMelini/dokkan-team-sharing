@@ -14,12 +14,14 @@ Lo strato database è completo e verificato, e dentro ci sono le carte vere.
 Il codice applicativo non è ancora iniziato: quello che c'è è lo scheletro
 Next.js appena generato.
 
-- **39 tabelle, 3 view, 4 trigger, 16 funzioni** su PostgreSQL 15
+- **42 tabelle, 3 view, 4 trigger, 16 funzioni** su PostgreSQL 15
 - **2651 carte** importate dal wiki, con link skill, categorie, statistiche
   e date di uscita separate per Japan e Global
 - **599 eventi** con 5618 stage e 6916 difficoltà, banner compresi; più
   **192 eventi dal gioco** che il wiki non documenta (2025-2026, EZA e Super
   EZA), con 1667 stage e 1890 difficoltà, senza banner né descrizione
+- **7720 missioni Global** dal gioco su 642 eventi, con 13322 premi
+  strutturati (1677 oggetti, ognuno col suo nome)
 - **6246 immagini** ospitate da noi
 - **262 verifiche automatiche** in `db:test`, tutte verdi, su un database
   a parte che non è quello di sviluppo
@@ -58,11 +60,12 @@ npm run dev          # http://localhost:3000
 **L'ordine conta**: `load-cards` (wiki) deve girare prima di
 `load-datamine` (che corregge), `load-game-events` (gli eventi che il wiki
 non ha, dal gioco) prima di `load-windows` (che dà le finestre anche a
-loro), e `fetch-assets` per ultimo. `db:import` e `db:refresh` li mettono in
+loro), `load-missions` dopo `load-windows` (attacca ogni missione a una
+run), e `fetch-assets` per ultimo. `db:import` e `db:refresh` li mettono in
 fila:
 
 ```
-load-cards → load-events → load-datamine → load-game-events → load-windows → fetch-assets
+load-cards → load-events → load-datamine → load-game-events → load-windows → load-missions → fetch-assets
 ```
 
 Il ciclo completo dura **cinque secondi**: le immagini sono già sul disco e
@@ -223,6 +226,8 @@ db/
     load-game-events.mjs    gli eventi che il wiki non ha, dal datamine del gioco
     game-events/            i suoi moduli: classify, build, write, i legami del wiki
     quest-refs.mjs          i legami per quest (Super Battle Road, archivi), per load-windows
+    load-missions.mjs       le missioni Global e i loro premi, dal datamine (db:missions)
+    missions/               i suoi moduli: owner (di che evento), text, rewards, write
     fetch-assets.mjs        scarica le immagini e le registra in asset
     .cache/                 il wikitext scaricato (non versionato)
 public/assets/              le immagini ospitate da noi (non versionate)
@@ -231,6 +236,9 @@ public/assets/              le immagini ospitate da noi (non versionate)
   local.sh                  avvia/ferma il cluster locale
 docs/                       l'analisi competitiva e le decisioni di progetto
 test/smoke.sh               prova di fumo sul sito che gira (npm run test:smoke)
+test/auth-smoke.sh          il giro del magic link sul sito che gira (npm run test:auth-smoke)
+lib/auth/                   better-auth: configurazione, mittente del link, Server Action
+lib/dal.ts                  chi e' l'utente: requireUser / requireOnboardedUser
 ```
 
 ### Sulle migrazioni
@@ -469,9 +477,8 @@ Livello 30 | Damage reduction -70%; Immune to: Stun, Seal Super Attack,
 ### Tre assenze, e sono importanti
 
 **Le missioni non ci sono.** Solo 3 pagine su 608 hanno una sezione
-dedicata, e il wiki stesso rimanda al gioco. `mission` resta vuota: serve
-un'altra fonte. È la ragione per cui `mission.reward` non è ancora
-collegato a `reward_item`.
+dedicata, e il wiki stesso rimanda al gioco. Ora arrivano dal gioco: vedi
+"Le missioni: dal gioco, con i premi".
 
 **Zeni, exp e drop per difficoltà non ci sono.** Sono nelle tabelle, ma
 l'intestazione delle colonne è riconoscibile solo in **78 pagine su 448**:
@@ -502,8 +509,9 @@ pageid: vedi "Gli eventi che il wiki non ha".
 
 29 oggetti con icona, ricavati dallo switch di `Template:ItemsEvent`: orb,
 pesi, medaglie, dragon stone, zeni. Sono i **drop mostrati sulle pagine
-evento**, non i premi delle missioni — quelli seguono le missioni, che non
-ci sono.
+evento**. I premi delle missioni sono un'altra cosa, con un'altra tabella
+(`game_item`, vedi "Le missioni"): un loro oggetto prende una di queste
+icone solo quando il nome è lo stesso (45 su 1677).
 
 ## Il calendario: le finestre Global vengono dal gioco
 
@@ -858,6 +866,190 @@ chiuse lì, e quattro edizioni che il
 wiki dava solo su Japan o senza data (725181, 726771, 725305, 726799) ora
 hanno la loro run Global. Un secondo giro non cambia niente.
 
+## Le missioni: dal gioco, con i premi
+
+`npm run db:missions` (`db/import/load-missions.mjs`, moduli in
+`db/import/missions/`), dentro `db:import` e `db:refresh` subito dopo
+`load-windows`. Legge `missions.csv` e `mission_rewards.csv`, e per i nomi
+dei premi una tabella per tipo di oggetto (`training_items`,
+`awakening_items`, `potential_items`, `cards`... ventuno, aggiunte a
+`fetch-datamine` dallo stesso commit delle altre). Migrazione 0013.
+
+**Di quale evento.** Il gioco lo dice con `area_id` e `z_battle_stage_id`, e
+il ponte è `event_game_ref`, lo stesso delle finestre:
+
+| strada | missioni |
+|---|---|
+| EZA (`z_battle_stage`) | le missioni dello stage; quelle "at Lv. SUPER" di una Super EZA stanno sullo stage Normal ma nominano lo stage Super nelle condizioni, e vanno alla Super |
+| area | le missioni dell'area legata |
+| quest (Super Battle Road, archivi) | la quest delle mappe nelle condizioni; le "completa queste missioni" vanno all'evento delle missioni elencate |
+
+Restano fuori, elencate dall'import col motivo: le cancellate
+(`Mission::DeletedMission`), quelle senza una finestra Global (partite
+prima di luglio 2015, o finite quando iniziano), e le **campagne**: una
+missione appesa a un'area che chiede stage di un altro dei nostri eventi
+("Go Forth!", area 331, sei eventi in uno) non è di nessuno dei due. Con la
+fotografia del 2 ottobre: **7720 missioni su 642 eventi**, 118 fuori (89
+quest senza evento: i piani 61+ della Extreme SBR, che il wiki non ha, la
+SMB Movie Edition e 43 missioni Burst Mode di Ultimate Red Zone, che
+nominano solo un `genkai_battle_id` senza tabella; 14 senza finestra; 13
+campagne; 2 "tutti gli stage" di un archivio intero).
+
+**Il testo è inglese, ed è già intero.** Sul database Global ci sono 4311
+missioni in giapponese, nessuna sulle nostre aree (l'import le salterebbe).
+Non c'è un modello da riempire con le condizioni: `name` è il titolo breve
+della lista, `description` la frase completa. Due ritocchi: gli a capo sono
+quelli dello schermo del telefono e si uniscono (restano i paragrafi e le
+note con l'asterisco), e il segnaposto `{cards: by_conditions}` (o
+`{cards:card_id:...}`), che il client sostituisce col pulsante delle carte
+valide, si toglie: la condizione sta già nella frase.
+
+**La corsa.** Una missione che scade il 2038 non ha una scadenza sua: c'è
+ogni volta che l'evento è aperto. `run_id` e `ends_at` nulli (5236). Una con
+una fine vera va nella run Global dello stesso evento che contiene la sua
+finestra (2484, tutte trovate); se mancasse, si salterebbe invece di
+chiamarla permanente. `mission` tiene anche la sua finestra
+(`starts_at`/`ends_at`), che non è quella della corsa: uno stage aggiunto a
+metà porta missioni che partono dopo. `seq` è l'ordine del gioco:
+`priority` più alta prima (lo stage 1 ha 30014, lo stage 2 30013), poi l'id.
+
+**I premi.** `mission_reward(mission_id, seq, item_type, item_id,
+quantity)` punta a `game_item` (tipo e id del gioco) col nome in
+`game_item_text`. I Point non hanno tabella del nome: Dragon Stone, Zeni,
+Friend Points, Baba Points li scriviamo noi, e sono `community`; il loro id
+è un pacchetto di `points.csv` (id 11 = 1 stone), e `quantity` è già il
+totale. `game_item.reward_item_slug` dà l'icona quando il nome è uguale a uno
+dei 29 oggetti del wiki (Dragon Stone, Zeni, Z-Sword, i pesi...), `card_id`
+quando il premio è una carta che abbiamo (192). `mission_text.reward` è il
+riassunto da leggere: "Dragon Stone x20", "TEQ Potential Orb (L) x230, ...".
+
+**Reimport.** Upsert per `game_mission_id`, gli id restano; il secondo giro
+scrive zero righe. Una missione uscita dalla fotografia resta (è storia, come
+le run del gioco); una ancora nel gioco che le regole non danno più a nessun
+evento si toglie. Il test (`db/test/missions.test.mts`) confronta
+riga per riga 552139 Looming Menace con i CSV: tre missioni nella corsa di
+aprile 2020, tre del 2026 senza scadenza.
+
+## Gli account
+
+Si entra con Discord, Google, Twitch o con un link per email (magic link).
+Niente password: non c'è nessun `emailAndPassword` da tenere al sicuro.
+La libreria è [better-auth](https://www.better-auth.com) **1.7.7**, fissata
+esatta in `package.json` (con `resend` 6.32.1 e `server-only` 0.0.1): sugli
+aggiornamenti si leggono gli avvisi di sicurezza prima di cambiare numero.
+
+**Dove sta cosa.**
+
+- `db/migrations/0014_auth.sql`: scritta a mano, non con la CLI di
+  better-auth. `app_user` resta l'unica tabella delle persone (better-auth la
+  usa come sua `user`, con i campi rimappati: `name` → `display_name` e così
+  via), più `auth_session`, `auth_account`, `auth_verification`,
+  `auth_rate_limit`, `auth_email_send`. Id uuid dal database, tutte le FK
+  verso `app_user` con `on delete cascade`.
+  I verbi: `complete_onboarding(utente, handle, regione)`,
+  `note_email_send(email)` (la pausa per indirizzo), `auth_rate_consume`
+  (il limite per IP, atomico) e `purge_auth_expired()`.
+- `lib/auth/`: `env.ts` è l'unico file che legge le variabili dell'accesso;
+  `config.ts` costruisce better-auth (senza Next, così i test la usano);
+  `auth.ts` è l'istanza dell'app; `email.ts` il mittente del link;
+  `actions.ts` le Server Action (uscita, /welcome).
+- `lib/dal.ts`: `currentUser()`, `requireUser()`, `requireOnboardedUser()`.
+  **Ogni pagina protetta e ogni Server Action passa da qui**, e l'id
+  dell'utente viene sempre dalla sessione, mai da argomenti, FormData o
+  `.bind()`: le funzioni SQL di scrittura si fidano del `p_author` che
+  ricevono.
+- `app/api/auth/[...all]/route.ts`: le rotte di better-auth (callback OAuth,
+  verifica del link, sessione, uscita).
+- Le pagine: `/login`, `/welcome` (prima entrata: handle e regione),
+  `/settings` (metodi di accesso collegati, uscita). Nell'header, dentro un
+  `<Suspense>`, "Sign in" oppure l'utente.
+
+**Le regole, e perché.**
+
+- Un account nuovo nasce solo con un'email che il provider dichiara
+  verificata (`validateUserInfo` in `config.ts`; il magic link la verifica da
+  sé). Nessun collegamento implicito per email: se l'indirizzo ha già un
+  account, `/login` dice di entrare come la volta prima e collegare il
+  provider da Settings. Così nessuno prende l'account di un altro registrando
+  la sua email su un provider.
+- Nessun token dei provider resta salvato: un hook li azzera e un vincolo
+  (`auth_account_no_secrets`) rifiuta la riga se un aggiornamento cambiasse
+  strada. Ci serve solo l'identità.
+- Magic link: salvato come hash, monouso, 10 minuti. Al massimo 3 richieste
+  al minuto per IP, e per indirizzo una ogni 60 secondi e 3 ogni 15 minuti.
+  La pagina risponde sempre "check your inbox": non rivela chi è iscritto.
+- Sessioni nel database (30 giorni, rinnovate al più una volta al giorno),
+  niente cache nel cookie: uscire o revocare vale subito.
+- Alla prima entrata l'utente ha un handle provvisorio `user_xxxxxxxx` e
+  `onboarded_at` nullo; `/welcome` lo fa scegliere (3-24 tra lettere, cifre,
+  `_`, non riservato) con `complete_onboarding`. Chi nasce da SQL (fixture,
+  seed, test) ha `onboarded_at` già pieno.
+- Un provider compare solo se ha **entrambe** le sue variabili.
+- All'avvio (`instrumentation.ts`) la configurazione si controlla e parte la
+  pulizia delle righe scadute, ripetuta ogni giorno.
+
+**Provarlo in locale.** Con il server di sviluppo acceso (`npm run dev`) e
+`.env.local` con `BETTER_AUTH_URL=http://localhost:3000` e
+`BETTER_AUTH_SECRET` (`openssl rand -base64 32`):
+
+1. Apri `http://localhost:3000/login`, scrivi un indirizzo finto come
+   `test+1@example.invalid` e chiedi il link.
+2. Senza `RESEND_API_KEY` il link **non parte**: il server lo stampa nel suo
+   terminale e lo aggiunge a `$TMPDIR/dokkan-magic-links.log` (solo in
+   sviluppo, mai in produzione). Aprilo: si arriva a `/welcome`.
+3. Scegli handle e regione: si torna alla pagina di partenza, con l'utente
+   nell'header. Da lì Settings e Sign out.
+4. Per togliere l'utente di prova:
+   `psql -d dokkan_dev -c "delete from app_user where email like 'test+%@example.invalid'"`
+   (sessioni e account se ne vanno a cascata).
+
+`npm run test:auth-smoke` fa lo stesso giro con curl sul server che gira
+(richiesta, link dal file, verifica, cookie, `/welcome`, link riusato
+rifiutato, uscita) e cancella da solo il suo utente. `npm run db:test`
+comprende il passo "account" (`db/test/auth.test.mts`): vincoli e verbi SQL,
+poi better-auth vero su `dokkan_test` con un mittente che cattura i link.
+
+I bottoni Discord, Google e Twitch partono già in locale se le variabili ci
+sono, ma il giro completo va provato a mano con un account vero.
+
+**Per la produzione (da fare a mano).** `dokkan.example.com` qui sotto sta
+per il dominio vero, che ancora non c'è.
+
+1. **Dominio e variabili.** `BETTER_AUTH_URL=https://dokkan.example.com`,
+   un `BETTER_AUTH_SECRET` nuovo (non quello di sviluppo), i sei
+   `*_CLIENT_ID`/`*_CLIENT_SECRET`, `RESEND_API_KEY` e `EMAIL_FROM` (per
+   esempio `Dokkan Team Sharing <login@mail.dokkan.example.com>`). Senza
+   `RESEND_API_KEY` o `EMAIL_FROM` il server **non parte**, apposta.
+2. **Resend.** Aggiungi un dominio di invio (`mail.dokkan.example.com`),
+   metti nel DNS i record SPF e DKIM che mostra (DMARC consigliato), aspetta
+   "Verified", poi crea una API key con "Sending access" solo per quel
+   dominio. Il piano gratuito: 3000 email al mese, 100 al giorno.
+3. **Callback di produzione presso ogni provider**, accanto a quelli di
+   sviluppo (`http://localhost:3000/api/auth/callback/<provider>`):
+   - Discord (discord.com/developers, OAuth2 → Redirects):
+     `https://dokkan.example.com/api/auth/callback/discord`
+   - Google (console.cloud.google.com, Clients → Authorized redirect URIs):
+     `https://dokkan.example.com/api/auth/callback/google`
+   - Twitch (dev.twitch.tv/console, OAuth Redirect URLs):
+     `https://dokkan.example.com/api/auth/callback/twitch`
+4. **Google "In production".** Nella OAuth consent screen (Google Auth
+   Platform → Audience) porta il Publishing status da Testing a **In
+   production**: in Testing entrano solo 100 utenti di prova e le loro
+   autorizzazioni scadono dopo 7 giorni. Gli scope sono solo `openid email
+   profile`, quindi non serve la verifica dell'app (quella del brand è
+   facoltativa e chiede homepage, privacy policy e dominio verificato).
+5. **Dietro un proxy.** Il limite per IP legge l'IP dagli header
+   (`x-forwarded-for` per difetto). Quando l'host è noto, imposta in
+   `lib/auth/config.ts` `advanced.ipAddress.ipAddressHeaders` (e
+   `trustedProxies`) sull'header che il proxy scrive davvero: altrimenti un
+   client può inventarsi l'header, o tutti finiscono in un solo secchio.
+6. **Una privacy policy**, che Google chiede per la verifica del brand e
+   che comunque serve: salviamo email, handle, IP e user agent delle sessioni.
+
+Non ancora fatto: scollegare un provider e cancellare l'account da
+Settings, e collegare le Server Action di scrittura (invio, voto, commenti)
+a `requireOnboardedUser`.
+
 ## Cosa manca, in ordine
 
 1. **Il calendario, da tenere vivo.** Rifare il datamine con `--fresh`
@@ -883,10 +1075,18 @@ hanno la loro run Global. Un secondo giro non cambia niente.
    riemesse e secondi id): niente epiteto, niente immagini. Sono anche i
    boss che mancano nelle copertine. E le immagini delle 19 carte nuove di
    ottobre aspettano il CDN del wiki, che oggi risponde 403.
-4. **Le missioni dal gioco.** Il legame con le aree c'è (`event_game_ref`),
-   le missioni no: `mission` è ancora vuota, e `mission.reward` →
-   `reward_item` aspetta loro.
-5. **L'autenticazione.** Serve un account per inviare.
+4. **Le missioni, da mostrare e da completare.** Ci sono (7720, con i
+   premi), manca la sezione nella pagina evento. Restano fuori le missioni
+   Burst Mode degli archivi (serve una tabella `genkai_battles` che il
+   datamine non esporta), i piani 61+ della Extreme Super Battle Road (il
+   wiki non ha la pagina, e un evento del gioco per loro non c'è ancora) e
+   le campagne su più eventi. Japan non ha missioni: il datamine è Global.
+   Solo 45 oggetti su 1677 hanno un'icona; le altre aspettano il CDN del
+   wiki o le immagini del gioco.
+5. **Gli account, da collegare alle scritture.** L'accesso c'è (sopra);
+   mancano le Server Action di invio, voto e commento su
+   `requireOnboardedUser`, e da Settings scollegare un provider e
+   cancellare l'account.
 6. **La prima fetta verticale:** una pagina evento che elenca i suoi clear,
    più il form di invio dietro il login.
 7. **Il team builder.** Il grosso del lavoro di interfaccia, e il collo di

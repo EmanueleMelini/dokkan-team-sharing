@@ -180,7 +180,7 @@ try {
         && stesso(p.starts_at, da(c.id)) && p.status === 'active'
     })
     tutte('le corse di prima finiscono, non dopo, dove comincia l\'archivio', casi, (c) =>
-      c.rs.slice(0, -1).every((r) => r.ends_at instanceof Date && r.ends_at.getTime() <= new Date(da(c.id)).getTime()))
+      c.rs.slice(0, -1).every((r: Riga) => r.ends_at instanceof Date && r.ends_at.getTime() <= new Date(da(c.id)).getTime()))
     const gt = casi.find((c) => c.id === 712688)?.rs ?? []
     check('GT Edition: la run del wiki del 2022 chiusa senza fine nota, poi la permanenza', gt.length === 2
             && gt[0].source === 'wiki' && stesso(gt[0].starts_at, '2022-07-07T00:00Z') && stesso(gt[0].ends_at, '2026-01-22T05:00Z')
@@ -195,7 +195,8 @@ try {
     let manuale = ''
     try {
       // al posto della permanenza, una finestra scritta a mano: il gioco la salta
-      await db.query(`delete from event_run where id = $1`, [perm.id])
+      // il check sopra esce se perm manca: qui c'e' per forza
+      await db.query(`delete from event_run where id = $1`, [perm!.id])
       manuale = await valore(`insert into event_run (event_id, reg, starts_at, ends_at, ends_at_known, source)
         values ($1, 'global', '2026-01-22T05:00Z', '2026-03-01T00:00Z', true, 'manual') returning id::text`, [GT])
       const out = lancia('load-windows.mjs')

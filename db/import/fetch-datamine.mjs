@@ -39,6 +39,15 @@ const TABLES = [
   // nelle EZA, quanti livelli ha un'EZA e la stamina dei checkpoint
   'enemy_skills', 'z_battle_enemy_skill_escalations', 'z_battle_first_reward_level_ranges',
   'z_battle_check_points',
+  // per i premi delle missioni (load-missions): mission_rewards dice solo
+  // item_type + item_id, il nome sta nella tabella di quel tipo. Una per
+  // tipo; i Point (dragon stone, zeni, punti di scambio) stanno in points,
+  // le carte in cards, le sfere del drago non hanno tabella.
+  'achievements', 'act_items', 'awakening_items', 'card_skin_items', 'card_sticker_items',
+  'equipment_skill_items', 'eventkagi_items', 'jukebox_tracks', 'link_skill_lv_up_items',
+  'points', 'potential_items', 'sd_packs', 'special_items', 'support_films', 'support_items',
+  'support_memories', 'support_memory_enhancement_items', 'training_fields', 'training_items',
+  'treasure_items', 'wallpaper_items',
 ]
 
 mkdirSync(DIR, { recursive: true })

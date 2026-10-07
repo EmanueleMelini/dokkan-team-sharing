@@ -1,6 +1,8 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import { Suspense } from 'react'
 import { Geist, Geist_Mono } from 'next/font/google'
+import { UserMenu } from '@/components/auth/user-menu'
 import './globals.css'
 
 const geistSans = Geist({ variable: '--font-geist-sans', subsets: ['latin'] })
@@ -26,6 +28,13 @@ export default function RootLayout({ children }: LayoutProps<'/'>) {
                 Events
               </Link>
             </nav>
+            {/* La sessione si legge solo qui dentro: il resto dell'header e
+                la pagina non aspettano i cookie. */}
+            <div className="ml-auto">
+              <Suspense fallback={null}>
+                <UserMenu />
+              </Suspense>
+            </div>
           </div>
         </header>
 

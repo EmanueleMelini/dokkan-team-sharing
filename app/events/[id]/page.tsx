@@ -9,11 +9,12 @@ import { assetUrl } from '@/lib/db'
 import { quando } from '@/lib/date'
 import { pagina as leggiPagina, regione, uno, type Ricerca } from '@/lib/parametri'
 import {
-  CLEAR_PER_PAGINA, getEvent, getEzaLinks, getStages, listClears,
+  CLEAR_PER_PAGINA, getEvent, getEzaLinks, getMissions, getStages, listClears,
   type EventDetail, type Region, type StageRow,
 } from '@/lib/queries'
 import { AttesaLink } from '@/components/attesa-link'
 import { Clear } from '@/components/clear'
+import { Missioni } from '@/components/missioni'
 import { ConteggioClear } from '@/components/conteggio-clear'
 import { Paginazione } from '@/components/paginazione'
 
@@ -91,9 +92,11 @@ export default async function Evento(props: PageProps<'/events/[id]'>) {
 
   const richiesto = uno(sp.tier)
   const scelto = stages.find((s) => s.tier_id === richiesto) ?? tierIniziale(stages)
-  const clears = scelto
-    ? await listClears(scelto.tier_id, reg, { offset: (pagina - 1) * CLEAR_PER_PAGINA })
-    : []
+  // Le missioni ci sono solo per Global: il datamine è quello della versione Global
+  const [clears, missioni] = await Promise.all([
+    scelto ? listClears(scelto.tier_id, reg, { offset: (pagina - 1) * CLEAR_PER_PAGINA }) : Promise.resolve([]),
+    reg === 'global' ? getMissions(e.id, e.run_id) : Promise.resolve([]),
+  ])
   // Il totale dei clear viene da getStages, che li conta con gli stessi
   // filtri di listClears (tier, regione, pubblicati): resta giusto anche su
   // una pagina oltre l'ultima, dove listClears non restituisce righe.
@@ -419,6 +422,8 @@ export default async function Evento(props: PageProps<'/events/[id]'>) {
           </section>
         </div>
       )}
+
+      <Missioni missioni={missioni} />
     </div>
   )
 }
