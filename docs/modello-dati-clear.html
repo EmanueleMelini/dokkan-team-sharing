@@ -1,0 +1,893 @@
+<title>Modello dati dei clear</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chivo:wght@400;600;700;900&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --ground:#F1F3F9; --surface:#FFFFFF; --surface-2:#E6E9F2; --code:#FBFBFE;
+    --ink:#141830; --body:#2E3450; --muted:#6A7290;
+    --line:#D2D7E6; --line-strong:#A6AEC7;
+    --fill:#272E54; --gold:#96651A; --gold-line:#D3AC5C; --gold-soft:#F7EED8;
+    --ok:#2F6B4F; --bad:#9E3B2C; --focus:#3C64C8;
+    --sans:"Chivo","Helvetica Neue",Arial,sans-serif;
+    --serif:"Source Serif 4",Georgia,"Times New Roman",serif;
+    --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground:#0F111D; --surface:#171A2A; --surface-2:#1E2235; --code:#12141F;
+      --ink:#ECEEF7; --body:#C6CBDF; --muted:#8B93B1;
+      --line:#2A2F47; --line-strong:#4A5171;
+      --fill:#C3C9E3; --gold:#E2B667; --gold-line:#7E6224; --gold-soft:#2A2311;
+      --ok:#79C79B; --bad:#E58C78; --focus:#8AA6EE;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground:#0F111D; --surface:#171A2A; --surface-2:#1E2235; --code:#12141F;
+    --ink:#ECEEF7; --body:#C6CBDF; --muted:#8B93B1;
+    --line:#2A2F47; --line-strong:#4A5171;
+    --fill:#C3C9E3; --gold:#E2B667; --gold-line:#7E6224; --gold-soft:#2A2311;
+    --ok:#79C79B; --bad:#E58C78; --focus:#8AA6EE;
+  }
+
+  *,*::before,*::after { box-sizing:border-box; }
+  body {
+    background:var(--ground); color:var(--body);
+    font-family:var(--serif); font-size:17px; line-height:1.62;
+    -webkit-font-smoothing:antialiased;
+  }
+  .page { max-width:1080px; margin:0 auto; padding:56px 28px 96px; display:flex; flex-direction:column; gap:60px; }
+  a { color:inherit; text-decoration:underline; text-decoration-color:var(--gold-line); text-underline-offset:2px; }
+  a:focus-visible { outline:2px solid var(--focus); outline-offset:2px; }
+  p { margin:0; }
+
+  .eyebrow { font-family:var(--mono); font-size:11.5px; font-weight:500; letter-spacing:.14em; text-transform:uppercase; color:var(--gold); }
+  h1 { font-family:var(--sans); font-weight:900; font-size:clamp(38px,6vw,60px); line-height:.98; letter-spacing:-.025em; color:var(--ink); margin:0; text-wrap:balance; }
+  .masthead { display:flex; flex-direction:column; gap:20px; }
+  .dek { max-width:64ch; font-size:19.5px; margin:0; text-wrap:pretty; }
+  .dek strong { font-weight:600; color:var(--ink); }
+  .meta { display:flex; flex-wrap:wrap; gap:0 26px; font-family:var(--mono); font-size:11.5px; letter-spacing:.05em; text-transform:uppercase; color:var(--muted); border-top:1px solid var(--line); padding-top:14px; }
+  .meta b { color:var(--ink); font-weight:600; }
+
+  section { display:flex; flex-direction:column; gap:24px; }
+  h2 { font-family:var(--sans); font-weight:700; font-size:24px; letter-spacing:-.015em; color:var(--ink); margin:0; padding-bottom:10px; border-bottom:2px solid var(--gold-line); }
+  .prose { display:flex; flex-direction:column; gap:16px; max-width:64ch; }
+
+  /* decisioni */
+  .calls { display:flex; flex-direction:column; gap:0; border-top:1px solid var(--line); }
+  .call { display:grid; grid-template-columns:minmax(0,1fr); gap:7px; padding:20px 0; border-bottom:1px solid var(--line); }
+  .call h3 { font-family:var(--sans); font-weight:700; font-size:17px; color:var(--ink); margin:0; letter-spacing:-.005em; }
+  .call p { max-width:70ch; font-size:16px; }
+  .call code, .inline { font-family:var(--mono); font-size:.86em; background:var(--surface-2); padding:1px 5px; border-radius:2px; color:var(--ink); }
+  @media (min-width:820px) { .call { grid-template-columns:270px minmax(0,1fr); gap:8px 34px; } .call h3 { padding-top:1px; } }
+
+  /* figure */
+  figure { margin:0; display:flex; flex-direction:column; gap:12px; background:var(--surface); border:1px solid var(--line); padding:24px 22px 20px; }
+  figure svg { width:100%; max-width:100%; height:auto; color:var(--ink); display:block; }
+  figcaption { font-size:15px; color:var(--muted); max-width:78ch; }
+  figcaption b { color:var(--ink); font-weight:600; }
+  .dg-box { fill:var(--surface); stroke:currentColor; stroke-width:1.1; }
+  .dg-hub { fill:var(--gold-soft); stroke:var(--gold); stroke-width:2; }
+  .dg-out { fill:var(--surface); stroke:var(--gold); stroke-width:1.6; }
+  .dg-t  { font-family:"IBM Plex Mono",monospace; font-size:11px; font-weight:600; fill:currentColor; }
+  .dg-s  { font-family:"IBM Plex Mono",monospace; font-size:8.6px; fill:currentColor; opacity:.62; }
+  .dg-l  { font-family:"IBM Plex Mono",monospace; font-size:8.6px; fill:currentColor; opacity:.78; }
+  .dg-z  { font-family:"IBM Plex Mono",monospace; font-size:9px; letter-spacing:.1em; fill:currentColor; opacity:.55; }
+  .dg-a  { stroke:currentColor; stroke-width:1.1; fill:none; }
+  .dg-ag { stroke:var(--gold); stroke-width:1.4; fill:none; }
+  .dg-rule { stroke:currentColor; stroke-width:1; opacity:.28; }
+  .dg-mk-gold { fill:var(--gold); }
+
+  /* codice */
+  .code-wrap { border:1px solid var(--line); background:var(--code); }
+  .code-head { font-family:var(--mono); font-size:10.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); padding:9px 16px; border-bottom:1px solid var(--line); background:var(--surface-2); }
+  pre { margin:0; overflow-x:auto; padding:16px; }
+  pre code { font-family:var(--mono); font-size:12.5px; line-height:1.62; color:var(--ink); white-space:pre; }
+
+  /* inventario tabelle */
+  .zone { display:flex; flex-direction:column; gap:0; }
+  .zone-head { font-family:var(--mono); font-size:10.5px; font-weight:600; letter-spacing:.13em; text-transform:uppercase; color:var(--ink); background:var(--surface-2); padding:10px 16px; border:1px solid var(--line-strong); border-bottom:none; }
+  .zone-head span { color:var(--muted); font-weight:400; letter-spacing:.04em; text-transform:none; margin-left:8px; }
+  .rows { border:1px solid var(--line); background:var(--surface); }
+  .row { display:grid; grid-template-columns:minmax(0,1fr); gap:2px; padding:11px 16px; border-bottom:1px solid var(--line); }
+  .row:last-child { border-bottom:none; }
+  .row .t { font-family:var(--mono); font-size:12.5px; font-weight:600; color:var(--ink); }
+  .row .d { font-size:15px; }
+  @media (min-width:760px) { .row { grid-template-columns:210px minmax(0,1fr); gap:0 24px; align-items:baseline; } }
+
+  /* tabella risultati */
+  .res-wrap { overflow-x:auto; border:1px solid var(--line); background:var(--surface); }
+  table.res { border-collapse:separate; border-spacing:0; width:100%; min-width:560px; font-family:var(--sans); font-size:14px; }
+  table.res th { background:var(--surface-2); color:var(--ink); font-family:var(--mono); font-size:10.5px; font-weight:600; letter-spacing:.05em; text-transform:uppercase; text-align:right; padding:11px 14px; border-bottom:1px solid var(--line-strong); white-space:nowrap; }
+  table.res th:first-child, table.res td:first-child { text-align:left; }
+  table.res td { text-align:right; padding:9px 14px; border-bottom:1px solid var(--line); font-variant-numeric:tabular-nums; }
+  table.res tr:last-child td { border-bottom:none; }
+  table.res td:first-child { font-family:var(--serif); font-size:15.5px; color:var(--ink); }
+
+  /* verifiche */
+  .checks { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:6px 26px; }
+  .chk { display:flex; gap:10px; align-items:baseline; font-size:15px; }
+  .chk .mk { font-family:var(--mono); font-size:10.5px; font-weight:600; letter-spacing:.06em; flex:none; }
+  .chk .mk.pass { color:var(--ok); }
+  .chk .mk.bad { color:var(--bad); }
+
+  .note { border-left:3px solid var(--gold-line); background:var(--gold-soft); padding:18px 20px; display:flex; flex-direction:column; gap:10px; }
+  .note h3 { font-family:var(--sans); font-weight:700; font-size:16px; color:var(--ink); margin:0; }
+  .note p { font-size:16px; max-width:72ch; }
+  .note code { font-family:var(--mono); font-size:.86em; color:var(--ink); }
+
+  .opts { display:flex; flex-direction:column; gap:1px; background:var(--line); border:1px solid var(--line); }
+  .opt { background:var(--surface); padding:18px 20px; display:flex; flex-direction:column; gap:7px; }
+  .opt.pick { background:var(--gold-soft); border-left:3px solid var(--gold-line); padding-left:17px; }
+  .opt h3 { font-family:var(--sans); font-weight:700; font-size:16px; color:var(--ink); margin:0; }
+  .opt p { font-size:15.5px; max-width:76ch; }
+  .opt .verdict { font-family:var(--mono); font-size:11px; letter-spacing:.05em; color:var(--muted); }
+  .opt .verdict b { color:var(--ink); font-weight:600; }
+  .tag-pick { display:inline-block; margin-left:9px; vertical-align:2px; font-family:var(--mono); font-size:9px; font-weight:600; letter-spacing:.1em; text-transform:uppercase; color:var(--gold); border:1px solid var(--gold-line); padding:1px 5px; }
+  .open { display:grid; grid-template-columns:repeat(auto-fit,minmax(268px,1fr)); gap:1px; background:var(--line); border:1px solid var(--line); }
+  .open > div { background:var(--surface); padding:19px 21px 22px; display:flex; flex-direction:column; gap:8px; }
+  .open h3 { font-family:var(--sans); font-weight:700; font-size:15.5px; color:var(--ink); margin:0; }
+  .open p { font-size:15px; }
+
+  @media (max-width:640px) { body { font-size:16px; } .page { padding:40px 18px 72px; gap:48px; } figure { padding:18px 14px 16px; } }
+  @media (prefers-reduced-motion:reduce) { * { animation:none !important; transition:none !important; } }
+</style>
+
+<div class="page">
+
+  <header class="masthead">
+    <div class="eyebrow">Modello dati &middot; 8 settembre 2026</div>
+    <h1>Modello dati dei clear</h1>
+    <p class="dek">Trentanove tabelle, e una sola che conta: <span class="inline">clear</span>. È il punto dove i dati importati dal gioco incontrano quelli scritti dagli utenti, e <strong>l'unica cosa che i sette siti concorrenti non hanno</strong>. Schema scritto, eseguito su Postgres 15 e verificato: ventotto controlli, tutti verdi.</p>
+    <div class="meta">
+      <span><b>39</b> tabelle</span>
+      <span><b>3</b> view</span>
+      <span><b>4</b> trigger</span>
+      <span><b>28</b> controlli verdi</span>
+      <span>Postgres 15</span>
+    </div>
+  </header>
+
+  <section>
+    <h2>Cos'è un clear</h2>
+    <div class="prose">
+      <p>Vale la pena partire da qui, perché tutto il resto ne dipende. Un clear <b>non</b> è un team, e <b>non</b> è un evento. È una frase, e la frase è sempre la stessa:</p>
+    </div>
+
+    <div class="note">
+      <p style="font-size:18px"><em>&ldquo;Io, in <b>questa esecuzione</b> dell'evento, con <b>questo assetto</b>, ho chiuso <b>questo stage</b> a <b>questa difficoltà</b>.&rdquo;</em></p>
+    </div>
+
+    <div class="prose">
+      <p>Tutto il resto dello schema esiste per rendere quella frase interrogabile. E la frase è divisa in due pezzi che invecchiano diversamente: <b>cosa hai chiuso</b> non cambia mai, <b>come l'hai chiuso</b> può essere corretto &mdash; con una versione nuova, non riscrivendo quella vecchia. Concretamente: un utente finisce lo Stage 3 in Ultra della Red Zone di Frieza, sulla run Global in corso, e preme &ldquo;invia&rdquo;. Ecco cosa compare nel database.</p>
+    </div>
+
+    <div class="res-wrap">
+      <table class="res">
+        <thead>
+          <tr><th scope="col">Dove</th><th scope="col">Righe</th><th scope="col">Cosa dice</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><span class="inline">clear</span></td><td>1</td><td style="text-align:left">L'intestazione: chi, quale ricorrenza, quale difficoltà. Non cambia mai</td></tr>
+          <tr><td><span class="inline">clear_version</span></td><td>1</td><td style="text-align:left">La versione 1: item, morti, turni, nota, e lo snapshot dell'assetto in jsonb</td></tr>
+          <tr><td><span class="inline">clear_card</span></td><td>7</td><td style="text-align:left">Le sette unità di <em>quella versione</em>, con rotazione, posizione e ruolo &mdash; la forma su cui si cerca</td></tr>
+          <tr><td><span class="inline">clear_proof</span></td><td>0&ndash;2</td><td style="text-align:left">I link che ha incollato, se li ha incollati. Anche questi della versione</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="prose">
+      <p>Le tre domande che a questo punto sorgono naturali, e che sono esattamente le tre decisioni.</p>
+      <p><b>Perché non basta che il clear punti al team?</b> Perché il team è vivo: l'autore lo modifica la settimana dopo, e allora la riga direbbe &ldquo;questo team ha chiuso lo stage&rdquo; mostrando una squadra diversa da quella che l'ha chiuso davvero. Lo snapshot congela; il puntatore al team resta, ma solo come cortesia (&ldquo;vedi il team aggiornato dell'autore&rdquo;), e se il team viene cancellato il clear sopravvive.</p>
+      <p><b>Perché non basta che punti all'evento?</b> Perché fra l'evento e ciò che uno chiude davvero ci sono tre livelli: l'evento torna più volte (le <em>ricorrenze</em>), ha più <em>stage</em>, e ogni stage esiste a più <em>difficoltà</em>. &ldquo;Ho chiuso la Red Zone di Frieza&rdquo; non è un'informazione: lo stage 1 in Z-Hard e lo stage 3 in Ultra sono due imprese incomparabili. Il clear si aggancia al livello più preciso, e i livelli sopra si ricavano risalendo.</p>
+      <p><b>E la regione dov'è?</b> Non c'è, e non è una dimenticanza. La ricorrenza è già di una regione: se il clear punta alla run Global, il clear è Global. Scriverlo anche sulla riga vorrebbe dire due copie della stessa verità, e due copie prima o poi si contraddicono.</p>
+      <p><b>Perché una versione separata dall'intestazione?</b> Perché <b>voti e commenti stanno sulla versione.</b> Se l'autore corregge i turni, i voti che aveva preso non seguono la correzione e non si azzerano: restano attaccati alla versione che li ha ricevuti, e la nuova parte da zero. Chi legge vede la versione corrente col suo punteggio, e accanto che ce n'è una storia. Il dettaglio del flusso sta nel <a href="flusso-invio-clear.html">documento sull'invio</a>.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Tredici decisioni</h2>
+    <div class="calls">
+
+      <div class="call">
+        <h3>Lo stato dell'evento non è una colonna</h3>
+        <p>Attivo, futuro e passato non sono valori memorizzati: sono il risultato di un confronto fra <code>now()</code> e una finestra temporale. Una colonna <code>status</code> obbligherebbe a un cron che la ribalta, e il giorno che il cron salta il sito mente. La view <code>event_status</code> non può andare fuori sincrono perché non conserva niente.</p>
+      </div>
+
+      <div class="call">
+        <h3>La ricorrenza è un'entità, non una data</h3>
+        <p>Le Red Zone tornano. Se le date stanno su <code>event</code>, la seconda esecuzione sovrascrive la prima e con lei tutti i clear che le erano agganciati. <code>event_run</code> le tiene separate, e un vincolo di esclusione impedisce che due esecuzioni dello stesso evento si sovrappongano &mdash; errore che altrimenti si scopre mesi dopo, guardando statistiche sbagliate.</p>
+      </div>
+
+      <div class="call">
+        <h3>Il team e il clear sono due cose diverse</h3>
+        <p>Un team è una composizione riusabile: lo stesso team chiude cinque stage. Un clear è l'affermazione &ldquo;con questo, quello stage l'ho chiuso&rdquo;. Tenerli separati è ciò che permette di contare i clear per stage senza duplicare i team, e di cancellare un team senza cancellare la storia (<code>on delete set null</code>).</p>
+      </div>
+
+      <div class="call">
+        <h3>Il clear è versionato, e il voto sta sulla versione</h3>
+        <p>Un clear è un'intestazione immutabile più una catena di versioni, e <code>clear_vote</code> punta alla versione, non al clear. Questo chiude da solo il buco che ogni alternativa lasciava aperto: se un clear fosse modificabile, si riscriverebbe sotto i voti già presi; se fosse immutabile, correggere vorrebbe dire cancellare, e cancellare azzererebbe i voti negativi. Con le versioni, correggere non tocca niente di ciò che è già stato giudicato. Un indice unico parziale garantisce una sola versione corrente per clear.</p>
+      </div>
+
+      <div class="call">
+        <h3>Il clear scrive due volte</h3>
+        <p>Per ogni versione, lo stesso assetto finisce in due posti: un <code>jsonb</code> immutabile che serve a mostrare il team come era, e sette righe in <code>clear_card</code> che servono a cercarlo. Solo il jsonb sarebbe impossibile da interrogare; solo le righe si riscriverebbero quando l'autore modifica il team, e la prova fotografica mostrerebbe un team che non esiste più.</p>
+      </div>
+
+      <div class="call">
+        <h3>Il cambio rotazione è un secondo assetto</h3>
+        <p>&ldquo;Dalla fase 3 sposto il damage dealer in rotazione 1&rdquo; non è un campo note: è un secondo <code>lineup</code> dello stesso team, con la sua etichetta e il suo perché. Così la rotazione alternativa è un dato &mdash; si mostra affiancata alla prima, si cerca, si conta &mdash; e non prosa sepolta in un commento.</p>
+      </div>
+
+      <div class="call">
+        <h3>La build sta sullo slot, non sulla carta</h3>
+        <p>La stessa carta è buildata diversamente in due team diversi: rainbow sul ramo difesa qui, ramo attacco là. Legare hidden potential, orb ed equipment allo slot e non alla carta è l'unico modo perché la build resti opzionale (com'era nell'idea) senza obbligare nessuno a compilarla per intero.</p>
+      </div>
+
+
+      <div class="call">
+        <h3>Regione e lingua sono due assi diversi</h3>
+        <p>La <b>regione</b> (<code>global</code> / <code>japan</code>) decide quali <em>dati</em> vedi: date diverse, eventi diversi, carte che su Japan esistono da sei mesi. La <b>lingua</b> decide solo in che <em>testo</em> li leggi. Restano separati anche adesso che le lingue sono poche, perché è la separazione a rendere possibile aggiungerne una senza toccare nient'altro: il testo vive in otto tabelle <span class="inline">*_text</span>, e le lingue sono righe di una tabella, non valori di un enum.</p>
+      </div>
+
+      <div class="call">
+        <h3>Le lingue le decide il gioco, regione per regione</h3>
+        <p>Non tutte le lingue esistono in tutte le regioni, e non è una scelta nostra: Japan esce in giapponese, Global nelle lingue che il gioco pubblica. <code>region_locale</code> lo registra come dato, con un flag <span class="inline">official</span> che distingue la lingua del gioco da una traduzione fatta da noi. Oggi ci sono tre righe: giapponese ufficiale su Japan, inglese ufficiale su Global, e inglese <em>non</em> ufficiale su Japan &mdash; che è esattamente la traduzione a mano dei contenuti giapponesi.</p>
+      </div>
+
+      <div class="call">
+        <h3>Una traduzione nostra si dichiara tale</h3>
+        <p>Ogni riga di testo porta un <code>source</code>: <span class="inline">official</span> o <span class="inline">community</span>. Serve perché l'epiteto inglese di una carta ancora esclusiva Japan non è il nome che avrà davvero &mdash; è la nostra ipotesi, e chi legge ha diritto di vedere la differenza. Senza questa colonna, il giorno dell'uscita su Global ti ritrovi con testi sbagliati indistinguibili da quelli giusti, e non sai quali riverificare.</p>
+      </div>
+
+      <div class="call">
+        <h3>La regione del clear non si copia: si deduce</h3>
+        <p><code>run_id</code> è obbligatorio &mdash; anche il contenuto permanente ha una sua esecuzione, con <span class="inline">ends_at</span> nullo &mdash; e la regione vive sulla ricorrenza, perché è la singola esecuzione a essere di una regione, non l'evento in astratto. Il clear la erediterebbe comunque: metterla anche su <code>clear</code> vorrebbe dire due verità che possono divergere. La view <code>clear_detail</code> la espone, la tabella non la conserva.</p>
+      </div>
+
+      <div class="call">
+        <h3>Le due chiavi che chiudono il diamante</h3>
+        <p>Un clear punta a una ricorrenza <em>e</em> a una difficoltà. Niente impediva che appartenessero a due eventi diversi: &ldquo;chiuso lo stage 3 di Frieza durante la run del World Tournament&rdquo; sarebbe entrato senza un lamento, e le statistiche di quello stage sarebbero state sbagliate per sempre. Due chiavi esterne composite, su <span class="inline">(run_id, event_id)</span> e <span class="inline">(stage_tier_id, event_id)</span>, lo rendono impossibile.</p>
+      </div>
+      <div class="call">
+        <h3>Le prove sono link, e sono opzionali</h3>
+        <p>Il sito non ospita file: l'utente incolla un URL a YouTube, a Imgur o dove preferisce. Un clear senza prova entra comunque, vale solo meno per chi lo guarda &mdash; e la view espone <code>has_proof</code> proprio per poter ordinare i clear provati prima di quelli sulla fiducia. Il prezzo è il link rot: fra un anno una parte di quegli URL sarà morta. Non si evita, ma si può smettere di mostrare un rettangolo rotto: tre colonne di controllo tengono la coda di un job che marca i link caduti, così l'interfaccia lo dice invece di fingere.</p>
+      </div>
+
+      <div class="call">
+        <h3>Ogni riga di dati di gioco sa da dove viene</h3>
+        <p><code>imported_from</code> su <code>card</code> ed <code>event</code> vale <span class="inline">datamine</span>, <span class="inline">dataset</span> o <span class="inline">manual</span>. Serve il giorno che la pipeline dall'APK esiste: sai quali righe sono state inserite a mano o prese da uno snapshot di terzi, e quindi quali vanno riverificate. Senza questa colonna la migrazione diventa &ldquo;ricontrolla tutto&rdquo;.</p>
+      </div>
+
+      <div class="call">
+        <h3>La stessa carta può stare due volte nello stesso team</h3>
+        <p>Leader e friend possono essere la stessa unità. Sembra un dettaglio e invece decide una primary key: <code>clear_card</code> è indicizzata su <span class="inline">(clear_id, rotation_index, pos)</span> e non su <span class="inline">(clear_id, card_id)</span>. È anche la ragione per cui la query del meta ha bisogno di <code>count(distinct)</code> &mdash; ci sono arrivato eseguendola, non scrivendola.</p>
+      </div>
+
+    </div>
+  </section>
+
+  <section>
+    <h2>Dove si attacca un clear</h2>
+    <figure>
+      <svg viewBox="0 0 880 225" role="img" aria-label="Un clear si aggancia a una difficoltà di uno stage e a una ricorrenza dell'evento, e da lì punta all'assetto del team e alle prove: è il solo nodo che collega i dati importati dal gioco a quelli scritti dagli utenti.">
+        <defs>
+          <marker id="f1a" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="8" markerHeight="7" orient="auto-start-reverse">
+            <polygon points="0,0 10,4 0,8" fill="currentColor"></polygon>
+          </marker>
+          <marker id="f1g" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="8" markerHeight="7" orient="auto-start-reverse">
+            <polygon points="0,0 10,4 0,8" class="dg-mk-gold"></polygon>
+          </marker>
+        </defs>
+
+        <text class="dg-z" x="242" y="16" text-anchor="middle">IMPORTATO DAL GIOCO</text>
+        <line class="dg-rule" x1="16" y1="24" x2="468" y2="24"></line>
+        <text class="dg-z" x="667" y="16" text-anchor="middle">SCRITTO DAGLI UTENTI</text>
+        <line class="dg-rule" x1="526" y1="24" x2="808" y2="24"></line>
+
+        <rect class="dg-box" x="16"  y="52" width="112" height="46"></rect>
+        <text class="dg-t" x="72"  y="76" text-anchor="middle">event</text>
+        <text class="dg-s" x="72"  y="89" text-anchor="middle">l'evento in sé</text>
+
+        <rect class="dg-box" x="186" y="52" width="112" height="46"></rect>
+        <text class="dg-t" x="242" y="76" text-anchor="middle">stage</text>
+        <text class="dg-s" x="242" y="89" text-anchor="middle">gli stage dentro</text>
+
+        <rect class="dg-box" x="356" y="52" width="112" height="46"></rect>
+        <text class="dg-t" x="412" y="76" text-anchor="middle">stage_tier</text>
+        <text class="dg-s" x="412" y="89" text-anchor="middle">e le difficoltà</text>
+
+        <rect class="dg-hub" x="526" y="52" width="112" height="46"></rect>
+        <text class="dg-t" x="582" y="76" text-anchor="middle">clear</text>
+        <text class="dg-s" x="582" y="89" text-anchor="middle">il ponte</text>
+
+        <rect class="dg-box" x="696" y="52" width="112" height="46"></rect>
+        <text class="dg-t" x="752" y="76" text-anchor="middle">lineup</text>
+        <text class="dg-s" x="752" y="89" text-anchor="middle">7 slot, 2+2+3</text>
+
+        <line class="dg-a"  x1="132" y1="75" x2="180" y2="75" marker-end="url(#f1a)"></line>
+        <text class="dg-l"  x="156" y="66" text-anchor="middle">contiene</text>
+        <line class="dg-a"  x1="302" y1="75" x2="350" y2="75" marker-end="url(#f1a)"></line>
+        <text class="dg-l"  x="326" y="66" text-anchor="middle">difficoltà</text>
+        <line class="dg-ag" x1="472" y1="75" x2="520" y2="75" marker-end="url(#f1g)"></line>
+        <text class="dg-l"  x="496" y="66" text-anchor="middle">chiude</text>
+        <line class="dg-ag" x1="642" y1="75" x2="690" y2="75" marker-end="url(#f1g)"></line>
+        <text class="dg-l"  x="666" y="66" text-anchor="middle">usa</text>
+
+        <rect class="dg-box" x="356" y="158" width="112" height="42"></rect>
+        <text class="dg-t" x="412" y="180" text-anchor="middle">event_run</text>
+        <text class="dg-s" x="412" y="192" text-anchor="middle">le ricorrenze</text>
+
+        <rect class="dg-box" x="596" y="158" width="120" height="42"></rect>
+        <text class="dg-t" x="656" y="180" text-anchor="middle">clear_proof</text>
+        <text class="dg-s" x="656" y="192" text-anchor="middle">screen o video</text>
+
+        <polyline class="dg-a" points="472,179 552,179 552,104" marker-end="url(#f1a)"></polyline>
+        <text class="dg-l" x="480" y="196">quale ricorrenza</text>
+        <polyline class="dg-a" points="612,104 612,152" marker-end="url(#f1a)"></polyline>
+        <text class="dg-l" x="620" y="132">la prova</text>
+      </svg>
+      <figcaption>Un clear non si aggancia a un evento generico: si aggancia a <b>una difficoltà di uno stage</b> e a <b>una ricorrenza precisa</b>. È il solo nodo che tocca entrambi i lati, e da lì nasce l'unica cosa che oggi non si può fare da nessuna parte: chiedere a un evento chi l'ha chiuso e come.</figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2>Un invio, due scritture</h2>
+    <figure>
+      <svg viewBox="0 0 760 240" role="img" aria-label="All'invio di un clear l'assetto viene scritto due volte: congelato in un jsonb immutabile che serve a mostrarlo, e spianato in sette righe di clear_card che servono a cercarlo. Se l'autore modifica il team più tardi, il clear resta invariato.">
+        <defs>
+          <marker id="f2a" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="8" markerHeight="7" orient="auto-start-reverse">
+            <polygon points="0,0 10,4 0,8" fill="currentColor"></polygon>
+          </marker>
+          <marker id="f2g" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="8" markerHeight="7" orient="auto-start-reverse">
+            <polygon points="0,0 10,4 0,8" class="dg-mk-gold"></polygon>
+          </marker>
+        </defs>
+
+        <path class="dg-a" d="M 52 92 C 52 46, 138 46, 138 92" marker-end="url(#f2a)"></path>
+        <text class="dg-l" x="95" y="40" text-anchor="middle">l'utente lo rifà domani</text>
+
+        <rect class="dg-box" x="20" y="96" width="150" height="52"></rect>
+        <text class="dg-t" x="95" y="119" text-anchor="middle">team + lineup</text>
+        <text class="dg-s" x="95" y="133" text-anchor="middle">vivo, modificabile</text>
+
+        <line class="dg-ag" x1="176" y1="122" x2="282" y2="122" marker-end="url(#f2g)"></line>
+        <text class="dg-l" x="229" y="113" text-anchor="middle">invio</text>
+
+        <rect class="dg-hub" x="288" y="96" width="126" height="52"></rect>
+        <text class="dg-t" x="351" y="119" text-anchor="middle">clear</text>
+        <text class="dg-s" x="351" y="133" text-anchor="middle">il ponte</text>
+        <text class="dg-l" x="351" y="170" text-anchor="middle">poi non si muove più</text>
+
+        <rect class="dg-out" x="500" y="30" width="230" height="56"></rect>
+        <text class="dg-t" x="615" y="54" text-anchor="middle">lineup_snapshot (jsonb)</text>
+        <text class="dg-s" x="615" y="70" text-anchor="middle">ciò che si mostra</text>
+
+        <rect class="dg-out" x="500" y="158" width="230" height="56"></rect>
+        <text class="dg-t" x="615" y="182" text-anchor="middle">clear_card &times; 7</text>
+        <text class="dg-s" x="615" y="198" text-anchor="middle">ciò che si cerca</text>
+
+        <polyline class="dg-ag" points="418,116 458,116 458,58 494,58" marker-end="url(#f2g)"></polyline>
+        <text class="dg-l" x="474" y="49" text-anchor="middle">congela</text>
+        <polyline class="dg-ag" points="418,128 458,128 458,186 494,186" marker-end="url(#f2g)"></polyline>
+        <text class="dg-l" x="474" y="202" text-anchor="middle">spiana</text>
+      </svg>
+      <figcaption>Il jsonb da solo non si interroga: non esiste modo sensato di chiedergli &ldquo;clear che <b>non</b> contengono questa carta&rdquo;. Le righe da sole non bastano: si riscriverebbero quando l'autore modifica il team, e la prova fotografica finirebbe a documentare una squadra diversa da quella mostrata. Servono entrambe, scritte nella stessa transazione.</figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2>I due assi: regione e lingua</h2>
+    <figure>
+      <svg viewBox="0 0 720 216" role="img" aria-label="Una sola riga card si dirama in due modi diversi: card_text con una riga per lingua, che cambia solo il testo, e card_release con una riga per regione, che dice dove e quando la carta esiste.">
+        <defs>
+          <marker id="f3a" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="8" markerHeight="7" orient="auto-start-reverse">
+            <polygon points="0,0 10,4 0,8" fill="currentColor"></polygon>
+          </marker>
+        </defs>
+
+        <rect class="dg-hub" x="24" y="82" width="150" height="52"></rect>
+        <text class="dg-t" x="99" y="105" text-anchor="middle">card</text>
+        <text class="dg-s" x="99" y="119" text-anchor="middle">tipo, rarità, stat</text>
+
+        <rect class="dg-box" x="376" y="24" width="300" height="56"></rect>
+        <text class="dg-t" x="526" y="47" text-anchor="middle">card_text</text>
+        <text class="dg-s" x="526" y="63" text-anchor="middle">una riga per lingua &mdash; en, ja, it</text>
+
+        <rect class="dg-box" x="376" y="140" width="300" height="56"></rect>
+        <text class="dg-t" x="526" y="163" text-anchor="middle">card_release</text>
+        <text class="dg-s" x="526" y="179" text-anchor="middle">una riga per regione &mdash; global, japan</text>
+
+        <polyline class="dg-a" points="178,102 262,102 262,52 370,52" marker-end="url(#f3a)"></polyline>
+        <text class="dg-l" x="316" y="43" text-anchor="middle">cambia il TESTO</text>
+        <polyline class="dg-a" points="178,114 262,114 262,168 370,168" marker-end="url(#f3a)"></polyline>
+        <text class="dg-l" x="316" y="184" text-anchor="middle">cambia COSA ESISTE</text>
+      </svg>
+      <figcaption>Una sola riga <b>card</b>, due diramazioni che non vanno confuse. La lingua tocca solo il testo: cambiarla non cambia nulla di quello che il gioco fa. La regione tocca i dati: su Japan quella carta esiste da sei mesi, e le statistiche di uno stage non si possono mescolare fra le due versioni. Lo stesso schema vale per <b>event</b>, <b>stage</b>, <b>mission</b>, <b>category</b>: otto tabelle <span class="inline">*_text</span> in tutto.</figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2>Le parti che decidono tutto</h2>
+    <div class="prose">
+      <p>Il resto dello schema è ordinaria amministrazione: carte, link, categorie, missioni. Queste tre parti sono quelle su cui vale la pena litigare.</p>
+    </div>
+
+    <div class="code-wrap">
+      <div class="code-head">Lo stato dell'evento: calcolato, e per regione</div>
+<pre><code>-- Un evento torna più volte, e torna in momenti diversi su Global e su
+-- Japan. Lo stato attivo/futuro/passato NON è una colonna: è una
+-- finestra temporale, e si calcola. La regione vive QUI, perché è la
+-- singola esecuzione a essere di una regione, non l'evento in astratto.
+create table event_run (
+  id         bigserial primary key,
+  event_id   bigint not null references event on delete cascade,
+  reg        region not null,
+  starts_at  timestamptz not null,
+  ends_at    timestamptz,             -- null = permanente
+  constraint run_window check (ends_at is null or ends_at &gt; starts_at),
+  -- due esecuzioni dello stesso evento nella stessa regione non
+  -- possono sovrapporsi (su regioni diverse sì, ed è normale)
+  constraint run_no_overlap exclude using gist (
+    event_id with =,
+    reg      with =,
+    tstzrange(starts_at, coalesce(ends_at, 'infinity')) with &amp;&amp;
+  ),
+  unique (id, event_id)              -- bersaglio della FK composita da clear
+);
+
+create view event_status as
+select r.id as run_id, e.id as event_id, e.kind, r.reg, r.starts_at, r.ends_at,
+  case
+    when now() &lt;  r.starts_at then 'upcoming'
+    when r.ends_at is null or now() &lt; r.ends_at then 'active'
+    else 'past'
+  end as status
+from event e
+join event_run r on r.event_id = e.id;</code></pre>
+    </div>
+
+    <div class="code-wrap">
+      <div class="code-head">Sette unità in tre rotazioni, con la forma imposta dal database</div>
+<pre><code>-- Un team può avere più assetti. Il #1 è quello iniziale; i successivi
+-- sono i cambi dichiarati a metà evento, ognuno con il suo perché.
+create table lineup (
+  id       uuid primary key default gen_random_uuid(),
+  team_id  uuid not null references team on delete cascade,
+  seq      smallint not null,     -- 1 = assetto di partenza
+  label    text,                  -- "fase 2", "dopo la trasformazione"
+  note     text,                  -- perché si cambia, cosa si swappa
+  unique (team_id, seq)
+);
+
+create table lineup_slot (
+  lineup_id       uuid not null references lineup on delete cascade,
+  rotation_index  smallint not null check (rotation_index between 1 and 3),
+  pos             smallint not null check (pos between 1 and 3),
+  card_id         bigint not null references card,
+  role            slot_role not null default 'member',   -- leader|member|friend
+  note            text,
+  primary key (lineup_id, rotation_index, pos),
+  constraint rotation_shape check (
+    (rotation_index in (1,2) and pos &lt;= 2) or (rotation_index = 3 and pos &lt;= 3)
+  )
+);
+create unique index lineup_one_leader on lineup_slot (lineup_id) where role = 'leader';
+create unique index lineup_one_friend on lineup_slot (lineup_id) where role = 'friend';</code></pre>
+    </div>
+
+    <div class="code-wrap">
+      <div class="code-head">Le prove: solo link, e il link rot tenuto d'occhio</div>
+<pre><code>-- Solo link: il sito non ospita file. L'utente incolla un URL a
+-- YouTube, Imgur o dove preferisce, e la prova è opzionale — un clear
+-- senza prova entra comunque, vale solo meno per chi lo guarda.
+--
+-- Il prezzo di questa scelta è il link rot: fra un anno una parte di
+-- questi URL sarà morta. Non si può evitare, si può però smettere di
+-- mostrare un rettangolo rotto: le tre colonne di controllo servono a
+-- un job periodico che marca i link caduti, così l'interfaccia può
+-- dirlo invece di fingere.
+create table clear_proof (
+  id               uuid primary key default gen_random_uuid(),
+  clear_id         uuid not null references clear on delete cascade,
+  kind             text not null check (kind in ('screenshot','video')),
+  url              text not null,
+  provider         text,          -- 'youtube','imgur',... dedotto dall'host
+  last_checked_at  timestamptz,
+  is_reachable     boolean,       -- null = mai controllato
+  added_at         timestamptz not null default now(),
+  constraint proof_url_http check (url ~* '^https?://')
+);
+create index proof_by_clear on clear_proof (clear_id);
+-- la coda del controllore: prima i mai controllati, e mai i già morti
+create index proof_to_recheck on clear_proof (last_checked_at nulls first)
+  where is_reachable is not false;</code></pre>
+    </div>
+
+    <div class="code-wrap">
+      <div class="code-head">Il clear: intestazione, versione, e il doppio write</div>
+<pre><code>-- L'intestazione: COSA si afferma di aver chiuso. Non cambia mai.
+create table clear (
+  id             uuid   primary key default gen_random_uuid(),
+  author_id      uuid   not null references app_user on delete cascade,
+
+  -- run_id è NOT NULL: anche il contenuto permanente ha una sua
+  -- esecuzione (con ends_at nullo). Così la REGIONE del clear si deduce
+  -- dalla ricorrenza e non va copiata qui: una verità, un posto.
+  run_id         bigint not null,
+  stage_tier_id  bigint not null,
+  event_id       bigint not null,
+
+  team_id        uuid   references team on delete set null,
+  status         text   not null default 'published'
+                        check (status in ('published','hidden','flagged')),
+  created_at     timestamptz not null default now(),
+
+  -- Le due FK composite chiudono il diamante: la ricorrenza e lo stage
+  -- di un clear DEVONO appartenere allo stesso evento. Senza questo si
+  -- possono inserire clear che dicono "chiuso lo stage 3 di Frieza
+  -- durante la run del World Tournament", e non lo scopri mai.
+  foreign key (run_id, event_id)        references event_run  (id, event_id),
+  foreign key (stage_tier_id, event_id) references stage_tier (id, event_id)
+);
+
+-- La versione: COME l'hai chiuso. Creata, non si tocca più.
+create table clear_version (
+  id               uuid   primary key default gen_random_uuid(),
+  clear_id         uuid   not null references clear on delete cascade,
+  seq              smallint not null,
+
+  -- Snapshot immutabile: l'assetto e le build come erano al momento
+  -- dell'invio di QUESTA versione.
+  lineup_snapshot  jsonb  not null,
+
+  no_items         boolean not null default false,
+  deathless        boolean not null default false,
+  turns            smallint check (turns &gt; 0),
+  note             text,
+  lang             text references locale,
+  change_note      text,    -- perché questa versione esiste. Null sulla prima.
+
+  score            int     not null default 0,   -- voti DI QUESTA versione
+  is_current       boolean not null default true,
+  created_at       timestamptz not null default now(),
+
+  unique (clear_id, seq)
+);
+-- una sola versione corrente per clear, imposto dall'indice
+create unique index clear_one_current on clear_version (clear_id) where is_current;
+
+-- Lo snapshot della versione, spianato in righe: è l'unica forma in cui
+-- si può filtrare "clear SENZA questa carta" o "solo unità di questa
+-- categoria". La PK non contiene card_id perché leader e friend possono
+-- essere la stessa carta.
+create table clear_card (
+  version_id      uuid not null references clear_version on delete cascade,
+  rotation_index  smallint not null,
+  pos             smallint not null,
+  card_id         bigint not null references card,
+  role            slot_role not null,
+  primary key (version_id, rotation_index, pos)
+);
+create index clear_card_by_card on clear_card (card_id);
+
+-- La vista che il sito legge: intestazione più versione corrente.
+create view clear_current as
+select
+  c.id, c.author_id, c.event_id, c.run_id, c.stage_tier_id, c.team_id,
+  c.status, c.created_at,
+  r.reg, st.difficulty, s.seq as stage_seq,
+  v.id as version_id, v.seq as version_seq, v.lineup_snapshot,
+  v.no_items, v.deathless, v.turns, v.note, v.lang, v.change_note,
+  v.score, v.created_at as version_created_at,
+  exists (
+    select 1 from clear_proof p
+    where p.version_id = v.id and p.is_reachable is not false
+  ) as has_proof
+from clear c
+join clear_version v on v.clear_id = c.id and v.is_current
+join event_run r     on r.id  = c.run_id
+join stage_tier st   on st.id = c.stage_tier_id
+join stage s         on s.id  = st.stage_id;</code></pre>
+    </div>
+  </section>
+
+  <section>
+    <h2>Le trentanove tabelle</h2>
+
+    <div class="zone">
+      <div class="zone-head">Importato dal gioco<span>nessun utente scrive qui</span></div>
+      <div class="rows">
+        <div class="row"><div class="t">locale</div><div class="d">Le lingue del sito, come righe e non come enum: aggiungerne una è un insert, non una migrazione.</div></div>
+        <div class="row"><div class="t">region_locale</div><div class="d">Quali lingue esistono in quale regione, e quali sono ufficiali. Oggi: <span class="inline">ja</span> su Japan, <span class="inline">en</span> su Global, più <span class="inline">en</span> su Japan marcato come traduzione nostra.</div></div>
+        <div class="row"><div class="t">card</div><div class="d">L'unità, senza una parola di testo: tipo, classe, rarità, EZA, stat, art. <span class="inline">awakens_from</span> ricostruisce la catena di dokkan awakening, <span class="inline">imported_from</span> dice da dove è arrivata la riga.</div></div>
+        <div class="row"><div class="t">card_text</div><div class="d">Nome, epiteto, leader skill, passive e super, una riga per lingua, con <span class="inline">source</span> che dice se è testo del gioco o traduzione nostra. Indice trigram per la ricerca carta nel team builder.</div></div>
+        <div class="row"><div class="t">card_release</div><div class="d">Quando quella carta è uscita, per regione. Una carta, due date &mdash; non due carte.</div></div>
+        <div class="row"><div class="t">link_skill, card_link</div><div class="d">Le link skill e chi le porta. Molti-a-molti, indicizzato in entrambe le direzioni.</div></div>
+        <div class="row"><div class="t">category, card_category</div><div class="d">Le categorie. È il join su cui poggia la ricerca &ldquo;team di categoria pura&rdquo;.</div></div>
+        <div class="row"><div class="t">equipment</div><div class="d">Gli equipaggiamenti disponibili, come catalogo.</div></div>
+        <div class="row"><div class="t">event</div><div class="d">L'evento ridotto all'osso: id, tipo, art del banner. Il nome sta altrove.</div></div>
+        <div class="row"><div class="t">event_text</div><div class="d">Nome e <span class="inline">official_description</span> per lingua: il testo ufficiale, tenuto separato dai tips della community.</div></div>
+        <div class="row"><div class="t">event_run</div><div class="d">Le ricorrenze, ognuna di una regione. Nessuna colonna di stato: solo finestre, con divieto di sovrapposizione dentro la stessa regione.</div></div>
+        <div class="row"><div class="t">stage</div><div class="d">Gli stage di un evento, in ordine.</div></div>
+        <div class="row"><div class="t">stage_tier</div><div class="d">Lo stage a una difficoltà: STA, LL rate, zeni, EXP. È qui che si aggancia un clear.</div></div>
+        <div class="row"><div class="t">mission</div><div class="d">Le missioni. <span class="inline">run_id</span> nullo significa permanente; valorizzato, missione di quella sola ricorrenza.</div></div>
+        <div class="row"><div class="t">&hellip;_text &times; 8</div><div class="d">Le altre cinque tabelle di testo: <span class="inline">link_skill_text</span>, <span class="inline">category_text</span>, <span class="inline">equipment_text</span>, <span class="inline">stage_text</span>, <span class="inline">stage_tier_text</span>, <span class="inline">mission_text</span>. Tutte con la stessa forma.</div></div>
+      </div>
+    </div>
+
+    <div class="zone">
+      <div class="zone-head">Scritto dagli utenti<span>il cuore del sito</span></div>
+      <div class="rows">
+        <div class="row"><div class="t">app_user</div><div class="d">Handle e mail case-insensitive, tre ruoli.</div></div>
+        <div class="row"><div class="t">team</div><div class="d">La composizione riusabile, con visibilità pubblica, non elencata o privata.</div></div>
+        <div class="row"><div class="t">lineup</div><div class="d">Un assetto del team. Il secondo, il terzo e così via sono i cambi rotazione dichiarati, ognuno con etichetta e motivo.</div></div>
+        <div class="row"><div class="t">lineup_slot</div><div class="d">Le 7 unità in 2+2+3, con ruolo. La forma è imposta da un check, un solo leader e un solo friend da due indici parziali.</div></div>
+        <div class="row"><div class="t">slot_build</div><div class="d">Hidden potential dello slot: stelle e percorso. Opzionale.</div></div>
+        <div class="row"><div class="t">slot_orb</div><div class="d">Gli orb equipaggiati, fino a 6 per slot. Opzionale.</div></div>
+        <div class="row"><div class="t">slot_equipment</div><div class="d">L'equipment, fino a 3 per slot. Opzionale.</div></div>
+        <div class="row"><div class="t">clear</div><div class="d">L'intestazione dell'affermazione: chi, quale ricorrenza, quale difficoltà. Congelata da un trigger &mdash; sbagliare lo stage non è una correzione, è un altro clear. La regione non c'è: si deduce dalla ricorrenza.</div></div>
+        <div class="row"><div class="t">clear_version</div><div class="d">Come l'hai chiuso: snapshot dell'assetto, <span class="inline">no_items</span>, <span class="inline">deathless</span>, turni, nota, e il <span class="inline">change_note</span> che dice perché la versione esiste. Congelata anch'essa; una sola è <span class="inline">is_current</span>.</div></div>
+        <div class="row"><div class="t">clear_comment</div><div class="d">I commenti, sulla versione. Con la nota congelata, commentare è l'unico modo di aggiungere qualcosa dopo &mdash; e resta attaccato a ciò di cui parlava.</div></div>
+        <div class="row"><div class="t">clear_current</div><div class="d">La view che rimette insieme intestazione, versione corrente, regione, difficoltà e stage. È da qui che legge il sito.</div></div>
+        <div class="row"><div class="t">clear_reputation</div><div class="d">Due cifre tenute separate: i voti della versione mostrata e quelli di tutta la storia. Sommarli attribuirebbe alla versione corrente un consenso che non ha ricevuto.</div></div>
+        <div class="row"><div class="t">clear_card</div><div class="d">Lo snapshot della versione spianato in 7 righe. Non lo scrive l'utente: lo scrive la funzione di invio, nella stessa transazione e dalla stessa query.</div></div>
+        <div class="row"><div class="t">clear_proof</div><div class="d">Solo link, opzionali, più di uno per versione. Con host riconosciuto e tre colonne per il controllo periodico dei link caduti.</div></div>
+        <div class="row"><div class="t">clear_vote, tip_vote</div><div class="d">Voti a &plusmn;1, uno per utente. <b>Il voto punta alla versione</b>, ed è il perno del modello. La somma finisce in <span class="inline">score</span> della versione, e a tenerla allineata ci pensa un trigger.</div></div>
+        <div class="row"><div class="t">tip</div><div class="d">Il consiglio della community, agganciato a un evento o a una singola difficoltà. Almeno uno dei due, per vincolo.</div></div>
+        <div class="row"><div class="t">report</div><div class="d">Segnalazioni. Il minimo per non dover riscrivere lo schema il giorno che serve moderare.</div></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Le query per cui il sito esiste</h2>
+    <div class="prose">
+      <p>Sono le domande della prima analisi, quelle che nessuno dei sette concorrenti sa reggere. Le ho eseguite su una fixture con tre clear sullo stesso stage, costruita perché ognuna risponda in modo diverso dalle altre.</p>
+    </div>
+
+    <div class="code-wrap">
+      <div class="code-head">Clear fatti senza le carte del banner in corso</div>
+<pre><code>select c.id, c.turns, c.no_items, c.deathless, c.score, u.handle
+from clear c
+join app_user u on u.id = c.author_id
+where c.stage_tier_id = $1
+  and c.status = 'published'
+  and not exists (
+    select 1 from clear_card cc
+    where cc.clear_id = c.id
+      and cc.card_id = any($2::bigint[])   -- gli id carta del banner
+  )
+order by c.score desc, c.turns nulls last
+limit 20;</code></pre>
+    </div>
+
+    <div class="code-wrap">
+      <div class="code-head">Il meta reale di uno stage: non chi è forte in teoria, chi compare nei clear fatti</div>
+<pre><code>with published as (
+  select id from clear
+  where stage_tier_id = $1 and status = 'published'
+)
+select
+  cd.name, cd.epithet, cd.type,
+  -- distinct obbligatorio: leader e friend possono essere la stessa carta,
+  -- quindi count(*) conterebbe gli slot e non i clear (e il % sfonda il 100).
+  count(distinct c.id)                                   as clears,
+  count(distinct c.id) filter (where c.no_items)         as clears_no_items,
+  count(distinct c.id) filter (where cc.role = 'leader') as as_leader,
+  round(100.0 * count(distinct c.id)
+        / (select count(*) from published), 1)           as pct_dei_clear
+from clear c
+join published p   on p.id = c.id
+join clear_card cc on cc.clear_id = c.id
+join card cd       on cd.id = cc.card_id
+group by cd.id, cd.name, cd.epithet, cd.type
+order by clears desc
+limit 25;</code></pre>
+    </div>
+
+    <div class="prose">
+      <p>Il risultato vero, sui tre clear della fixture &mdash; la tabella che una pagina evento mostrerebbe:</p>
+    </div>
+    <div class="res-wrap">
+      <table class="res">
+        <thead>
+          <tr>
+            <th scope="col">Carta</th><th scope="col">Tipo</th><th scope="col">Clear</th>
+            <th scope="col">No item</th><th scope="col">Da leader</th><th scope="col">% dei clear</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>Frieza (Final Form)</td><td>INT</td><td>3</td><td>2</td><td>1</td><td>100,0</td></tr>
+          <tr><td>Gohan</td><td>PHY</td><td>3</td><td>2</td><td>0</td><td>100,0</td></tr>
+          <tr><td>Piccolo</td><td>TEQ</td><td>3</td><td>2</td><td>0</td><td>100,0</td></tr>
+          <tr><td>Vegeta</td><td>AGL</td><td>3</td><td>2</td><td>2</td><td>100,0</td></tr>
+          <tr><td>Trunks</td><td>AGL</td><td>2</td><td>1</td><td>0</td><td>66,7</td></tr>
+          <tr><td>Bardock</td><td>STR</td><td>1</td><td>1</td><td>0</td><td>33,3</td></tr>
+          <tr><td>Cell (Perfect Form)</td><td>TEQ</td><td>1</td><td>1</td><td>0</td><td>33,3</td></tr>
+          <tr><td>Goku</td><td>STR</td><td>1</td><td>0</td><td>0</td><td>33,3</td></tr>
+          <tr><td>Majin Buu</td><td>INT</td><td>1</td><td>1</td><td>0</td><td>33,3</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="note">
+      <h3>Il bug che ha pagato l'esecuzione</h3>
+      <p>Alla prima esecuzione Vegeta risultava nel <b>166,7%</b> dei clear. Compariva due volte nello stesso team &mdash; leader e friend &mdash; e <code>count(*)</code> contava gli slot, non i clear. La stessa causa per cui la primary key di <code>clear_card</code> non può essere <span class="inline">(clear_id, card_id)</span>: se lo schema l'avesse imposta, l'insert sarebbe esploso in produzione al primo team con il friend uguale al leader. Scrivere la query non l'avrebbe mai fatto emergere; eseguirla sì, in un secondo.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Il punteggio lo tiene il database</h2>
+    <div class="prose">
+      <p><span class="inline">clear.score</span> è una copia della somma dei voti. Serve perché ordinare cinquantamila clear per &ldquo;più votati&rdquo; non può ricalcolare la somma a ogni caricamento di pagina. Ma una copia che il codice deve <em>ricordarsi</em> di aggiornare è una copia che prima o poi divergerà, e nessuno se ne accorge: un punteggio sbagliato somiglia in tutto a un punteggio giusto.</p>
+      <p>Nella prima versione la aggiornavo con una <span class="inline">update</span> a mano nella fixture &mdash; esattamente il bug in attesa di succedere. Ora la tiene un trigger: qualunque strada scriva un voto, che sia l'API, uno script o una query battuta a mano in produzione, il punteggio si aggiorna. Non è delegabile al codice applicativo, perché basta un percorso che se ne dimentica.</p>
+    </div>
+
+    <div class="code-wrap">
+      <div class="code-head">Dieci righe che rendono impossibile la divergenza</div>
+<pre><code>create or replace function clear_recalc_score(p_clear uuid)
+returns void language sql as $fn$
+  update clear set score = (
+    select coalesce(sum(value), 0) from clear_vote where clear_id = p_clear
+  ) where id = p_clear;
+$fn$;
+
+create or replace function clear_vote_sync() returns trigger
+language plpgsql as $fn$
+begin
+  -- su UPDATE il voto può cambiare clear: vanno ricalcolati entrambi
+  if tg_op in ('DELETE','UPDATE') then perform clear_recalc_score(old.clear_id); end if;
+  if tg_op in ('INSERT','UPDATE') then perform clear_recalc_score(new.clear_id); end if;
+  return null;
+end $fn$;
+
+create trigger clear_vote_score
+after insert or update or delete on clear_vote
+for each row execute function clear_vote_sync();</code></pre>
+    </div>
+  </section>
+
+  <section>
+    <h2>Verificato, non solo scritto</h2>
+    <div class="prose">
+      <p>Schema creato da zero su Postgres 15, fixture caricata con due lingue e due regioni, e ventotto controlli passati uno per uno: undici casi che il database deve respingere, tre che deve accettare, e quattordici sulla tenuta dei punteggi, delle prove e dei due assi. Lo script è <span class="inline">check.sh</span> e si rilancia da zero.</p>
+    </div>
+    <div class="checks">
+      <div class="chk"><span class="mk pass">PASS</span><span>Ricorrenze sovrapposte nella stessa regione &mdash; respinte</span></div>
+      <div class="chk"><span class="mk pass">PASS</span><span>Due leader nello stesso assetto &mdash; respinti</span></div>
+      <div class="chk"><span class="mk pass">PASS</span><span>Terza posizione in rotazione 1 &mdash; respinta (la forma è 2+2+3)</span></div>
+      <div class="chk"><span class="mk pass">PASS</span><span>Prova con un url che non è un link &mdash; respinta</span></div>
+      <div class="chk"><span class="mk pass">PASS</span><span>Prova senza url &mdash; respinta</span></div>
+      <div class="chk"><span class="mk pass">PASS</span><span>Lingua non prevista per quella regione &mdash; respinta</span></div>
+      <div class="chk"><span class="mk pass">PASS</span><span>Tip senza bersaglio &mdash; respinto</span></div>
+      <div class="chk"><span class="mk pass">PASS</span><span>Finestra evento che finisce prima di iniziare &mdash; respinta</span></div>
+      <div class="chk"><span class="mk pass">PASS</span><span>Voto con valore 0 &mdash; respinto</span></div>
+      <div class="chk"><span class="mk pass">PASS</span><span>Testo in una lingua inesistente &mdash; respinto</span></div>
+      <div class="chk"><span class="mk pass">PASS</span><span>Clear con la run di un evento e lo stage di un altro &mdash; respinto</span></div>
+      <div class="chk"><span class="mk pass">PASS</span><span>Stessa finestra su Japan e su Global &mdash; accettata</span></div>
+      <div class="chk"><span class="mk pass">PASS</span><span>Secondo assetto dello stesso team &mdash; accettato</span></div>
+      <div class="chk"><span class="mk pass">PASS</span><span>Stessa carta come leader e come friend &mdash; accettata</span></div>
+      <div class="chk"><span class="mk pass">PASS</span><span>Due voti positivi &rarr; punteggio 2</span></div>
+      <div class="chk"><span class="mk pass">PASS</span><span>Togliendone uno &rarr; scende a 1</span></div>
+      <div class="chk"><span class="mk pass">PASS</span><span>Ribaltandolo &rarr; diventa &minus;1</span></div>
+      <div class="chk"><span class="mk pass">PASS</span><span>Nessun punteggio fuori sincrono, su nessuna riga</span></div>
+      <div class="chk"><span class="mk pass">PASS</span><span>Idem sui tip</span></div>
+      <div class="chk"><span class="mk pass">PASS</span><span>La regione del clear si legge dalla ricorrenza</span></div>
+      <div class="chk"><span class="mk pass">PASS</span><span>Un clear con almeno una prova viva &rarr; 1</span></div>
+      <div class="chk"><span class="mk pass">PASS</span><span>Clear senza nessuna prova &rarr; 2, ed entrano comunque</span></div>
+      <div class="chk"><span class="mk pass">PASS</span><span>Link marcati caduti &rarr; 1, e la view li esclude</span></div>
+      <div class="chk"><span class="mk pass">PASS</span><span>In coda per il controllo &rarr; 1 (mai visto, non morto)</span></div>
+      <div class="chk"><span class="mk pass">PASS</span><span>Lingue ufficiali su Global &rarr; solo <span class="inline">en</span></span></div>
+      <div class="chk"><span class="mk pass">PASS</span><span>Su Japan l'inglese risulta traduzione nostra</span></div>
+      <div class="chk"><span class="mk pass">PASS</span><span>La carta esclusiva Japan ha l'inglese marcato <span class="inline">community</span></span></div>
+      <div class="chk"><span class="mk pass">PASS</span><span>&hellip; e non ha una data di uscita su Global</span></div>
+    </div>
+    <div class="prose">
+      <p>E la prova che l'idea di partenza funziona senza stato memorizzato: dallo stesso evento, con tre ricorrenze su due regioni, la view restituisce insieme <span class="inline">past</span> e <span class="inline">active</span> su Global e <span class="inline">active</span> su Japan. Il filtro attivi / futuri / passati del sito è una <span class="inline">where status = ...</span> e nient'altro, e il toggle di regione è una <span class="inline">and reg = ...</span> accanto.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Le prove: solo link</h2>
+    <div class="prose">
+      <p>Deciso: il sito non ospita niente. L'utente incolla un URL &mdash; YouTube per un video, Imgur o simili per uno screenshot &mdash; e la prova è opzionale.</p>
+      <p>Avevo consigliato il contrario, e vale la pena dire cosa mi ero perso: <b>non ospitare i file riduce l'esposizione, non solo il costo.</b> Uno screenshot caricato da un utente è materiale che finisce sui tuoi server e diventa tuo problema &mdash; conservazione, rimozione su richiesta, contenuti che non c'entrano niente col gioco. Un link no: la copia sta su Imgur, e tu ne mostri il collegamento. È un vantaggio reale che nel confronto sui costi non avevo pesato.</p>
+      <p>Il prezzo resta uno solo, e non è evitabile: <b>il link rot</b>. Fra un anno una parte di quegli URL sarà morta, e una prova che non si apre non prova niente. Quello che si può fare è non far finta: tre colonne su <code>clear_proof</code> &mdash; <span class="inline">last_checked_at</span>, <span class="inline">is_reachable</span>, e un indice parziale che tiene la coda &mdash; permettono a un job periodico di marcare i link caduti. L'interfaccia allora può dire &ldquo;prova non più disponibile&rdquo; invece di mostrare un rettangolo vuoto, e il clear può scendere nell'ordinamento. Verificato sulla fixture: un link vivo, uno marcato caduto, uno in coda per il controllo, e la view che distingue i clear provati dagli altri.</p>
+      <p>Due dettagli operativi che restano da fare, e sono lavoro di frontend più che di schema. <b>Riconosci l'host</b> e salvalo in <code>provider</code>: serve a incorporare il player di YouTube invece di un link nudo, e a rifiutare gli host che accorciano gli URL, dove non si sa cosa ci sia dietro. E <b>non incorporare immagini di terzi a caso</b>: un tag <span class="inline">img</span> verso un dominio qualsiasi è una richiesta che parte dal browser dei tuoi utenti verso quel dominio. Limitarsi a una lista di host noti è la scelta sana.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>I dati di gioco: cosa sto cercando di risolvere</h2>
+    <div class="prose">
+      <p>Il problema è questo. Perché il team builder funzioni, il sito deve <em>già sapere</em> che la carta 1001 è Vegeta, &ldquo;Pride of the Saiyan Prince&rdquo;, AGL, LR, con quelle link skill e quelle categorie. Perché la pagina di un evento funzioni, deve sapere che quell'evento ha tre stage, che il terzo esiste anche in Ultra, e che costa 45 di stamina. Sono decine di migliaia di righe che nessuno inserisce a mano, e che cambiano ogni settimana.</p>
+      <p>Quei dati esistono in un posto solo: dentro il gioco. Dokkan è un'app Unity che scarica i suoi contenuti dai server di Bandai. La community li estrae &mdash; si apre l'APK, che è uno zip, e si tirano fuori asset e database con strumenti tipo AssetStudio. Si chiama datamine, ed è il motivo per cui dokkaninfo mostra le carte <em>prima</em> che escano: non ha una fonte privilegiata, ha aperto il pacchetto.</p>
+      <p>Quindi la domanda &ldquo;da dove prendi i dati&rdquo; ha quattro risposte possibili, e nessuna è gratis.</p>
+    </div>
+
+    <div class="opts">
+      <div class="opt">
+        <h3>Datamine tuo &mdash; l'obiettivo dichiarato</h3>
+        <p>Estrai e parsifichi tu, come fa dokkaninfo. È la fonte più completa e la più tempestiva, ed è la strada che vuoi prendere: giusto, perché è l'unica che non ti lascia dipendere da nessuno. È anche reverse engineering vero, si rompe a ogni aggiornamento del client, e diventa un lavoro fisso che non ha niente a che vedere con il prodotto.</p>
+        <div class="verdict"><b>Il più potente, il più costoso.</b> Da costruire, ma non per primo: <code>imported_from</code> esiste proprio per poterci arrivare dopo senza dover ricontrollare tutto.</div>
+      </div>
+
+      <div class="opt">
+        <h3>Repo pubblici della community</h3>
+        <p>Esistono e sono attivi: <span class="inline">dokkanart/dokkanassets</span> si presenta come &ldquo;All Dokkan JP and Global Assets&rdquo;, <span class="inline">dokkanart/dokkanart</span> raccoglie l'art in HD. Il limite è che sono <em>asset</em>, cioè immagini: nome, stat, link e categorie vanno cercati altrove. E dipendi dalla costanza di un volontario.</p>
+        <div class="verdict"><b>Buoni per l'art</b>, non risolvono i dati strutturati.</div>
+      </div>
+
+      <div class="opt">
+        <h3>Dataset derivati dalla wiki</h3>
+        <p>C'è un dataset su Kaggle con passive, stat e link; <span class="inline">MNprojects/DokkanAPI</span> espone una GraphQL costruita raschiando la wiki; <span class="inline">Daniel-Fauland/dokkan-battle</span> la raschia in CSV. Sono già strutturati, ed è il loro pregio. Sono anche snapshot: vecchi, parziali, e nessuno è un servizio con una garanzia di funzionamento.</p>
+        <div class="verdict"><b>Ottimi come punto di partenza</b>, inaffidabili come fondamenta.</div>
+      </div>
+
+      <div class="opt">
+        <h3>Scraping di dokkaninfo o dokkanstats</h3>
+        <p>Dati puliti e aggiornati, disponibili subito. Solo che staresti costruendo il tuo prodotto sopra il lavoro di un concorrente diretto, che può bloccarti quando gli pare &mdash; e ti accorgeresti del blocco il giorno in cui il sito è già in piedi.</p>
+        <div class="verdict"><b>Sconsigliato.</b> Non è una fondazione, è un prestito revocabile.</div>
+      </div>
+
+      <div class="opt pick">
+        <h3>Ribalta il problema: importa solo quello che serve a un clear <span class="tag-pick">consigliata</span></h3>
+        <p>Non ti serve tutto il gioco. Ti servono due cose: l'<b>elenco carte</b> con nome, epiteto, tipo, rarità, art, link e categorie, perché il team builder deve farle scegliere; e lo <b>scheletro evento &rarr; stage &rarr; difficoltà</b>, che è minuscolo &mdash; una Red Zone sono tre stage per due difficoltà, sei righe. Passive integrali, stat esatte al percentile e testo ufficiale delle missioni sono nice-to-have, non MVP.</p>
+        <p>In pratica: un import una volta sola delle carte da un dataset pubblico, riconciliato a mano dove è incompleto, e gli eventi inseriti a mano man mano che escono, perché sono pochi a settimana. La pipeline automatica la costruisci quando il sito ha utenti che la giustificano. Il rischio vero non è restare senza dati: è passare tre mesi a costruire un datamine e non arrivare mai alla parte che ti distingue.</p>
+        <div class="verdict"><b>Due regole da rispettare comunque:</b> conserva come chiave primaria <em>l'id del gioco</em> &mdash; lo schema lo fa già, e se adotti gli id di un dataset di terzi il giorno che passi al datamine non riconcili più niente. E marca ogni riga con <code>imported_from</code>, così quando la pipeline dall'APK arriva sai esattamente cosa sostituire.</div>
+      </div>
+    </div>
+
+    <div class="prose">
+      <p>Una nota che non è tecnica. Carte, art, nomi e testi sono materiale di Bandai Namco, Akatsuki, Toei e Shueisha. Tutti i siti esistenti lo usano e ci mettono un disclaimer: quello di dokkan.fyi è in fondo a ogni pagina, dice che il sito ha fine informativo e che l'autore non è affiliato a nessuna delle parti. Lo scenario peggiore realistico è una richiesta di rimozione, non una causa. Ma è una scelta tua, e va fatta sapendola.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Il disclaimer, come dokkan.fyi</h2>
+    <div class="prose">
+      <p>Va in fondo a ogni pagina, non nascosto in una pagina &ldquo;legal&rdquo; che nessuno apre. Questa è una bozza da far leggere a qualcuno che ne sappia, non un parere legale &mdash; io non sono in grado di darne uno.</p>
+    </div>
+    <div class="code-wrap">
+      <div class="code-head">Bozza per il footer</div>
+<pre><code>DRAGON BALL Z Dokkan Battle © BIRD STUDIO / SHUEISHA, TOEI ANIMATION
+© BANDAI NAMCO Entertainment Inc. — Sviluppato da Akatsuki Inc.
+
+Questo sito ha fine puramente informativo e non è affiliato, associato,
+autorizzato né approvato in alcun modo da BANDAI NAMCO Entertainment,
+Akatsuki, Toei Animation, Shueisha o Bird Studio. Nomi, immagini,
+personaggi e marchi citati appartengono ai rispettivi proprietari.
+
+Gli screenshot e i video sono collegati dagli utenti, restano dei
+rispettivi autori e sono ospitati su servizi terzi: questo sito non ne
+conserva copia e ne mostra soltanto il collegamento.
+
+Per richieste di rimozione: [contatto]</code></pre>
+    </div>
+    <div class="prose">
+      <p>Il terzo paragrafo esiste perché ora è vero, e non lo sarebbe stato ospitando i file: <b>la scelta di accettare solo link ti mette in una posizione migliore anche qui.</b> Non conservi copia di niente, quindi la richiesta di rimozione di un'immagine non è tecnicamente un tuo problema &mdash; è di chi la ospita. Resta comunque il buon senso di rimuovere un collegamento se qualcuno lo chiede.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Cosa resta aperto</h2>
+    <div class="open">
+      <div>
+        <h3>Quali lingue ha davvero Global</h3>
+        <p>Ho messo solo <span class="inline">en</span> per la Global, perché è quello di cui sono sicuro. Se il gioco ne pubblica altre, sono righe da aggiungere in <code>region_locale</code> e nient'altro &mdash; ma va confermato da te sul gioco, non tirato a indovinare da me.</p>
+      </div>
+      <div>
+        <h3>Il controllore dei link</h3>
+        <p>Lo schema ha la coda e le colonne; il job che la consuma va scritto. Le domande vere sono la frequenza, quante volte riprovare prima di dichiarare morto un link, e se avvisare l'autore o lasciarlo cadere in silenzio.</p>
+      </div>
+      <div>
+        <h3>Quali host accettare</h3>
+        <p><code>provider</code> è una colonna vuota finché non c'è la lista degli host ammessi e il riconoscimento dell'URL. Serve per incorporare il player di YouTube invece di un link nudo, e per rifiutare gli accorciatori, dove non si sa cosa ci sia dietro.</p>
+      </div>
+      <div>
+        <h3>Il conteggio dei clear per stage</h3>
+        <p>La query del meta scandisce tutti i clear di uno stage. A tre righe è istantanea, a cinquantamila no. Prima o poi diventa una tabella di aggregati tenuta da un trigger, come il punteggio &mdash; ma non prima che serva davvero.</p>
+      </div>
+    </div>
+  </section>
+
+</div>

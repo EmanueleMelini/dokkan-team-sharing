@@ -39,3 +39,16 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# cluster Postgres locale di sviluppo
+/db/.pgdata
+/db/.pgdata.log
+
+# cache dell'import dal wiki (8.8 MB, si riscarica con npm run db:fetch)
+/db/import/.cache
+
+# IDE
+/.idea
+
+# immagini scaricate (si riprendono con npm run db:assets)
+/public/assets

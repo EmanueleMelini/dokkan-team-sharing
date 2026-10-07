@@ -1,0 +1,16 @@
+-- =====================================================================
+--  Le Extreme Z-Battle non hanno difficolta': hanno livelli nemico.
+--
+--  Un evento normale e' "stage 3, difficolta' Ultra". Una EZA e' "livello
+--  27", e non esiste una difficolta' da scegliere: il livello sale e il
+--  boss diventa piu' duro. Ma il livello e' esattamente la cosa che uno
+--  chiude e di cui condivide il team, quindi deve poter essere il
+--  bersaglio di un clear — e un clear punta a stage_tier.
+--
+--  Quindi: livello -> stage (seq = il numero del livello), con una sola
+--  riga in stage_tier che porta questa difficolta'. Il valore dice "qui
+--  non ci sono difficolta', il numero dello stage E' il livello nemico".
+--
+--  Sono 152 eventi, e sono quelli per cui la community condivide piu'
+--  team: lasciarli fuori sarebbe stato il buco piu' grosso dell'import.
+alter type difficulty add value if not exists 'eza_level';

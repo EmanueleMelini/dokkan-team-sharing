@@ -1,26 +1,116 @@
 @import "tailwindcss";
 
+/*
+ * I cinque tipi di Dokkan sono la dimensione con cui si scorre il gioco:
+ * qui il colore è funzionale, non decorativo. Il resto della tavolozza
+ * resta neutro e volutamente spento, così i tipi restano l'unica cosa
+ * che salta all'occhio.
+ */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+  --sfondo: #f3f4f8;
+  --superficie: #ffffff;
+  --superficie-2: #e8eaf1;
+  --inchiostro: #15182c;
+  --testo: #343a56;
+  --tenue: #5f6685;        /* 5.1:1 su sfondo, 4.7:1 su superficie-2 */
+  --linea: #d6dae7;
+  --linea-forte: #a9b0c7;
+  --campo: #7f869e;        /* bordo dei campi: 3.3:1 sullo sfondo (1.4.11) */
+  --oro: #855a17;          /* 5.5:1 su sfondo, 5.2:1 su oro-tenue */
+  --oro-linea: #d3ac5c;
+  --oro-tenue: #f7eed8;
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --agl: #2f6fc4;
+  --teq: #2e7d5b;
+  --int: #6b4b9e;
+  --str: #b03a2e;
+  --phy: #a85414;          /* 5.3:1 su superficie, dove sta l'etichetta del tipo */
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --sfondo: #0f111d;
+    --superficie: #171a2a;
+    --superficie-2: #1f2335;
+    --inchiostro: #eceef7;
+    --testo: #c6cbdf;
+    --tenue: #8b93b1;
+    --linea: #2a2f47;
+    --linea-forte: #4a5171;
+    --campo: #6a7294;
+    --oro: #e2b667;
+    --oro-linea: #7e6224;
+    --oro-tenue: #2a2311;
+
+    --agl: #6fa8e8;
+    --teq: #5fc79a;
+    --int: #a98bdb;
+    --str: #e8836f;
+    --phy: #e0a651;
   }
 }
 
+@theme inline {
+  --color-sfondo: var(--sfondo);
+  --color-superficie: var(--superficie);
+  --color-superficie-2: var(--superficie-2);
+  --color-inchiostro: var(--inchiostro);
+  --color-testo: var(--testo);
+  --color-tenue: var(--tenue);
+  --color-linea: var(--linea);
+  --color-linea-forte: var(--linea-forte);
+  --color-campo: var(--campo);
+  --color-oro: var(--oro);
+  --color-oro-linea: var(--oro-linea);
+  --color-oro-tenue: var(--oro-tenue);
+
+  --color-agl: var(--agl);
+  --color-teq: var(--teq);
+  --color-int: var(--int);
+  --color-str: var(--str);
+  --color-phy: var(--phy);
+
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--sfondo);
+  color: var(--testo);
+  -webkit-font-smoothing: antialiased;
+}
+
+/*
+ * Shape Consistency Lock: un solo raggio su tutta l'applicazione.
+ * Contenitori, controlli e immagini usano --raggio. Le righe dense non
+ * sono scatole: sono separate da linee, quindi niente raggio.
+ */
+:root { --raggio: 0.375rem; color-scheme: light dark; }
+
+/*
+ * Un solo indicatore di focus per tutta l'applicazione, al posto degli
+ * anelli dorati semitrasparenti che stavano sotto 3:1 (WCAG 2.4.7, 1.4.11).
+ * L'oro pieno è 5.5:1 sullo sfondo chiaro e 9.9:1 su quello scuro.
+ * focus-visible e non focus: il click col mouse non lo accende.
+ */
+:focus-visible {
+  outline: 2px solid var(--oro);
+  outline-offset: 2px;
+}
+
+/*
+ * VISUAL_DENSITY 7: i numeri sono dati da confrontare in colonna, quindi
+ * monospaziati e incolonnati.
+ */
+.numeri {
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+/* MOTION_INTENSITY 2: solo stati, nessuna animazione decorativa. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }

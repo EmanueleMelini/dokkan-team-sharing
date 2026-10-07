@@ -1,0 +1,468 @@
+<title>Dokkan: chi copre cosa</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chivo:wght@400;600;700;900&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --ground:#F1F3F9;
+    --surface:#FFFFFF;
+    --surface-2:#E6E9F2;
+    --ink:#141830;
+    --ink-2:#39406040;
+    --body:#2E3450;
+    --muted:#6A7290;
+    --line:#D2D7E6;
+    --line-strong:#A6AEC7;
+    --fill:#272E54;
+    --gold:#96651A;
+    --gold-line:#D3AC5C;
+    --gold-soft:#F7EED8;
+    --focus:#3C64C8;
+
+    --sans:"Chivo","Helvetica Neue",Arial,sans-serif;
+    --serif:"Source Serif 4",Georgia,"Times New Roman",serif;
+    --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground:#0F111D;
+      --surface:#171A2A;
+      --surface-2:#1E2235;
+      --ink:#ECEEF7;
+      --body:#C6CBDF;
+      --muted:#8B93B1;
+      --line:#2A2F47;
+      --line-strong:#4A5171;
+      --fill:#C3C9E3;
+      --gold:#E2B667;
+      --gold-line:#7E6224;
+      --gold-soft:#2A2311;
+      --focus:#8AA6EE;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground:#0F111D;
+    --surface:#171A2A;
+    --surface-2:#1E2235;
+    --ink:#ECEEF7;
+    --body:#C6CBDF;
+    --muted:#8B93B1;
+    --line:#2A2F47;
+    --line-strong:#4A5171;
+    --fill:#C3C9E3;
+    --gold:#E2B667;
+    --gold-line:#7E6224;
+    --gold-soft:#2A2311;
+    --focus:#8AA6EE;
+  }
+
+  *,*::before,*::after { box-sizing:border-box; }
+  body {
+    background:var(--ground);
+    color:var(--body);
+    font-family:var(--serif);
+    font-size:17px;
+    line-height:1.62;
+    -webkit-font-smoothing:antialiased;
+  }
+  .page {
+    max-width:1140px;
+    margin:0 auto;
+    padding:56px 28px 96px;
+    display:flex;
+    flex-direction:column;
+    gap:64px;
+  }
+  a { color:inherit; text-decoration:underline; text-decoration-color:var(--gold-line); text-underline-offset:2px; }
+  a:focus-visible, th:focus-visible { outline:2px solid var(--focus); outline-offset:2px; }
+
+  /* ---------- masthead ---------- */
+  .masthead { display:flex; flex-direction:column; gap:20px; }
+  .eyebrow {
+    font-family:var(--mono); font-size:11.5px; font-weight:500;
+    letter-spacing:.14em; text-transform:uppercase; color:var(--gold);
+  }
+  h1 {
+    font-family:var(--sans); font-weight:900; font-size:clamp(38px,6vw,62px);
+    line-height:.98; letter-spacing:-.025em; color:var(--ink);
+    margin:0; text-wrap:balance;
+  }
+  .dek { max-width:63ch; font-size:19.5px; color:var(--body); margin:0; text-wrap:pretty; }
+  .dek strong { font-weight:600; color:var(--ink); }
+  .meta {
+    display:flex; flex-wrap:wrap; gap:0 26px;
+    font-family:var(--mono); font-size:11.5px; letter-spacing:.05em;
+    text-transform:uppercase; color:var(--muted);
+    border-top:1px solid var(--line); padding-top:14px;
+  }
+  .meta b { color:var(--ink); font-weight:600; }
+
+  /* ---------- section frame ---------- */
+  section { display:flex; flex-direction:column; gap:22px; }
+  h2 {
+    font-family:var(--sans); font-weight:700; font-size:24px; letter-spacing:-.015em;
+    color:var(--ink); margin:0; padding-bottom:10px;
+    border-bottom:2px solid var(--gold-line);
+  }
+  .lede { max-width:63ch; margin:0; }
+  p { margin:0; }
+  .prose { display:flex; flex-direction:column; gap:16px; max-width:63ch; }
+
+  /* ---------- legend ---------- */
+  .legend {
+    display:grid; grid-template-columns:repeat(auto-fit,minmax(228px,1fr));
+    gap:10px 26px;
+    background:var(--surface); border:1px solid var(--line);
+    padding:18px 20px;
+  }
+  .legend-item { display:flex; align-items:baseline; gap:10px; font-size:14.5px; }
+  .legend-item .m { flex:none; transform:translateY(2px); }
+  .legend-item span b { font-family:var(--sans); font-weight:600; color:var(--ink); font-size:13.5px; }
+  .swatch {
+    flex:none; width:13px; height:13px; transform:translateY(2px);
+    background:var(--gold-soft); border-left:3px solid var(--gold-line);
+  }
+  .legend-note {
+    grid-column:1/-1; border-top:1px solid var(--line); padding-top:12px;
+    font-size:14.5px; color:var(--muted); max-width:80ch;
+  }
+
+  /* ---------- marks ---------- */
+  .m { display:inline-block; width:13px; height:13px; border-radius:50%; }
+  .m--full { background:var(--fill); }
+  .m--half { border:1.5px solid var(--fill); background:linear-gradient(90deg,var(--fill) 50%,transparent 50%); }
+  .m--none { border:1.5px solid var(--line-strong); }
+  .m--nv   { border:1.5px dashed var(--line-strong); }
+  .sr { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
+
+  /* ---------- matrix ---------- */
+  .scroller { overflow-x:auto; border:1px solid var(--line); background:var(--surface); }
+  table { border-collapse:separate; border-spacing:0; min-width:860px; width:100%; font-family:var(--sans); }
+  thead th {
+    position:sticky; top:0; z-index:3;
+    background:var(--surface-2); color:var(--ink);
+    font-family:var(--mono); font-size:11px; font-weight:600;
+    letter-spacing:.03em; text-align:center;
+    padding:14px 8px; border-bottom:1px solid var(--line-strong);
+    white-space:nowrap;
+  }
+  thead th.corner { z-index:4; left:0; text-align:left; padding-left:18px; width:280px; min-width:280px; }
+  thead th .unstruct { display:block; font-weight:400; font-size:9.5px; letter-spacing:.06em; color:var(--muted); text-transform:uppercase; margin-top:3px; }
+  thead th .spacer { display:block; height:12.5px; margin-top:3px; }
+
+  tbody th.rowhead {
+    position:sticky; left:0; z-index:2;
+    background:var(--surface); text-align:left; font-weight:400;
+    font-family:var(--serif); font-size:15.5px; line-height:1.32;
+    color:var(--ink); padding:11px 20px 11px 18px;
+    width:280px; min-width:280px;
+    border-bottom:1px solid var(--line);
+    box-shadow:1px 0 0 var(--line);
+  }
+  tbody td {
+    text-align:center; padding:11px 8px; border-bottom:1px solid var(--line);
+    line-height:1;
+  }
+  tbody tr:last-child th.rowhead, tbody tr:last-child td { border-bottom:none; }
+
+  tr.band th {
+    position:sticky; left:0; z-index:2;
+    background:var(--surface-2); color:var(--ink);
+    font-family:var(--mono); font-size:10.5px; font-weight:600;
+    letter-spacing:.13em; text-transform:uppercase; text-align:left;
+    padding:9px 18px; border-top:1px solid var(--line-strong);
+    border-bottom:1px solid var(--line-strong);
+    box-shadow:none;
+  }
+  tr.band th .count { color:var(--muted); font-weight:400; letter-spacing:.04em; text-transform:none; margin-left:8px; }
+
+  tr.gap th.rowhead, tr.gap td { background:var(--gold-soft); }
+  tr.gap th.rowhead { border-left:3px solid var(--gold-line); padding-left:15px; }
+  .tag {
+    display:inline-block; margin-left:8px; vertical-align:1px;
+    font-family:var(--mono); font-size:9px; font-weight:600;
+    letter-spacing:.1em; text-transform:uppercase;
+    color:var(--gold); border:1px solid var(--gold-line);
+    padding:1px 5px; white-space:nowrap;
+  }
+  .hint { font-family:var(--mono); font-size:11.5px; color:var(--muted); letter-spacing:.03em; }
+
+  /* ---------- queries ---------- */
+  .queries { display:flex; flex-direction:column; gap:0; border-top:1px solid var(--line); max-width:76ch; }
+  .queries li { list-style:none; border-bottom:1px solid var(--line); padding:13px 0 13px 30px; position:relative; font-size:16px; }
+  .queries li::before {
+    content:"?"; position:absolute; left:0; top:13px;
+    font-family:var(--mono); font-weight:600; font-size:14px; color:var(--gold);
+  }
+  ul.queries { margin:0; padding:0; }
+
+  /* ---------- risks ---------- */
+  .risks { display:grid; grid-template-columns:repeat(auto-fit,minmax(272px,1fr)); gap:1px; background:var(--line); border:1px solid var(--line); }
+  .risk { background:var(--surface); padding:20px 22px 24px; display:flex; flex-direction:column; gap:9px; }
+  .risk h3 {
+    font-family:var(--sans); font-weight:700; font-size:16px; letter-spacing:-.005em;
+    color:var(--ink); margin:0;
+  }
+  .risk p { font-size:15.5px; }
+
+  /* ---------- method ---------- */
+  .method { font-family:var(--mono); font-size:13px; line-height:1.62; color:var(--muted); max-width:88ch; display:flex; flex-direction:column; gap:11px; }
+  .method b { color:var(--ink); font-weight:600; }
+  .method .row { padding-left:16px; text-indent:-16px; }
+
+  @media (max-width:640px) {
+    body { font-size:16px; }
+    .page { padding:40px 18px 72px; gap:52px; }
+    .legend { padding:16px; }
+  }
+  @media (prefers-reduced-motion:reduce) { * { animation:none !important; transition:none !important; } }
+</style>
+
+<div class="page">
+
+  <header class="masthead">
+    <div class="eyebrow">Analisi competitiva &middot; 8 settembre 2026</div>
+    <h1>Dokkan: chi copre cosa</h1>
+    <p class="dek">Quindici funzioni contro sette fonti. Il database eventi e il team builder sono territorio occupato e presidiato bene. <strong>L'aggancio fra un clear e l'evento che ha chiuso non ce l'ha nessuno</strong> &mdash; ed è lì che sta il sito.</p>
+    <div class="meta">
+      <span><b>15</b> funzioni</span>
+      <span><b>7</b> fonti</span>
+      <span><b>6</b> spazi liberi</span>
+      <span>verifica: browser diretto, senza login</span>
+    </div>
+  </header>
+
+  <section>
+    <h2>La matrice</h2>
+
+    <div class="legend">
+      <div class="legend-item"><span class="m m--full"></span><span><b>Pieno</b> &mdash; c'è, nella sua forma completa</span></div>
+      <div class="legend-item"><span class="m m--half"></span><span><b>Parziale</b> &mdash; ridotto, o presente come testo e non come dato</span></div>
+      <div class="legend-item"><span class="m m--none"></span><span><b>Assente</b> &mdash; non c'è</span></div>
+      <div class="legend-item"><span class="m m--nv"></span><span><b>Non verificato</b> &mdash; dietro login, o fonte non ispezionata</span></div>
+      <div class="legend-item"><span class="swatch"></span><span><b>Spazio libero</b> &mdash; riga che nessuna fonte presidia in forma strutturata</span></div>
+      <p class="legend-note">Su Reddit e YouTube quasi tutto esiste già, ma come prosa e video: leggibile da una persona, non interrogabile da una query. Per questo quella colonna è quasi tutta parziale &mdash; è la distinzione su cui poggia l'intero progetto.</p>
+    </div>
+
+    <div class="scroller">
+      <table>
+        <thead>
+          <tr>
+            <th class="corner" scope="col">Funzione<span class="spacer"></span></th>
+            <th scope="col">dokkaninfo<span class="spacer"></span></th>
+            <th scope="col">dokkanstats<span class="spacer"></span></th>
+            <th scope="col">dokkan.fyi<span class="spacer"></span></th>
+            <th scope="col">dokkandb<span class="spacer"></span></th>
+            <th scope="col">dbz.space<span class="spacer"></span></th>
+            <th scope="col">Fandom<span class="spacer"></span></th>
+            <th scope="col">Reddit + YT<span class="unstruct">non strutturato</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="band"><th colspan="8" scope="colgroup">Dati evento<span class="count">territorio occupato</span></th></tr>
+
+          <tr>
+            <th class="rowhead" scope="row">Lista eventi con stato attivo o passato</th>
+            <td><span class="m m--full"></span><span class="sr">Pieno</span></td>
+            <td><span class="m m--full"></span><span class="sr">Pieno</span></td>
+            <td><span class="m m--full"></span><span class="sr">Pieno</span></td>
+            <td><span class="m m--full"></span><span class="sr">Pieno</span></td>
+            <td><span class="m m--full"></span><span class="sr">Pieno</span></td>
+            <td><span class="m m--half"></span><span class="sr">Parziale</span></td>
+            <td><span class="m m--none"></span><span class="sr">Assente</span></td>
+          </tr>
+          <tr>
+            <th class="rowhead" scope="row">Calendario degli eventi futuri</th>
+            <td><span class="m m--full"></span><span class="sr">Pieno</span></td>
+            <td><span class="m m--nv"></span><span class="sr">Non verificato</span></td>
+            <td><span class="m m--half"></span><span class="sr">Parziale</span></td>
+            <td><span class="m m--half"></span><span class="sr">Parziale</span></td>
+            <td><span class="m m--nv"></span><span class="sr">Non verificato</span></td>
+            <td><span class="m m--none"></span><span class="sr">Assente</span></td>
+            <td><span class="m m--half"></span><span class="sr">Parziale</span></td>
+          </tr>
+          <tr>
+            <th class="rowhead" scope="row">Missioni elencate per evento</th>
+            <td><span class="m m--nv"></span><span class="sr">Non verificato</span></td>
+            <td><span class="m m--full"></span><span class="sr">Pieno</span></td>
+            <td><span class="m m--full"></span><span class="sr">Pieno</span></td>
+            <td><span class="m m--full"></span><span class="sr">Pieno</span></td>
+            <td><span class="m m--nv"></span><span class="sr">Non verificato</span></td>
+            <td><span class="m m--half"></span><span class="sr">Parziale</span></td>
+            <td><span class="m m--none"></span><span class="sr">Assente</span></td>
+          </tr>
+          <tr>
+            <th class="rowhead" scope="row">Dati ufficiali di stage e boss <span class="hint">STA, drop, LL rate</span></th>
+            <td><span class="m m--full"></span><span class="sr">Pieno</span></td>
+            <td><span class="m m--full"></span><span class="sr">Pieno</span></td>
+            <td><span class="m m--full"></span><span class="sr">Pieno</span></td>
+            <td><span class="m m--nv"></span><span class="sr">Non verificato</span></td>
+            <td><span class="m m--half"></span><span class="sr">Parziale</span></td>
+            <td><span class="m m--full"></span><span class="sr">Pieno</span></td>
+            <td><span class="m m--none"></span><span class="sr">Assente</span></td>
+          </tr>
+          <tr class="gap">
+            <th class="rowhead" scope="row">Tips della community accanto alla descrizione ufficiale <span class="tag">spazio libero</span></th>
+            <td><span class="m m--none"></span><span class="sr">Assente</span></td>
+            <td><span class="m m--none"></span><span class="sr">Assente</span></td>
+            <td><span class="m m--none"></span><span class="sr">Assente</span></td>
+            <td><span class="m m--none"></span><span class="sr">Assente</span></td>
+            <td><span class="m m--none"></span><span class="sr">Assente</span></td>
+            <td><span class="m m--half"></span><span class="sr">Parziale</span></td>
+            <td><span class="m m--half"></span><span class="sr">Parziale</span></td>
+          </tr>
+
+          <tr class="band"><th colspan="8" scope="colgroup">Team building<span class="count">occupato, ma superficiale sulle build</span></th></tr>
+
+          <tr>
+            <th class="rowhead" scope="row">Team builder a 6 con filtri</th>
+            <td><span class="m m--none"></span><span class="sr">Assente</span></td>
+            <td><span class="m m--full"></span><span class="sr">Pieno</span></td>
+            <td><span class="m m--full"></span><span class="sr">Pieno</span></td>
+            <td><span class="m m--half"></span><span class="sr">Parziale</span></td>
+            <td><span class="m m--none"></span><span class="sr">Assente</span></td>
+            <td><span class="m m--none"></span><span class="sr">Assente</span></td>
+            <td><span class="m m--none"></span><span class="sr">Assente</span></td>
+          </tr>
+          <tr>
+            <th class="rowhead" scope="row">Link skill e synergy calcolate</th>
+            <td><span class="m m--none"></span><span class="sr">Assente</span></td>
+            <td><span class="m m--full"></span><span class="sr">Pieno</span></td>
+            <td><span class="m m--full"></span><span class="sr">Pieno</span></td>
+            <td><span class="m m--none"></span><span class="sr">Assente</span></td>
+            <td><span class="m m--none"></span><span class="sr">Assente</span></td>
+            <td><span class="m m--none"></span><span class="sr">Assente</span></td>
+            <td><span class="m m--none"></span><span class="sr">Assente</span></td>
+          </tr>
+          <tr>
+            <th class="rowhead" scope="row">Squadra mostrata nella rotazione 2/2/3</th>
+            <td><span class="m m--none"></span><span class="sr">Assente</span></td>
+            <td><span class="m m--full"></span><span class="sr">Pieno</span></td>
+            <td><span class="m m--half"></span><span class="sr">Parziale</span></td>
+            <td><span class="m m--none"></span><span class="sr">Assente</span></td>
+            <td><span class="m m--none"></span><span class="sr">Assente</span></td>
+            <td><span class="m m--none"></span><span class="sr">Assente</span></td>
+            <td><span class="m m--none"></span><span class="sr">Assente</span></td>
+          </tr>
+          <tr class="gap">
+            <th class="rowhead" scope="row">Note sulla rotazione e cambi a metà evento <span class="tag">spazio libero</span></th>
+            <td><span class="m m--none"></span><span class="sr">Assente</span></td>
+            <td><span class="m m--none"></span><span class="sr">Assente</span></td>
+            <td><span class="m m--none"></span><span class="sr">Assente</span></td>
+            <td><span class="m m--none"></span><span class="sr">Assente</span></td>
+            <td><span class="m m--none"></span><span class="sr">Assente</span></td>
+            <td><span class="m m--none"></span><span class="sr">Assente</span></td>
+            <td><span class="m m--half"></span><span class="sr">Parziale</span></td>
+          </tr>
+          <tr class="gap">
+            <th class="rowhead" scope="row">Build del singolo pg dentro il team condiviso <span class="hint">hidden potential, skill orb, equipment</span> <span class="tag">spazio libero</span></th>
+            <td><span class="m m--half"></span><span class="sr">Parziale</span></td>
+            <td><span class="m m--nv"></span><span class="sr">Non verificato</span></td>
+            <td><span class="m m--nv"></span><span class="sr">Non verificato</span></td>
+            <td><span class="m m--none"></span><span class="sr">Assente</span></td>
+            <td><span class="m m--none"></span><span class="sr">Assente</span></td>
+            <td><span class="m m--half"></span><span class="sr">Parziale</span></td>
+            <td><span class="m m--half"></span><span class="sr">Parziale</span></td>
+          </tr>
+
+          <tr class="band"><th colspan="8" scope="colgroup">Clear della community<span class="count">quattro righe vuote su cinque</span></th></tr>
+
+          <tr>
+            <th class="rowhead" scope="row">Team pubblici sfogliabili</th>
+            <td><span class="m m--none"></span><span class="sr">Assente</span></td>
+            <td><span class="m m--full"></span><span class="sr">Pieno</span></td>
+            <td><span class="m m--half"></span><span class="sr">Parziale</span></td>
+            <td><span class="m m--none"></span><span class="sr">Assente</span></td>
+            <td><span class="m m--none"></span><span class="sr">Assente</span></td>
+            <td><span class="m m--none"></span><span class="sr">Assente</span></td>
+            <td><span class="m m--half"></span><span class="sr">Parziale</span></td>
+          </tr>
+          <tr>
+            <th class="rowhead" scope="row">Voti e classifica sui team</th>
+            <td><span class="m m--none"></span><span class="sr">Assente</span></td>
+            <td><span class="m m--full"></span><span class="sr">Pieno</span></td>
+            <td><span class="m m--half"></span><span class="sr">Parziale</span></td>
+            <td><span class="m m--none"></span><span class="sr">Assente</span></td>
+            <td><span class="m m--none"></span><span class="sr">Assente</span></td>
+            <td><span class="m m--none"></span><span class="sr">Assente</span></td>
+            <td><span class="m m--half"></span><span class="sr">Parziale</span></td>
+          </tr>
+          <tr class="gap">
+            <th class="rowhead" scope="row">Team agganciato all'evento come dato, non come titolo scritto a mano <span class="tag">spazio libero</span></th>
+            <td><span class="m m--none"></span><span class="sr">Assente</span></td>
+            <td><span class="m m--none"></span><span class="sr">Assente</span></td>
+            <td><span class="m m--none"></span><span class="sr">Assente</span></td>
+            <td><span class="m m--none"></span><span class="sr">Assente</span></td>
+            <td><span class="m m--none"></span><span class="sr">Assente</span></td>
+            <td><span class="m m--none"></span><span class="sr">Assente</span></td>
+            <td><span class="m m--half"></span><span class="sr">Parziale</span></td>
+          </tr>
+          <tr class="gap">
+            <th class="rowhead" scope="row">Ricerca e filtro dei team per evento <span class="tag">spazio libero</span></th>
+            <td><span class="m m--none"></span><span class="sr">Assente</span></td>
+            <td><span class="m m--none"></span><span class="sr">Assente</span></td>
+            <td><span class="m m--none"></span><span class="sr">Assente</span></td>
+            <td><span class="m m--none"></span><span class="sr">Assente</span></td>
+            <td><span class="m m--none"></span><span class="sr">Assente</span></td>
+            <td><span class="m m--none"></span><span class="sr">Assente</span></td>
+            <td><span class="m m--half"></span><span class="sr">Parziale</span></td>
+          </tr>
+          <tr class="gap">
+            <th class="rowhead" scope="row">Prova del clear allegata al team <span class="tag">spazio libero</span></th>
+            <td><span class="m m--none"></span><span class="sr">Assente</span></td>
+            <td><span class="m m--none"></span><span class="sr">Assente</span></td>
+            <td><span class="m m--none"></span><span class="sr">Assente</span></td>
+            <td><span class="m m--none"></span><span class="sr">Assente</span></td>
+            <td><span class="m m--none"></span><span class="sr">Assente</span></td>
+            <td><span class="m m--none"></span><span class="sr">Assente</span></td>
+            <td><span class="m m--half"></span><span class="sr">Parziale</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="hint">Scorri la tabella in orizzontale sugli schermi stretti. La colonna delle funzioni resta ferma.</p>
+  </section>
+
+  <section>
+    <h2>Il cuneo</h2>
+    <div class="prose">
+      <p>I sei spazi liberi non sono sei funzioni: sono una cosa sola vista da sei lati. Oggi un clear esiste come immagine dentro un post &mdash; una persona la guarda e capisce, una query non la vede. Il sito la trasforma in un record: evento, team, build, rotazione, prova.</p>
+      <p>Il confine è netto e vale la pena scriverlo una volta: <strong>Reddit ha il contenuto e non ha lo schema; dokkanstats ha lo schema e non ha l'evento.</strong> Su dokkanstats i team della community esistono davvero &mdash; 891 pagine, con voti &mdash; ma l'evento è solo testo che l'utente scrive nel titolo, e nei filtri non compare. La pagina di un evento, dall'altra parte, mostra stage e missioni e si ferma lì.</p>
+      <p>Sono queste le domande che oggi nessuna delle sette fonti sa reggere:</p>
+      <ul class="queries">
+        <li>Clear di questa Red Zone fatti <em>senza</em> le LR del banner in corso</li>
+        <li>Team Wicked Bloodline che hanno chiuso lo stage 3, ordinati per numero di clear</li>
+        <li>Chi ha cambiato rotazione a metà evento, e cosa ha swappato</li>
+        <li>Le build effettive &mdash; potential ed equipment &mdash; dei team che hanno funzionato, non quelle consigliate in teoria</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>Tre cose da decidere prima di scrivere codice</h2>
+    <div class="risks">
+      <div class="risk">
+        <h3>Partenza a freddo</h3>
+        <p>Apri con zero team da una parte e 891 pagine dall'altra. Il contenuto centrale è quello degli utenti, quindi il giorno uno il sito è vuoto esattamente dove dovrebbe essere pieno. Serve seeding a mano sugli eventi più cercati &mdash; le Red Zone e le SBR recenti &mdash; prima di aprire al pubblico.</p>
+      </div>
+      <div class="risk">
+        <h3>La prova è un segnale, non un verdetto</h3>
+        <p>Deciso: lo screenshot serve a chi guarda per fidarsi del team, come su Reddit. Ti risparmia moderazione e validazione, ma sposta il valore di posto. La prova conta perché è attaccata a un team leggibile dalla macchina: lo screenshot da solo è già su Reddit e non ti serve replicarlo.</p>
+      </div>
+      <div class="risk">
+        <h3>Da dove arrivano i dati</h3>
+        <p>Carte, eventi, missioni e art non sono tuoi. dokkaninfo vive di datamine e gli asset girano in repo pubblici. Import, scraping o inserimento a mano è una scelta da fare subito, perché fissa il costo di manutenzione a ogni update del gioco &mdash; ed è il costo che uccide questi siti.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Come è stato verificato</h2>
+    <div class="method">
+      <p class="row"><b>dokkanstats.com</b> &mdash; ispezionato nel browser: team browser, pagina eventi, pagina evento Super Warrior Memorial [Vegeta]. Il team browser mostra 891 pagine di team pubblici con autore, data, punteggio synergy e voti; i filtri sono Top / New / Synergy più include-exclude personaggio, nessun filtro evento. La pagina evento mostra solo le tab Stages e Missions con i dati di boss e stage.</p>
+      <p class="row"><b>dokkan.fyi</b> &mdash; ispezionato nel browser: home e team builder. Filtri su Skill Effects, Link Skills e Categories, un synergy grade calcolato, slot mostrati come Leader + 5 + Friend. Esiste una sezione Teams e un &ldquo;Popular team&rdquo; in home; il resto è dietro Sign In.</p>
+      <p class="row"><b>dokkaninfo.com</b> &mdash; ispezionata l'intera navigazione. Database e datamine puri: eventi per tipo, schedule, card, equipment, links. Nessuna funzione sociale, nessun builder.</p>
+      <p class="row"><b>dokkandb.com, dbz.space, Fandom wiki</b> &mdash; solo dai risultati di ricerca, non ispezionati direttamente. Le loro caselle tratteggiate sono questo.</p>
+      <p class="row"><b>Nessun login</b> &mdash; le funzioni riservate agli utenti registrati di dokkanstats e dokkan.fyi restano fuori dalla verifica. È la ragione delle due caselle tratteggiate sulla riga delle build: se lì esiste già un editor di potential ed equipment, quello spazio si restringe.</p>
+    </div>
+  </section>
+
+</div>

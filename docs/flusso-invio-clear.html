@@ -1,0 +1,482 @@
+<title>Invio di un clear</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chivo:wght@400;600;700;900&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --ground:#F1F3F9; --surface:#FFFFFF; --surface-2:#E6E9F2; --code:#FBFBFE;
+    --ink:#141830; --body:#2E3450; --muted:#6A7290;
+    --line:#D2D7E6; --line-strong:#A6AEC7;
+    --fill:#272E54; --gold:#96651A; --gold-line:#D3AC5C; --gold-soft:#F7EED8;
+    --ok:#2F6B4F; --bad:#9E3B2C; --focus:#3C64C8;
+    --sans:"Chivo","Helvetica Neue",Arial,sans-serif;
+    --serif:"Source Serif 4",Georgia,"Times New Roman",serif;
+    --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground:#0F111D; --surface:#171A2A; --surface-2:#1E2235; --code:#12141F;
+      --ink:#ECEEF7; --body:#C6CBDF; --muted:#8B93B1;
+      --line:#2A2F47; --line-strong:#4A5171;
+      --fill:#C3C9E3; --gold:#E2B667; --gold-line:#7E6224; --gold-soft:#2A2311;
+      --ok:#79C79B; --bad:#E58C78; --focus:#8AA6EE;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground:#0F111D; --surface:#171A2A; --surface-2:#1E2235; --code:#12141F;
+    --ink:#ECEEF7; --body:#C6CBDF; --muted:#8B93B1;
+    --line:#2A2F47; --line-strong:#4A5171;
+    --fill:#C3C9E3; --gold:#E2B667; --gold-line:#7E6224; --gold-soft:#2A2311;
+    --ok:#79C79B; --bad:#E58C78; --focus:#8AA6EE;
+  }
+
+  *,*::before,*::after { box-sizing:border-box; }
+  body {
+    background:var(--ground); color:var(--body);
+    font-family:var(--serif); font-size:17px; line-height:1.62;
+    -webkit-font-smoothing:antialiased;
+  }
+  .page { max-width:1080px; margin:0 auto; padding:56px 28px 96px; display:flex; flex-direction:column; gap:60px; }
+  a { color:inherit; text-decoration:underline; text-decoration-color:var(--gold-line); text-underline-offset:2px; }
+  a:focus-visible { outline:2px solid var(--focus); outline-offset:2px; }
+  p { margin:0; }
+
+  .eyebrow { font-family:var(--mono); font-size:11.5px; font-weight:500; letter-spacing:.14em; text-transform:uppercase; color:var(--gold); }
+  h1 { font-family:var(--sans); font-weight:900; font-size:clamp(38px,6vw,60px); line-height:.98; letter-spacing:-.025em; color:var(--ink); margin:0; text-wrap:balance; }
+  .masthead { display:flex; flex-direction:column; gap:20px; }
+  .dek { max-width:64ch; font-size:19.5px; margin:0; text-wrap:pretty; }
+  .dek strong { font-weight:600; color:var(--ink); }
+  .meta { display:flex; flex-wrap:wrap; gap:0 26px; font-family:var(--mono); font-size:11.5px; letter-spacing:.05em; text-transform:uppercase; color:var(--muted); border-top:1px solid var(--line); padding-top:14px; }
+  .meta b { color:var(--ink); font-weight:600; }
+
+  section { display:flex; flex-direction:column; gap:24px; }
+  h2 { font-family:var(--sans); font-weight:700; font-size:24px; letter-spacing:-.015em; color:var(--ink); margin:0; padding-bottom:10px; border-bottom:2px solid var(--gold-line); }
+  .prose { display:flex; flex-direction:column; gap:16px; max-width:64ch; }
+
+  /* decisioni */
+  .calls { display:flex; flex-direction:column; gap:0; border-top:1px solid var(--line); }
+  .call { display:grid; grid-template-columns:minmax(0,1fr); gap:7px; padding:20px 0; border-bottom:1px solid var(--line); }
+  .call h3 { font-family:var(--sans); font-weight:700; font-size:17px; color:var(--ink); margin:0; letter-spacing:-.005em; }
+  .call p { max-width:70ch; font-size:16px; }
+  .call code, .inline { font-family:var(--mono); font-size:.86em; background:var(--surface-2); padding:1px 5px; border-radius:2px; color:var(--ink); }
+  @media (min-width:820px) { .call { grid-template-columns:270px minmax(0,1fr); gap:8px 34px; } .call h3 { padding-top:1px; } }
+
+  /* figure */
+  figure { margin:0; display:flex; flex-direction:column; gap:12px; background:var(--surface); border:1px solid var(--line); padding:24px 22px 20px; }
+  figure svg { width:100%; max-width:100%; height:auto; color:var(--ink); display:block; }
+  figcaption { font-size:15px; color:var(--muted); max-width:78ch; }
+  figcaption b { color:var(--ink); font-weight:600; }
+  .dg-box { fill:var(--surface); stroke:currentColor; stroke-width:1.1; }
+  .dg-hub { fill:var(--gold-soft); stroke:var(--gold); stroke-width:2; }
+  .dg-out { fill:var(--surface); stroke:var(--gold); stroke-width:1.6; }
+  .dg-t  { font-family:"IBM Plex Mono",monospace; font-size:11px; font-weight:600; fill:currentColor; }
+  .dg-s  { font-family:"IBM Plex Mono",monospace; font-size:8.6px; fill:currentColor; opacity:.62; }
+  .dg-l  { font-family:"IBM Plex Mono",monospace; font-size:8.6px; fill:currentColor; opacity:.78; }
+  .dg-z  { font-family:"IBM Plex Mono",monospace; font-size:9px; letter-spacing:.1em; fill:currentColor; opacity:.55; }
+  .dg-a  { stroke:currentColor; stroke-width:1.1; fill:none; }
+  .dg-ag { stroke:var(--gold); stroke-width:1.4; fill:none; }
+  .dg-rule { stroke:currentColor; stroke-width:1; opacity:.28; }
+  .dg-mk-gold { fill:var(--gold); }
+  .dg-dash { stroke:var(--gold); stroke-width:1.2; stroke-dasharray:4 4; fill:none; }
+  .dg-bus  { stroke:currentColor; stroke-width:1.1; fill:none; opacity:.55; }
+
+  /* i cinque arricchimenti: qui il numero significa qualcosa */
+  .steps { display:flex; flex-direction:column; gap:0; border-top:1px solid var(--line); }
+  .step { display:grid; grid-template-columns:auto minmax(0,1fr); gap:0 18px; padding:17px 0; border-bottom:1px solid var(--line); align-items:baseline; }
+  .step .n { font-family:var(--mono); font-size:12px; font-weight:600; color:var(--gold); letter-spacing:.04em; min-width:2ch; }
+  .step .c { display:flex; flex-direction:column; gap:5px; }
+  .step h3 { font-family:var(--sans); font-weight:700; font-size:16px; color:var(--ink); margin:0; }
+  .step p { font-size:15.5px; max-width:74ch; }
+
+  /* codice */
+  .code-wrap { border:1px solid var(--line); background:var(--code); }
+  .code-head { font-family:var(--mono); font-size:10.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); padding:9px 16px; border-bottom:1px solid var(--line); background:var(--surface-2); }
+  pre { margin:0; overflow-x:auto; padding:16px; }
+  pre code { font-family:var(--mono); font-size:12.5px; line-height:1.62; color:var(--ink); white-space:pre; }
+
+  /* inventario tabelle */
+  .zone { display:flex; flex-direction:column; gap:0; }
+  .zone-head { font-family:var(--mono); font-size:10.5px; font-weight:600; letter-spacing:.13em; text-transform:uppercase; color:var(--ink); background:var(--surface-2); padding:10px 16px; border:1px solid var(--line-strong); border-bottom:none; }
+  .zone-head span { color:var(--muted); font-weight:400; letter-spacing:.04em; text-transform:none; margin-left:8px; }
+  .rows { border:1px solid var(--line); background:var(--surface); }
+  .row { display:grid; grid-template-columns:minmax(0,1fr); gap:2px; padding:11px 16px; border-bottom:1px solid var(--line); }
+  .row:last-child { border-bottom:none; }
+  .row .t { font-family:var(--mono); font-size:12.5px; font-weight:600; color:var(--ink); }
+  .row .d { font-size:15px; }
+  @media (min-width:760px) { .row { grid-template-columns:210px minmax(0,1fr); gap:0 24px; align-items:baseline; } }
+
+  /* tabella risultati */
+  .res-wrap { overflow-x:auto; border:1px solid var(--line); background:var(--surface); }
+  table.res { border-collapse:separate; border-spacing:0; width:100%; min-width:560px; font-family:var(--sans); font-size:14px; }
+  table.res th { background:var(--surface-2); color:var(--ink); font-family:var(--mono); font-size:10.5px; font-weight:600; letter-spacing:.05em; text-transform:uppercase; text-align:right; padding:11px 14px; border-bottom:1px solid var(--line-strong); white-space:nowrap; }
+  table.res th:first-child, table.res td:first-child { text-align:left; }
+  table.res td { text-align:right; padding:9px 14px; border-bottom:1px solid var(--line); font-variant-numeric:tabular-nums; }
+  table.res tr:last-child td { border-bottom:none; }
+  table.res td:first-child { font-family:var(--serif); font-size:15.5px; color:var(--ink); }
+
+  /* verifiche */
+  .checks { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:6px 26px; }
+  .chk { display:flex; gap:10px; align-items:baseline; font-size:15px; }
+  .chk .mk { font-family:var(--mono); font-size:10.5px; font-weight:600; letter-spacing:.06em; flex:none; }
+  .chk .mk.pass { color:var(--ok); }
+  .chk .mk.bad { color:var(--bad); }
+
+  .note { border-left:3px solid var(--gold-line); background:var(--gold-soft); padding:18px 20px; display:flex; flex-direction:column; gap:10px; }
+  .note h3 { font-family:var(--sans); font-weight:700; font-size:16px; color:var(--ink); margin:0; }
+  .note p { font-size:16px; max-width:72ch; }
+  .note code { font-family:var(--mono); font-size:.86em; color:var(--ink); }
+
+  .opts { display:flex; flex-direction:column; gap:1px; background:var(--line); border:1px solid var(--line); }
+  .opt { background:var(--surface); padding:18px 20px; display:flex; flex-direction:column; gap:7px; }
+  .opt.pick { background:var(--gold-soft); border-left:3px solid var(--gold-line); padding-left:17px; }
+  .opt h3 { font-family:var(--sans); font-weight:700; font-size:16px; color:var(--ink); margin:0; }
+  .opt p { font-size:15.5px; max-width:76ch; }
+  .opt .verdict { font-family:var(--mono); font-size:11px; letter-spacing:.05em; color:var(--muted); }
+  .opt .verdict b { color:var(--ink); font-weight:600; }
+  .tag-pick { display:inline-block; margin-left:9px; vertical-align:2px; font-family:var(--mono); font-size:9px; font-weight:600; letter-spacing:.1em; text-transform:uppercase; color:var(--gold); border:1px solid var(--gold-line); padding:1px 5px; }
+  .open { display:grid; grid-template-columns:repeat(auto-fit,minmax(268px,1fr)); gap:1px; background:var(--line); border:1px solid var(--line); }
+  .open > div { background:var(--surface); padding:19px 21px 22px; display:flex; flex-direction:column; gap:8px; }
+  .open h3 { font-family:var(--sans); font-weight:700; font-size:15.5px; color:var(--ink); margin:0; }
+  .open p { font-size:15px; }
+
+  @media (max-width:640px) { body { font-size:16px; } .page { padding:40px 18px 72px; gap:48px; } figure { padding:18px 14px 16px; } }
+  @media (prefers-reduced-motion:reduce) { * { animation:none !important; transition:none !important; } }
+</style>
+<div class="page">
+
+  <header class="masthead">
+    <div class="eyebrow">Flusso di invio &middot; 10 settembre 2026</div>
+    <h1>Invio di un clear</h1>
+    <p class="dek">Un clear è versionato, e <strong>voti e commenti stanno sulla versione, non sul clear.</strong> È il perno di tutto: correggere non porta con sé i voti che avevi preso, e non li cancella. Se la prima versione ne aveva cinquecento, restano lì, e chi legge vede che non sono quelli della versione che ha davanti.</p>
+    <div class="meta">
+      <span><b>3</b> livelli</span>
+      <span><b>9</b> funzioni</span>
+      <span><b>4</b> trigger</span>
+      <span><b>67</b> controlli verdi</span>
+      <span>Postgres 15</span>
+    </div>
+  </header>
+
+  <section>
+    <h2>Tre livelli, tre regole</h2>
+    <div class="prose">
+      <p>Le due versioni precedenti di questo flusso sbagliavano in direzioni opposte. Quella modificabile lasciava riscrivere un clear sotto i voti che aveva già preso. Quella immutabile costringeva a cancellare per correggere, e cancellare azzerava i voti negativi &mdash; un buco che potevo solo registrare, non chiudere.</p>
+      <p>Il versionamento li risolve entrambi, perché sposta il bersaglio del voto.</p>
+    </div>
+
+    <div class="calls">
+      <div class="call">
+        <h3><span class="inline">clear</span> &mdash; l'intestazione</h3>
+        <p>Chi, quale stage, quale difficoltà, quale ricorrenza. <b>Non cambia mai.</b> Se hai sbagliato la difficoltà non stai correggendo: stai affermando un'altra cosa, ed è un altro clear. Un trigger rifiuta ogni modifica a queste colonne.</p>
+      </div>
+      <div class="call">
+        <h3><span class="inline">clear_version</span> &mdash; come l'hai chiuso</h3>
+        <p>Assetto, item, morti, turni, nota. <b>Una versione, creata, non si tocca più.</b> Correggere significa crearne un'altra, con l'obbligo di dire perché: <code>change_note</code> non può essere vuota, altrimenti la storia è illeggibile. Una sola versione per volta è corrente, e lo impone un indice unico parziale.</p>
+      </div>
+      <div class="call">
+        <h3>Voti e commenti &mdash; sulla versione</h3>
+        <p>Qui sta tutto. <b>Un voto è il giudizio su un assetto preciso</b>, non su un identificatore. Quando l'autore corregge, i voti vecchi non seguono la correzione e non svaniscono: restano attaccati alla versione che li ha ricevuti, e la nuova parte da zero. Cancellare per ripulire i voti negativi non serve più a niente, perché correggere non li tocca comunque.</p>
+      </div>
+    </div>
+
+    <figure>
+      <svg viewBox="0 0 880 280" role="img" aria-label="Un'intestazione clear immutabile genera due versioni: la prima, non più corrente, conserva i suoi dodici voti e il suo commento; la seconda, corrente, parte da zero. I voti non attraversano la freccia della revisione.">
+        <defs>
+          <marker id="v1a" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="8" markerHeight="7" orient="auto-start-reverse">
+            <polygon points="0,0 10,4 0,8" fill="currentColor"></polygon>
+          </marker>
+          <marker id="v1g" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="8" markerHeight="7" orient="auto-start-reverse">
+            <polygon points="0,0 10,4 0,8" class="dg-mk-gold"></polygon>
+          </marker>
+        </defs>
+
+        <rect class="dg-box" x="290" y="20" width="300" height="46"></rect>
+        <text class="dg-t" x="440" y="41" text-anchor="middle">clear &mdash; l'intestazione</text>
+        <text class="dg-s" x="440" y="55" text-anchor="middle">chi, quale stage, quale difficoltà &mdash; mai</text>
+
+        <polyline class="dg-a" points="440,66 440,96 205,96"></polyline>
+        <polyline class="dg-a" points="440,96 675,96"></polyline>
+        <line class="dg-a" x1="205" y1="96" x2="205" y2="114" marker-end="url(#v1a)"></line>
+        <line class="dg-a" x1="675" y1="96" x2="675" y2="114" marker-end="url(#v1a)"></line>
+
+        <rect class="dg-box" x="90"  y="120" width="230" height="50"></rect>
+        <text class="dg-t" x="205" y="142" text-anchor="middle">clear_version &middot; seq 1</text>
+        <text class="dg-s" x="205" y="157" text-anchor="middle">non più corrente</text>
+
+        <rect class="dg-hub" x="560" y="120" width="230" height="50"></rect>
+        <text class="dg-t" x="675" y="142" text-anchor="middle">clear_version &middot; seq 2</text>
+        <text class="dg-s" x="675" y="157" text-anchor="middle">corrente</text>
+
+        <line class="dg-ag" x1="324" y1="145" x2="554" y2="145" marker-end="url(#v1g)"></line>
+        <text class="dg-l" x="439" y="136" text-anchor="middle">revise_clear() &mdash; con il motivo</text>
+        <text class="dg-l" x="439" y="162" text-anchor="middle">i voti NON passano da qui</text>
+
+        <rect class="dg-box" x="90"  y="204" width="110" height="34"></rect>
+        <text class="dg-t" x="145" y="225" text-anchor="middle">12 voti</text>
+        <rect class="dg-box" x="210" y="204" width="110" height="34"></rect>
+        <text class="dg-t" x="265" y="225" text-anchor="middle">1 commento</text>
+        <line class="dg-a" x1="145" y1="204" x2="145" y2="176" marker-end="url(#v1a)"></line>
+        <line class="dg-a" x1="265" y1="204" x2="265" y2="176" marker-end="url(#v1a)"></line>
+
+        <rect class="dg-out" x="560" y="204" width="110" height="34"></rect>
+        <text class="dg-t" x="615" y="225" text-anchor="middle">0 voti</text>
+        <rect class="dg-out" x="680" y="204" width="110" height="34"></rect>
+        <text class="dg-t" x="735" y="225" text-anchor="middle">0 commenti</text>
+        <line class="dg-ag" x1="615" y1="204" x2="615" y2="176" marker-end="url(#v1g)"></line>
+        <line class="dg-ag" x1="735" y1="204" x2="735" y2="176" marker-end="url(#v1g)"></line>
+
+        <text class="dg-l" x="440" y="266" text-anchor="middle">il sito mostra: «0 voti su questa versione &middot; 12 in tutto su 2 versioni»</text>
+      </svg>
+      <figcaption>I numeri sono quelli reali della verifica. La versione 1 raccoglie dodici voti e un commento, l'autore corregge i turni, e <b>la versione 2 nasce con zero</b>. Niente è stato cancellato e niente è stato trasferito: le due versioni sono due cose distinte che la community ha giudicato separatamente, e la pagina lo dice.</figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2>Quale punteggio è &laquo;il&raquo; punteggio</h2>
+    <div class="prose">
+      <p>È la vera domanda dentro il modello versionato, e va decisa una volta perché tocca ogni ordinamento del sito. Se la versione 1 ha cinquecento voti e la 2 ne ha tre, quanto vale quel clear?</p>
+      <p><b>Sommarli è ingannevole:</b> mostrare 503 attribuisce alla versione che stai leggendo un consenso che non ha ricevuto. <b>Mostrare solo i tre è severo</b> ma è l'unica cifra onesta: è il giudizio su ciò che hai davanti.</p>
+      <p>La scelta implementata: <b>il punteggio è quello della versione corrente</b>, ed è la colonna su cui ordinano le classifiche. Il totale storico esiste accanto, come fatto visibile e separato &mdash; &ldquo;3 voti su questa versione, 503 in tutto su 2 versioni&rdquo;. La view <code>clear_reputation</code> restituisce entrambi più un flag <code>revised</code>, così l'interfaccia può mostrare il segno della revisione senza doverlo calcolare.</p>
+      <p>C'è un effetto collaterale da conoscere: <b>una correzione minima costa tutto il consenso accumulato.</b> Chi ha cinquecento voti penserà due volte prima di sistemare un dettaglio, e questo è un incentivo a lasciare gli errori dove sono. Se diventa un problema visibile, la mitigazione non è sommare i punteggi &mdash; è offrire una <em>errata</em> come commento dell'autore, evidenziata, che corregge senza creare una versione.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Cos'altro non è cambiato: l'invio resta corto</h2>
+    <div class="prose">
+      <p>Il rischio numero uno resta la partenza a freddo, e il flusso di invio resta quello: <b>due passi obbligatori.</b></p>
+      <p><b>Il primo non è un passo.</b> L'utente arriva da una pagina evento, dove ogni riga stage-difficoltà ha il suo &ldquo;ho chiuso questo&rdquo;. Quel tap decide evento, stage, difficoltà, ricorrenza e regione: la ricorrenza è quella attiva adesso nella regione del profilo. Un selettore serve solo a chi registra un clear vecchio, e sta dietro un &ldquo;non è di questa volta&rdquo;.</p>
+      <p><b>Il secondo è l'unico vero:</b> le sette unità. Un team salvato è un tap; costruirne uno nuovo è il grosso del tempo, e per la sua ricerca c'è l'indice trigram su <code>card_text</code>.</p>
+      <p>I dettagli &mdash; senza item, nessun KO, turni, nota &mdash; sono tre interruttori e una casella accanto al bottone. Ora che esiste la revisione non sarebbe un disastro raccoglierli dopo, ma restano lì per una ragione diversa: raccoglierli dopo vorrebbe dire creare una versione 2 per completare la 1, e la storia si riempirebbe di revisioni che non correggono niente.</p>
+      <p>Tre dettagli che valgono minuti risparmiati. La <b>rotazione non è un passo separato</b>: la forma 2+2+3 è implicita in dove metti le unità. Lo <b>slot friend si preseleziona uguale al leader</b>, il caso più comune e quello che si dimentica. Le <b>build stanno sul team</b>, non sul clear: si compilano con calma quando si vuole, e la prossima versione le fotograferà.</p>
+      <p>Serve un account, e questo mette una registrazione nel punto peggiore per la partenza a freddo. L'unica mitigazione che conta: <b>se un utente non autenticato compone un team e preme invia, la composizione non va persa.</b> Si tiene da parte, si chiede l'accesso, al ritorno la schermata è come l'aveva lasciata.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Il codice</h2>
+    <div class="prose">
+      <p>Due funzioni condivise fra invio e revisione, così le due strade non possono divergere: <code>assert_lineup_usable</code> verifica che l'assetto sia tuo e completo, <code>take_lineup_snapshot</code> lo fotografa. È la stessa query che alimenta <code>clear_card</code>, ed è per questo che le due scritture non possono raccontare cose diverse.</p>
+      <p>Un dettaglio che vale la pena vedere: sette righe bastano a dimostrare la forma 2+2+3. Il check su <code>lineup_slot</code> limita a 2+2+3 il massimo di posizioni possibili, quindi sette righe distinte non possono stare diversamente. Il controllo di completezza è un <span class="inline">count(*)</span>.</p>
+    </div>
+
+    <div class="code-wrap">
+      <div class="code-head">revise_clear &mdash; la versione nuova, e la vecchia che resta</div>
+<pre><code>create or replace function revise_clear(
+  p_author       uuid,
+  p_clear        uuid,
+  p_lineup       uuid,
+  p_change_note  text,          -- obbligatoria
+  p_no_items     boolean  default false,
+  p_deathless    boolean  default false,
+  p_turns        smallint default null,
+  p_note         text     default null,
+  p_lang         text     default null,
+  p_carry_proofs boolean  default true
+) returns uuid language plpgsql as $fn$
+declare
+  v_team uuid; v_old uuid; v_new uuid; v_seq smallint;
+begin
+  if p_change_note is null or btrim(p_change_note) = '' then
+    raise exception 'una revisione deve dire perché esiste' using errcode = '23514';
+  end if;
+
+  if not exists (select 1 from clear
+                  where id = p_clear and author_id = p_author) then
+    raise exception 'clear inesistente o non tuo' using errcode = '42501';
+  end if;
+
+  v_team := assert_lineup_usable(p_author, p_lineup);
+
+  select id, seq into v_old, v_seq
+  from clear_version where clear_id = p_clear and is_current;
+
+  -- prima si spegne la corrente, poi si accende la nuova: l'indice
+  -- unico parziale non tollera due correnti nemmeno per un istante
+  update clear_version set is_current = false where id = v_old;
+
+  insert into clear_version (clear_id, seq, lineup_snapshot, no_items,
+                             deathless, turns, note, lang, change_note, is_current)
+  values (p_clear, v_seq + 1, take_lineup_snapshot(p_lineup), p_no_items,
+          p_deathless, p_turns, p_note, p_lang, btrim(p_change_note), true)
+  returning id into v_new;
+
+  insert into clear_card (version_id, rotation_index, pos, card_id, role)
+  select v_new, ls.rotation_index, ls.pos, ls.card_id, ls.role
+  from lineup_slot ls where ls.lineup_id = p_lineup;
+
+  -- le prove documentano la partita, che non è cambiata: si portano
+  -- avanti. L'autore può togliere quelle sbagliate finché la versione
+  -- nuova non ha ancora preso voti.
+  if p_carry_proofs then
+    insert into clear_proof (version_id, kind, url, provider,
+                             last_checked_at, is_reachable)
+    select v_new, kind, url, provider, last_checked_at, is_reachable
+    from clear_proof where version_id = v_old;
+  end if;
+
+  update clear set team_id = v_team where id = p_clear;
+  return v_new;
+end $fn$;</code></pre>
+    </div>
+
+    <div class="code-wrap">
+      <div class="code-head">Il voto, che è sempre di una versione</div>
+<pre><code>-- Il voto è di una VERSIONE, non del clear: è il perno del modello.
+-- Un utente può votare due versioni diverse dello stesso clear, e non
+-- è un errore — sono due cose diverse che ha giudicato.
+create table clear_vote (
+  version_id  uuid not null references clear_version on delete cascade,
+  user_id     uuid not null references app_user on delete cascade,
+  value       smallint not null check (value in (-1, 1)),
+  voted_at    timestamptz not null default now(),
+  primary key (version_id, user_id)
+);
+
+create or replace function vote_clear(
+  p_user uuid, p_version uuid, p_value smallint
+) returns void language plpgsql as $fn$
+begin
+  if exists (select 1 from clear_version v join clear c on c.id = v.clear_id
+              where v.id = p_version and c.author_id = p_user) then
+    raise exception 'non si vota il proprio clear' using errcode = '42501';
+  end if;
+
+  insert into clear_vote (version_id, user_id, value)
+  values (p_version, p_user, p_value)
+  on conflict (version_id, user_id)
+    do update set value = excluded.value, voted_at = now();
+end $fn$;</code></pre>
+    </div>
+
+    <div class="code-wrap">
+      <div class="code-head">La reputazione: due cifre, tenute separate</div>
+<pre><code>create view clear_reputation as
+select
+  c.id as clear_id,
+  cur.seq            as current_seq,
+  cur.score          as current_score,   -- i voti della versione mostrata
+  agg.versions,
+  agg.lifetime_score,                    -- quelli di tutta la storia
+  agg.lifetime_votes,
+  (agg.versions &gt; 1) as revised
+from clear c
+join clear_version cur on cur.clear_id = c.id and cur.is_current
+join lateral (
+  select count(*) as versions,
+         coalesce(sum(v.score), 0) as lifetime_score,
+         (select count(*) from clear_vote vv
+           join clear_version v2 on v2.id = vv.version_id
+          where v2.clear_id = c.id) as lifetime_votes
+  from clear_version v where v.clear_id = c.id
+) agg on true;</code></pre>
+    </div>
+  </section>
+
+  <section>
+    <h2>I commenti, che ora servono per forza</h2>
+    <div class="prose">
+      <p>Con la nota congelata dentro la versione, commentare è l'unico modo di aggiungere qualcosa a un clear dopo. La tabella c'è, e il commento sta <b>sulla versione</b>: così resta attaccato a ciò di cui parlava. Se qualcuno chiede &ldquo;quale rotazione hai cambiato in fase 3?&rdquo; e poi l'autore rifà l'assetto, quella domanda non finisce sotto un assetto diverso a cui non si riferiva.</p>
+      <p>È anche la via d'uscita per l'effetto collaterale del punteggio: un'errata scritta dall'autore, evidenziata sotto la versione corrente, corregge un dettaglio senza costare i voti di una revisione.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Gli host delle prove sono una tabella, non un <span class="inline">if</span></h2>
+    <div class="prose">
+      <p>Tre politiche. <b>embed</b>: lo incorporiamo, quindi il player YouTube o l'immagine appaiono in pagina. <b>link</b>: collegamento e nient'altro. <b>refuse</b>: non lo accettiamo, e qui stanno gli accorciatori &mdash; dietro un <span class="inline">bit.ly</span> non si sa cosa ci sia, e lo si scopre quando è tardi. Un host non in tabella vale <b>link</b>: si accetta, non si incorpora, e accettarne uno nuovo è una riga e non un rilascio.</p>
+      <p>È anche una questione di privacy di chi legge, non solo di comodità: incorporare un'immagine da un dominio arbitrario fa partire una richiesta dal browser del lettore verso quel dominio.</p>
+    </div>
+    <div class="code-wrap">
+      <div class="code-head">proof_host, con le righe iniziali</div>
+<pre><code>create table proof_host (
+  host      text primary key,
+  provider  text,
+  policy    text not null check (policy in ('embed','link','refuse'))
+);
+
+insert into proof_host (host, provider, policy) values
+  ('youtube.com',     'youtube',    'embed'),
+  ('m.youtube.com',   'youtube',    'embed'),
+  ('youtu.be',        'youtube',    'embed'),
+  ('imgur.com',       'imgur',      'embed'),
+  ('i.imgur.com',     'imgur',      'embed'),
+  ('streamable.com',  'streamable', 'embed'),
+  ('i.redd.it',       'reddit',     'embed'),
+  ('preview.redd.it', 'reddit',     'embed'),
+  ('twitch.tv',       'twitch',     'link'),
+  ('drive.google.com','drive',      'link'),
+  -- accorciatori e host opachi: rifiutati
+  ('bit.ly',      null, 'refuse'),
+  ('tinyurl.com', null, 'refuse'),
+  ('t.co',        null, 'refuse'),
+  ('is.gd',       null, 'refuse'),
+  ('shorturl.at', null, 'refuse');</code></pre>
+    </div>
+  </section>
+
+  <section>
+    <h2>Verificato</h2>
+    <div class="prose">
+      <p>Sessantasette controlli su invio, revisione, voti e commenti, sopra i ventotto dello schema. Lo script è <span class="inline">check-submit.sh</span> e gira su un database appena costruito. La fixture stessa passa da <code>submit_clear()</code> e <code>vote_clear()</code> invece di inserire a mano: caricarla è già una prova.</p>
+    </div>
+    <div class="checks">
+      <div class="chk"><span class="mk pass">PASS</span><span>Invio &rarr; 1 intestazione, 1 versione <span class="inline">seq 1</span>, corrente, 7 righe</span></div>
+      <div class="chk"><span class="mk pass">PASS</span><span><b>Snapshot e righe della versione dicono la stessa cosa</b>, nei due versi</span></div>
+      <div class="chk"><span class="mk pass">PASS</span><span>La v1 raccoglie 12 voti e 1 commento</span></div>
+      <div class="chk"><span class="mk pass">PASS</span><span>Revisione &rarr; 2 versioni, <b>una sola corrente</b></span></div>
+      <div class="chk"><span class="mk pass">PASS</span><span><b>La v1 tiene i suoi 12 voti</b></span></div>
+      <div class="chk"><span class="mk pass">PASS</span><span><b>La v2 parte da zero</b></span></div>
+      <div class="chk"><span class="mk pass">PASS</span><span>Il commento resta sulla v1, la v2 non ne ha</span></div>
+      <div class="chk"><span class="mk pass">PASS</span><span>La reputazione dice: 0 su questa, 12 in tutto, 2 versioni</span></div>
+      <div class="chk"><span class="mk pass">PASS</span><span>Il motivo della revisione è registrato</span></div>
+      <div class="chk"><span class="mk pass">PASS</span><span>Le righe della v1 non entrano più nelle statistiche</span></div>
+      <div class="chk"><span class="mk pass">PASS</span><span>Modificare turni, snapshot, nota o motivo di una versione &rarr; rifiutato</span></div>
+      <div class="chk"><span class="mk pass">PASS</span><span>Modificare il numero di versione &rarr; rifiutato</span></div>
+      <div class="chk"><span class="mk pass">PASS</span><span>Modificare difficoltà o autore nell'intestazione &rarr; rifiutato</span></div>
+      <div class="chk"><span class="mk pass">PASS</span><span>&hellip; ma il trigger dei voti e la moderazione funzionano</span></div>
+      <div class="chk"><span class="mk pass">PASS</span><span>Forzare due versioni correnti &rarr; rifiutato dall'indice</span></div>
+      <div class="chk"><span class="mk pass">PASS</span><span>Revisione senza motivo &rarr; rifiutata</span></div>
+      <div class="chk"><span class="mk pass">PASS</span><span>Revisione del clear di un altro, o con assetto non tuo &rarr; rifiutata</span></div>
+      <div class="chk"><span class="mk pass">PASS</span><span>Assetto incompleto, 2 unità su 7 &rarr; rifiutato</span></div>
+      <div class="chk"><span class="mk pass">PASS</span><span>Ricorrenza non ancora iniziata &rarr; rifiutata</span></div>
+      <div class="chk"><span class="mk pass">PASS</span><span>Accorciatore <span class="inline">bit.ly</span> e URL non valido &rarr; rifiutati</span></div>
+      <div class="chk"><span class="mk pass">PASS</span><span>YouTube riconosciuto, host sconosciuto accettato senza embed</span></div>
+      <div class="chk"><span class="mk pass">PASS</span><span>Prova rimovibile finché nessuno ha votato, poi no</span></div>
+      <div class="chk"><span class="mk pass">PASS</span><span>Revisione &rarr; le 3 prove passano alla versione nuova</span></div>
+      <div class="chk"><span class="mk pass">PASS</span><span>Votare il proprio clear &rarr; rifiutato</span></div>
+      <div class="chk"><span class="mk pass">PASS</span><span>Rivotare aggiorna il voto, non lo duplica</span></div>
+      <div class="chk"><span class="mk pass">PASS</span><span>Cancellazione &rarr; versioni, righe, prove, voti e commenti in cascata</span></div>
+      <div class="chk"><span class="mk pass">PASS</span><span>Ogni versione del database ha 7 righe e 7 slot</span></div>
+      <div class="chk"><span class="mk pass">PASS</span><span>Ogni clear ha esattamente una versione corrente</span></div>
+      <div class="chk"><span class="mk pass">PASS</span><span>Nessun punteggio fuori sincrono, su nessuna versione</span></div>
+    </div>
+
+    <div class="note">
+      <h3>Cinque rossi in questa tornata, tutti nei test</h3>
+      <p>Due erano vecchie attese rimaste dalla versione precedente dello script. Uno era una lingua (<span class="inline">it</span>) che avevamo tolto seguendo il gioco, e la foreign key l'ha respinta correttamente. Gli ultimi due sono stati istruttivi: avevo usato come secondo assetto quello incompleto creato altrove nella suite, e un apostrofo dentro una stringa passata dalla shell spezzava l'SQL.</p>
+      <p>Vale la pena dirlo perché un test che passa per caso è peggio di nessun test: la cascata di quindici fallimenti da un solo assetto sbagliato è stata utile proprio perché rumorosa. Un'attesa silenziosamente sbagliata non lo sarebbe stata.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Cosa resta da decidere</h2>
+    <div class="open">
+      <div>
+        <h3>Il team builder</h3>
+        <p>È il grosso del lavoro di interfaccia che resta, ed è il collo di bottiglia del passo obbligatorio. Ricerca per nome, filtri per tipo, categoria e link, sette slot in pochi tap: se questa parte è lenta, il flusso non si completa comunque.</p>
+      </div>
+      <div>
+        <h3>Le versioni vecchie si vedono?</h3>
+        <p>Lo schema le conserva tutte. Resta da decidere se il lettore può aprirle &mdash; con i loro voti e commenti &mdash; o se vede solo la corrente più la riga della reputazione. Mostrarle è più onesto; nasconderle è più semplice.</p>
+      </div>
+      <div>
+        <h3>Un limite alle revisioni</h3>
+        <p>Niente impedisce trenta versioni dello stesso clear. Nessuna di esse ruba voti a nessuno, quindi non è un buco di sicurezza &mdash; è solo rumore nella storia. Un limite, o una finestra temporale entro cui si può rivedere, sono opzioni.</p>
+      </div>
+      <div>
+        <h3>Quanti clear per stage</h3>
+        <p>Ora che correggere è una revisione, inviare due clear diversi dello stesso stage significa davvero due tentativi distinti. Legittimo, ma senza limiti la classifica di uno stage si riempie di un solo autore.</p>
+      </div>
+    </div>
+  </section>
+
+</div>
