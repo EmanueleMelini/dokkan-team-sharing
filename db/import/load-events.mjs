@@ -28,6 +28,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import pg from 'pg'
 import { connectionString, describeTarget } from '../env.mjs'
+import { heldByGame } from './game-events/wiki-guard.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const CACHE = join(HERE, '.cache', 'wiki-events.json')
@@ -339,7 +340,21 @@ try {
     [events.map((x) => x.event.id)])
   const notWikiIds = new Set(notWiki.map((r) => Number(r.id)))
   for (const id of notWikiIds) console.log(`  salto ${id}: c'e' gia' un evento con questo id che non viene dal wiki`)
-  const load = events.filter((x) => !notWikiIds.has(x.event.id))
+  // Una pagina nuova per un evento che load-game-events ha gia' creato dal
+  // gioco non diventa un secondo evento: si salta, e lo si dice
+  // (game-events/wiki-guard.mjs). Si guardano solo le pagine nuove: quelle
+  // che ci sono gia' hanno il loro legame, e load-windows non lo cede.
+  const { rows: known } = await client.query('select id from event where id = any($1::bigint[])',
+    [events.map((x) => x.event.id)])
+  const knownIds = new Set(known.map((r) => Number(r.id)))
+  const { rows: held } = await client.query(`
+    select g.game_kind, g.game_id, g.event_id from event_game_ref g
+    join event e on e.id = g.event_id where e.imported_from = 'datamine'`)
+  const dup = heldByGame(events.filter((x) => !knownIds.has(x.event.id) && !notWikiIds.has(x.event.id)), raw.pages, held)
+  for (const [id, h] of dup) {
+    console.log(`  salto ${id} ${events.find((x) => x.event.id === id).event.wiki_title}: e' l'evento ${h.event_id}, gia' preso dal gioco (${h.game_kind} ${h.game_id})`)
+  }
+  const load = events.filter((x) => !notWikiIds.has(x.event.id) && !dup.has(x.event.id))
 
   const e = load.map((x) => x.event)
   await client.query(`

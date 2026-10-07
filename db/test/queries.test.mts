@@ -312,6 +312,46 @@ try {
             tutti.every((x, i) => i === 0 || tutti[i - 1].starts_at.getTime() >= x.starts_at.getTime()))
     })
 
+    await sezione('copertina e legami fra EZA e Super EZA', async () => {
+      // Il database di test non scarica le immagini: nessuna carta ha una
+      // miniatura, e null contro null passerebbe anche con il join rotto.
+      // Se ne da' una, finta, alla carta di copertina, e la si toglie dopo.
+      const [cop] = await righe<{ ev: string; card: string; thumb: string | null }>(`
+        select e.id::text as ev, c.id::text as card, c.thumb_key as thumb
+        from event e join card c on c.id = e.cover_card_id
+        where e.banner_key is null
+          and exists (select 1 from event_run r where r.event_id = e.id and r.reg = 'global')
+        order by e.id limit 1`)
+      if (check('c\'e\' un evento senza banner con una carta di copertina', !!cop)) {
+        const finta = `test/copertina-${cop.card}.webp`
+        await db.query(`insert into asset (key, kind, content_type, byte_size, checksum)
+                        values ($1, 'card_thumb', 'image/webp', 1, 'test') on conflict (key) do nothing`, [finta])
+        await db.query('update card set thumb_key = $1 where id = $2::bigint', [finta, cop.card])
+        try {
+          const det = await Q.getEvent(cop.ev, 'global')
+          check('getEvent: la miniatura della copertina', det?.cover_thumb_key === finta, `${det?.cover_thumb_key}`)
+          const nella = (await Q.listEvents({ reg: 'global', limit: GRANDE })).find((x) => x.id === cop.ev)
+          check('listEvents: la stessa miniatura', nella?.cover_thumb_key === finta, `${nella?.cover_thumb_key}`)
+        } finally {
+          await db.query('update card set thumb_key = $1 where id = $2::bigint', [cop.thumb, cop.card])
+          await db.query('delete from asset where key = $1', [finta])
+        }
+      }
+      const coppia = (await righe<{ sup: string; norm: string }>(`select r1.event_id::text as sup, r2.event_id::text as norm
+        from event_game_ref r1 join event_game_ref r2 on r2.game_kind = r1.game_kind and r2.game_id = r1.related_game_id
+        where r1.related_game_id is not null order by r1.event_id limit 1`))[0]
+      if (check('c\'e\' una Super EZA legata alla sua EZA normale', !!coppia)) {
+        const daSuper = await Q.getEzaLinks(coppia.sup)
+        check('dalla Super EZA si arriva alla normale', daSuper.normal?.id === coppia.norm && daSuper.supers.length === 0,
+              JSON.stringify(daSuper))
+        const daNormale = await Q.getEzaLinks(coppia.norm)
+        check('dalla normale si arriva alla Super', daNormale.normal === null && daNormale.supers.some((x) => x.id === coppia.sup),
+              JSON.stringify(daNormale))
+      }
+      const qualunque = await Q.getEzaLinks(T.ricerca)
+      check('un evento qualsiasi non ha legami', qualunque.normal === null && qualunque.supers.length === 0)
+    })
+
     await sezione('quale ricorrenza rappresenta l\'evento', async () => {
       const attiva = await valore<Date>(`select starts_at from event_run where event_id = 5001 and reg = 'japan'
                                            and starts_at <= now() and (ends_at is null or ends_at > now())`)

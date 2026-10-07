@@ -34,6 +34,11 @@ const TABLES = [
   // la conferma "stesso boss" per gli eventi normali.
   'area_tabs', 'z_battle_stage_views', 'z_battle_enemies',
   'z_battle_enemy_card_escalations', 'sugoroku_maps', 'sugoroku_map_enemy_informations',
+  // per gli eventi che il wiki non documenta (load-game-events): le abilita'
+  // dei boss (riduzione danni, immunita'), come crescono livello per livello
+  // nelle EZA, quanti livelli ha un'EZA e la stamina dei checkpoint
+  'enemy_skills', 'z_battle_enemy_skill_escalations', 'z_battle_first_reward_level_ranges',
+  'z_battle_check_points',
 ]
 
 mkdirSync(DIR, { recursive: true })

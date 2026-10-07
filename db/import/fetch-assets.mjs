@@ -22,6 +22,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import pg from 'pg'
 import { connectionString, describeTarget } from '../env.mjs'
+import { assignCardIds, datamineCards, field, lineField } from './wiki-card.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(HERE, '..', '..')
@@ -166,7 +167,6 @@ async function download(baseUrl, width, raw = false, attempt = 1) {
 // ------------------------------------------------------------- lavoro
 
 const { pages } = JSON.parse(readFileSync(CACHE, 'utf8'))
-const field = (t, k) => { const m = t.match(new RegExp('^\\|\\s*' + k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*=\\s*(.*)$', 'mi')); return m ? m[1].trim() : null }
 // I nomi dei file nel wikitext arrivano in forme diverse: con underscore
 // invece degli spazi, e a volte percent-encoded ("HQ%2B" per "HQ+").
 // MediaWiki normalizza gli underscore, non le percentuali: le decodifichiamo
@@ -177,7 +177,6 @@ const normalizeFile = (n) => {
   return t.charAt(0).toUpperCase() + t.slice(1)
 }
 const fileIn = (s) => { const m = (s ?? '').match(/\[\[\s*[Ff]ile:\s*([^\]|]+?)\s*(?:\||\]\])/); return m ? normalizeFile(m[1]) : null }
-const cardIdFrom = (s) => { const m = (s ?? '').match(/Card[ _](\d+)[ _](?:thumb|bg|artwork)/i); return m ? Number(m[1]) : null }
 
 const url = connectionString()
 console.log(`  database: ${describeTarget()}`)
@@ -209,30 +208,36 @@ const knownIds = new Set(known.map((r) => Number(r.id)))
 
 const jobs = []
 if (want('thumb') || want('art') || ONLY === 'anim') {
+  // L'id lo decide wiki-card.mjs, lo stesso codice di load-cards: le carte
+  // che hanno l'id dal campo |ID (le Metal Cooler, le LR senza un file col
+  // numero) qui altrimenti non si riconoscerebbero, e resterebbero senza
+  // immagini. I campi immagine si leggono sulla loro riga (lineField): un
+  // "|artwork =" vuoto non deve prendersi la riga dopo.
+  const ids = assignCardIds(pages, datamineCards())
   for (const p of pages) {
-    const id = cardIdFrom(field(p.wikitext, 'thumb')) ?? cardIdFrom(field(p.wikitext, 'thumb apng')) ?? cardIdFrom(field(p.wikitext, 'artwork'))
+    const id = ids.get(p.pageid)?.id
     if (!id || !knownIds.has(id)) continue
     // Ogni job porta piu' candidati: il [[File:]] scritto sulla pagina
     // quando c'e', e in ogni caso i nomi per convenzione ricavati
     // dall'id. Vince il primo che il wiki riesce a risolvere.
     if (want('thumb') || ONLY === 'anim') {
-      const files = [fileIn(field(p.wikitext, 'thumb')),
+      const files = [fileIn(lineField(p.wikitext, 'thumb')),
                      `Card ${id} thumb.png`].filter(Boolean)
       if (ONLY !== 'anim') jobs.push({ kind: 'card_thumb', files, keyBase: `cards/${id}/thumb`,
                   card: id, col: 'thumb_key',
-                  directUrl: directUrlIn(field(p.wikitext, 'thumb apng')) })
-      const animT = directUrlIn(field(p.wikitext, 'thumb apng'))
+                  directUrl: directUrlIn(lineField(p.wikitext, 'thumb apng')) })
+      const animT = directUrlIn(lineField(p.wikitext, 'thumb apng'))
       if (animT && (want('thumb') || ONLY === 'anim')) jobs.push({ kind: 'card_thumb_animated', files: [], raw: true,
                              keyBase: `cards/${id}/thumb-animated`, card: id,
                              col: 'thumb_animated_key', directUrl: animT })
     }
     if (want('art') || ONLY === 'anim') {
-      const files = [fileIn(field(p.wikitext, 'artwork')), fileIn(field(p.wikitext, 'bg')),
+      const files = [fileIn(lineField(p.wikitext, 'artwork')), fileIn(lineField(p.wikitext, 'bg')),
                      `Card ${id} artwork.png`, `Card ${id} bg.png`].filter(Boolean)
       if (ONLY !== 'anim') jobs.push({ kind: 'card_art', files, keyBase: `cards/${id}/art`,
                   card: id, col: 'art_key',
-                  directUrl: directUrlIn(field(p.wikitext, 'artwork apng')) })
-      const animA = directUrlIn(field(p.wikitext, 'artwork apng'))
+                  directUrl: directUrlIn(lineField(p.wikitext, 'artwork apng')) })
+      const animA = directUrlIn(lineField(p.wikitext, 'artwork apng'))
       if (animA && (want('art') || ONLY === 'anim')) jobs.push({ kind: 'card_art_animated', files: [], raw: true,
                              keyBase: `cards/${id}/art-animated`, card: id,
                              col: 'art_animated_key', directUrl: animA })

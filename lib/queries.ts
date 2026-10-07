@@ -25,6 +25,9 @@ export type EventRow = {
   ends_at: Date | null
   source: RunSource
   banner_key: string | null
+  // Gli eventi presi dal gioco non hanno banner: al suo posto la miniatura
+  // della carta del boss principale (event.cover_card_id).
+  cover_thumb_key: string | null
   stages: number
   // Vero quando ogni tier è un livello EZA: la lista lo usa per dire
   // "livelli" invece di "stage", come fa la pagina dell'evento.
@@ -77,6 +80,7 @@ export async function listEvents(opts: {
      )
      select e.id::text, et.name, e.kind::text as kind,
             u.status, u.starts_at, u.ends_at, u.ends_at_known, u.source, e.banner_key,
+            cv.thumb_key as cover_thumb_key,
             (select count(*) from stage s where s.event_id = e.id)::int as stages,
             coalesce((select bool_and(st.difficulty = 'eza_level')
                         from stage_tier st where st.event_id = e.id), false) as is_eza,
@@ -88,6 +92,7 @@ export async function listEvents(opts: {
      from event e
      join ultima_run u on u.event_id = e.id
      join event_text et on et.event_id = e.id and et.locale = 'en'
+     left join card cv on cv.id = e.cover_card_id
      where ($2::event_kind is null or e.kind = $2::event_kind)
        and ($3::text is null or u.status = $3)
        and ($4::text is null or strpos(lower(et.name), lower($4)) > 0)
@@ -104,6 +109,7 @@ export type EventDetail = {
   kind: EventKind
   description: string | null
   banner_key: string | null
+  cover_thumb_key: string | null
   // Null quando l'evento non è mai uscito in questa regione: il left join
   // laterale restituisce l'evento comunque, senza una run da mostrare.
   status: Status | null
@@ -117,9 +123,11 @@ export async function getEvent(id: string, reg: Region): Promise<EventDetail | n
   return sqlOne<EventDetail>(
     `select e.id::text, et.name, e.kind::text as kind,
             et.official_description as description, e.banner_key,
+            cv.thumb_key as cover_thumb_key,
             u.status, u.starts_at, u.ends_at, u.ends_at_known, u.source
      from event e
      join event_text et on et.event_id = e.id and et.locale = 'en'
+     left join card cv on cv.id = e.cover_card_id
      left join lateral (
        select es.status, es.starts_at, es.ends_at, r.ends_at_known, r.source
        from event_status es
@@ -130,6 +138,36 @@ export async function getEvent(id: string, reg: Region): Promise<EventDetail | n
      where e.id = $1::bigint`,
     [id, reg],
   )
+}
+
+export type EventLink = { id: string; name: string }
+
+/**
+ * Il legame fra un'EZA e la sua versione Super. Nel gioco la Super EZA
+ * punta allo stage dell'EZA normale (related_game_id); qui si risale agli
+ * eventi da entrambi i lati, così ciascuna pagina può linkare l'altra.
+ */
+export async function getEzaLinks(eventId: string): Promise<{ normal: EventLink | null; supers: EventLink[] }> {
+  const righe = await sql<EventLink & { verso: 'normal' | 'super' }>(
+    `select r2.event_id::text as id, et.name, 'normal' as verso
+     from event_game_ref r1
+     join event_game_ref r2 on r2.game_kind = r1.game_kind and r2.game_id = r1.related_game_id
+     join event_text et on et.event_id = r2.event_id and et.locale = 'en'
+     where r1.event_id = $1::bigint and r1.related_game_id is not null
+     union all
+     select r1.event_id::text, et.name, 'super'
+     from event_game_ref r2
+     join event_game_ref r1 on r1.game_kind = r2.game_kind and r1.related_game_id = r2.game_id
+     join event_text et on et.event_id = r1.event_id and et.locale = 'en'
+     where r2.event_id = $1::bigint and r2.game_kind = 'z_battle_stage'
+     order by 1`,
+    [eventId],
+  )
+  const normal = righe.find((r) => r.verso === 'normal')
+  return {
+    normal: normal ? { id: normal.id, name: normal.name } : null,
+    supers: righe.filter((r) => r.verso === 'super').map(({ id, name }) => ({ id, name })),
+  }
 }
 
 export type StageRow = {

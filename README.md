@@ -15,9 +15,11 @@ Il codice applicativo non è ancora iniziato: quello che c'è è lo scheletro
 Next.js appena generato.
 
 - **39 tabelle, 3 view, 4 trigger, 16 funzioni** su PostgreSQL 15
-- **2632 carte** importate dal wiki, con link skill, categorie, statistiche
+- **2651 carte** importate dal wiki, con link skill, categorie, statistiche
   e date di uscita separate per Japan e Global
-- **599 eventi** con 5618 stage e 6916 difficoltà, banner compresi
+- **599 eventi** con 5618 stage e 6916 difficoltà, banner compresi; più
+  **192 eventi dal gioco** che il wiki non documenta (2025-2026, EZA e Super
+  EZA), con 1667 stage e 1890 difficoltà, senza banner né descrizione
 - **6246 immagini** ospitate da noi
 - **262 verifiche automatiche** in `db:test`, tutte verdi, su un database
   a parte che non è quello di sviluppo
@@ -54,8 +56,14 @@ npm run dev          # http://localhost:3000
 ```
 
 **L'ordine conta**: `load-cards` (wiki) deve girare prima di
-`load-datamine` (che corregge), e `fetch-assets` per ultimo. `db:refresh`
-li mette in fila.
+`load-datamine` (che corregge), `load-game-events` (gli eventi che il wiki
+non ha, dal gioco) prima di `load-windows` (che dà le finestre anche a
+loro), e `fetch-assets` per ultimo. `db:import` e `db:refresh` li mettono in
+fila:
+
+```
+load-cards → load-events → load-datamine → load-game-events → load-windows → fetch-assets
+```
 
 Il ciclo completo dura **cinque secondi**: le immagini sono già sul disco e
 il wikitext è in cache. Al wiki parte una richiesta sola: `fetch-assets`
@@ -212,6 +220,8 @@ db/
     fetch-events.mjs        scarica il wikitext degli eventi, in cache
     load-cards.mjs          interpreta le carte e le scrive, idempotente
     load-events.mjs         idem per eventi, stage e difficoltà
+    load-game-events.mjs    gli eventi che il wiki non ha, dal datamine del gioco
+    game-events/            i suoi moduli: classify, build, write, i legami del wiki
     fetch-assets.mjs        scarica le immagini e le registra in asset
     .cache/                 il wikitext scaricato (non versionato)
 public/assets/              le immagini ospitate da noi (non versionate)
@@ -254,8 +264,8 @@ con finestre temporali) e il **calendario**.
   modella la difficoltà come un `area` separato ma non la etichetta, e la
   stamina non è in `quests`.
 
-**Si uniscono sull'id del gioco**, verificato: i 2632 id ricavati dal wiki
-esistono tutti nel datamine, 2632 su 2632. Per questo `load-datamine` non
+**Si uniscono sull'id del gioco**, verificato: i 2651 id ricavati dal wiki
+esistono tutti nel datamine, 2651 su 2651. Per questo `load-datamine` non
 sostituisce le carte, le *corregge*, e `load-cards` deve girare prima.
 
 Un errore che vale la pena raccontare: avevo letto `element` 20-24 come
@@ -277,10 +287,17 @@ fermi a gennaio 2023 — ed è un'API documentata con i suoi limiti, non uno
 scraping di HTML. L'enumerazione passa da chi include `Template:Characters`,
 che sono esattamente le pagine carta.
 
-Su 2670 pagine, **2632 importate** e 38 scartate, ognuna con il suo motivo
-stampato: 18 sono oggetti di supporto e non unità, 10 condividono la stessa
-immagine fra varianti a cinque tipi (quindi l'id di gioco non le distingue),
-9 non hanno un id ricavabile, 1 ha un tipo malformato.
+Su 2671 pagine, **2651 importate** e 20 scartate, ognuna con il suo motivo
+stampato: 18 sono oggetti di supporto e non unità, 1 ha un tipo malformato,
+1 è una pagina abbozzata senza id. Le varianti a cinque tipi che condividono
+la stessa immagine, e le pagine senza un'immagine col numero della carta,
+prendono l'id dal campo `|ID`, accettato solo se il datamine ha quella carta
+con lo stesso tipo e la stessa rarità (`db/import/wiki-card.mjs`).
+
+Le immagini delle 19 carte entrate così non ci sono ancora: il CDN delle
+immagini del wiki risponde 403 con la verifica anti-bot di Cloudflare, e non
+la si aggira. Quando torna a servire i file basta `npm run db:assets`, che
+scarica solo quello che manca.
 
 Due controlli che dicono che il parsing è sano: i link skill per carta si
 concentrano su 5, 6 e 7 come nel gioco, e la media sale con la rarità (1,7
@@ -453,7 +470,9 @@ da nessuna parte.** Quindi `event.id` qui è il *pageid del wiki*: stabile e
 riproducibile, ma non l'id del gioco. Il giorno che arriva un datamine, gli
 id degli eventi vanno rimappati passando da `wiki_title`, che è l'unica
 chiave che i due lati hanno in comune. `imported_from` dice quali righe
-sono in questa condizione.
+sono in questa condizione. Gli eventi creati dal gioco (`imported_from =
+'datamine'`) hanno invece un id ricavato da quello di gioco, lontano dai
+pageid: vedi "Gli eventi che il wiki non ha".
 
 ## Gli oggetti dei premi
 
@@ -478,7 +497,12 @@ forte: il **file del banner** (`Quest top banner 582 2.png` è
 **stage** contro le quest dell'area, e come conferma i banner nel resto della
 pagina e il **boss** fra i nemici delle quest. Per le EZA: titolo, boss del
 livello 1 e banner della news. Il risultato sta in `event_game_ref`, con la
-chiave che ha deciso e la confidenza, e si ricostruisce a ogni giro:
+chiave che ha deciso e la confidenza, e si ricostruisce a ogni giro. Dalla
+migrazione 0011 ogni riga dice anche chi l'ha scritta (`source`):
+`load-windows` tocca solo le sue (`wiki`), `load-game-events` solo le sue
+(`game`), e le finestre si calcolano su tutte. Le regole del legame stanno
+in un posto solo (`game-events/wiki-refs.mjs`), perché `load-game-events`,
+che gira prima, le deve applicare uguali senza leggerle dal database:
 
 | tipo | legati | | tipo | legati |
 |---|---|---|---|---|
@@ -543,7 +567,8 @@ state spostate sul posto, con lo stesso id. Le adozioni e le chiusure di
   01/04/2015, e altrimenti risultava su Global da prima che esistesse.
 - **EZA**: `z_battle_stages.start_at`/`end_at`. Qui il 2038 vuol dire
   davvero "in lista per sempre": permanente, fine nota. Il Portale dei
-  Ricordi (a chiavi) non conta come attivo; le Super EZA non si guardano.
+  Ricordi (a chiavi) non conta come attivo. Le Super EZA sono eventi a sé,
+  creati dal gioco (vedi sotto), con la loro riga.
   La riga tiene solo l'ultima messa in lista, e se le missioni dello stage
   partono dopo la sua fine è rimasta indietro: allora vale la corsa delle
   missioni. Succede solo all'EZA di Jiren (stage 10): maggio 2018 nella
@@ -576,13 +601,18 @@ la finestra) diventa la run a mano sul posto, con lo stesso id.
 **Il risultato su `dokkan_dev`**, una ricorrenza per evento come la lista
 del sito, oggi (7 ottobre 2026), con la fotografia del 2 ottobre:
 
-| Global | prima | dopo |
-|---|---|---|
-| attivi con la fine | 0 | 6 (fino al 20 ottobre) |
-| attivi permanenti (EZA) | 0 | 147 |
-| attivi, fine non nota | 560 | 306 |
-| conclusi | 0 | 120 |
-| in arrivo | 0 | 0 |
+| Global | prima | dopo | con gli eventi dal gioco (8 ottobre) |
+|---|---|---|---|
+| attivi con la fine | 0 | 6 (fino al 20 ottobre) | 28 (6 del wiki, 22 del gioco) |
+| attivi permanenti (EZA) | 0 | 147 | 219 (147 + 72) |
+| attivi, fine non nota | 560 | 306 | 374 (312 + 62) |
+| conclusi | 0 | 120 | 150 (114 + 36) |
+| in arrivo | 0 | 0 | 0 |
+
+Nell'ultima colonna gli eventi sono 792, 771 con una run Global (i 21 del
+wiki non legati restano senza). Sei eventi del wiki sono passati da
+"conclusi" a "in corso": il gioco li ha riaperti sotto un'altra area, e
+`load-game-events` li ha riconosciuti come riedizioni (vedi sotto).
 
 19 eventi che il wiki dava solo su Japan ora hanno anche la loro corsa
 Global, perché il gioco ce l'ha.
@@ -619,25 +649,146 @@ non nota" e non tacerlo:
   eventi in arrivo (`node db/import/fetch-datamine.mjs --fresh`, poi
   `npm run db:windows`). Il commit scaricato sta in
   `.cache/datamine/_snapshot.json`.
-- **Gli eventi più nuovi del wiki in cache non ci sono proprio**: la cache
-  si ferma a gennaio 2025, quindi 9 delle 15 aree aperte oggi e 58 EZA
-  recenti non hanno un evento nostro a cui attaccarsi.
+- **Gli eventi più nuovi il wiki non li ha**: le sue pagine di eventi si
+  fermano a gennaio 2025. Li crea `load-game-events` dal gioco, nella
+  sezione che segue.
+
+## Gli eventi che il wiki non ha: dal gioco
+
+Il wiki ha smesso di scrivere pagine di eventi a inizio 2025: l'ultima
+uscita Global che documenta è del 19/01/2025, e da allora sono nate solo
+pagine di carte. Gli eventi di quasi due anni, e 58 EZA, non avevano un
+evento nostro. `npm run db:game-events` (`db/import/load-game-events.mjs`,
+con i moduli in `db/import/game-events/`) li crea dal datamine Global; gira
+dentro `db:import`, `db:refresh` e `db:test`, dopo `load-datamine` e prima di
+`load-windows`, che così dà le finestre anche a loro.
+
+**Chi diventa un evento.** Si guardano le aree attive dopo il taglio e le
+EZA che `game-map` non ha legato a una pagina del wiki
+(`game-events/classify.mjs`, regole rilette a mano sulle 138 aree):
+
+| esito | quante | cosa |
+|---|---|---|
+| evento nuovo | 106 aree, 86 EZA | 71 challenge, 21 limited, 14 story, 86 zbattle (58 Normal, 28 Super) |
+| riedizione di un evento che c'è | 20 aree | una riga in `event_game_ref` sull'evento esistente, niente evento nuovo |
+| non è un evento | 5 | i capitoli della storia (MainArea 38-42) |
+| archivio | 2 | 1737 Ultimate Red Zone, 1738 Supreme Magnificent Battle: ripropongono edizioni che hanno già un evento; per ora solo elencati |
+| deciso a mano | 2 | 710 e 720 Super Battle Road: il wiki le ha in pagine per intervallo di piani, un'area non si lega a più eventi |
+| tipo sconosciuto | 1 | 807, categoria 27: nessun evento legato da cui ricavare il tipo |
+
+- **Riedizione** = stesso nome di un'area più vecchia dello stesso tipo, e
+  almeno metà dei boss o delle quest non generiche in comune. Così 1226 va
+  su 721748, 1219 su 709063, 613-618 sui loro Extreme Z-Area, 291 e 292
+  sulle due "All Open" del wiki (per nome), 285 su 561817. 1747 è la
+  replica di 1708, uscita prima del taglio e senza pagina: l'evento nasce
+  da 1708 e 1747 gli si attacca.
+- **Evento nuovo anche con lo stesso nome**: i remix `: RE [...]`, le
+  edizioni con boss diversi (Dokkan Ultimate Speed Battle 1757), i remake
+  DbStory (come 901-917, che hanno già un evento ciascuno).
+- **Million Arena** sono quattro aree (preliminari, semifinale, finale, in
+  singolo) e un evento solo, 1000001717, con sei stage.
+- **Le Super EZA** sono eventi a sé; il legame ricorda la Normal da cui
+  pendono (`event_game_ref.related_game_id`), così il sito potrà collegarle.
+
+**Gli id** non possono toccare i pageid del wiki (oggi fino a ~730.000):
+`1000000000 + id dell'area`, `2000000000 + id dello stage EZA`.
+`imported_from = 'datamine'`, `wiki_title` nullo.
+
+**Cosa c'è dentro** (`game-events/build.mjs`):
+
+- **Nome** inglese da `areas.name` (gli a capo diventano spazi); per le EZA
+  `Extreme Z-Battle: <soprannome> <nome>`, la regola del wiki (143 nomi su
+  152 identici), e `Super Extreme Z-Battle: ...` per le Super.
+- **Stage** dalle quest, in ordine di id, col loro nome (70 su 479 sono
+  "Stage N": il gioco non dice di più).
+- **Difficoltà** da `sugoroku_maps.id % 10`: 0 Normal, 1 Hard, 2 Z-Hard,
+  3 Super, 4 Super 2, 5 Super 3. Verificata contro i tier che il wiki ha già
+  scritto: coincide in 1747 stage su 1788, e per codice 3 → super 167 volte
+  (super2 8), 4 → super2 157, 5 → super3 196. La colonna `difficulty` no
+  (1516): il 17/09/2025 il gioco ha declassato 479 mappe vecchie e mostra
+  quell'etichetta. Il test rifà il confronto su sei eventi, uno per codice.
+- **STA, exp, zeni** da `act`, `user_exp`, `zeni` (il wiki non dava questi
+  ultimi due). Challenge e Red Zone costano 0 in entrambe le fonti.
+- **Note sul boss**, per ogni difficoltà: l'ultimo round dell'ultima
+  battaglia e le sue abilità, nello stesso formato delle EZA del wiki col
+  nome davanti: `Boss: Majin Vegeta; Damage reduction -70%; Immune to:
+  Stun, Seal Super Attack, Lower ATK, Lower DEF`. Sei aree il gioco le
+  nasconde (`battles: null`) e restano senza nota.
+- **EZA**: i livelli sono l'ultimo premio del primo completamento meno uno
+  (148 su 152 come il wiki), le Super ne hanno uno. Per livello il boss, la
+  riduzione danni (l'ultima arrivata) e le immunità (si sommano). Contro le
+  note del wiki: riduzione uguale entro un punto in 4544 livelli su 4784,
+  immunità uguali in 3892 (il gioco ha 875 sigilli in più). "Disable
+  Interruption" non è il "Disable Action" del wiki e resta fuori. La
+  stamina c'è solo per i checkpoint (`z_battle_check_points`).
+- **Copertina**: `event.cover_card_id` (migrazione 0011), la carta del boss
+  principale (l'ultimo stage alla difficoltà più alta, o l'EZA), solo se è
+  nella tabella `card`; l'interfaccia la usa quando non c'è un banner. 173
+  eventi del gioco su 192 ce l'hanno. Già che costava uguale, è riempita
+  anche per gli eventi del wiki legati: 527 su 579.
+- **Finestre**: le scrive `load-windows`, con le stesse regole. Un'area del
+  gioco senza missioni (1776, 1224, 1226...) prende la partenza delle sue
+  quest, con la fine non nota: senza, l'evento non avrebbe nessuna run.
+
+**Rifarlo non cambia niente**: tutto per chiave naturale, gli id restano, e
+un update scrive solo se il valore cambia (il test lo verifica, anche dopo
+`load-events` e `load-windows`). Un evento del gioco che un giro non produce
+più se ne va solo se non ha clear né tip sopra.
+
+**Se il wiki scrive la pagina dopo.** `load-events` cerca, per le sole
+pagine nuove, il legame col gioco con le stesse chiavi di `load-windows`:
+se l'area o l'EZA è già di un evento del gioco, la pagina si salta e lo
+dice (`game-events/wiki-guard.mjs`), invece di creare un doppione. La
+fusione non è automatica, perché sposta righe con dei clear sopra. Senza
+clear né tip basta togliere l'evento del gioco (`delete from event where
+id = ...`, la cascata porta via stage, run e legami) e rilanciare
+`db:import`: la pagina entra, `load-game-events` non ricrea l'evento perché
+ora l'area è del wiki, e `load-windows` le dà le finestre. Con dei clear
+va scritta una volta, in una transazione: creare l'evento del wiki, portare
+su di lui (cambiando `event_id`, non gli id) stage, tier, run, clear e tip
+dell'evento del gioco, passare il legame a `source = 'wiki'`, togliere
+l'evento del gioco ormai vuoto, e poi rilanciare l'import.
+
+**Cosa non hanno** gli eventi del gioco, rispetto a quelli del wiki: la
+descrizione (il datamine non ha testi degli eventi, solo `announcement_id`
+di news che non contiene), il banner (il datamine dà solo il percorso del
+file, e il wiki non li carica più dal febbraio 2025), la data Japan, i nomi
+degli stage "Stage N", l'exp del personaggio e i drop, e il nome dei boss
+la cui carta non abbiamo (manca anche la copertina: 19 eventi). Le missioni
+il gioco le ha, ma non sono ancora importate.
 
 ## Cosa manca, in ordine
 
-1. **Il calendario, da tenere vivo.** Rifare `fetch-events` (il wiki in
-   cache si ferma a gennaio 2025) e il datamine con `--fresh` ogni
-   settimana. Japan resta senza finestre vere, e 306 eventi Global restano
-   "attivi, fine non nota" (vedi il calendario). Le corse di un'area
-   riaperta dopo più di un mese partono dall'ultimo blocco: la corsa di
-   prima non ha una run del gioco sua.
-2. **Le missioni dal gioco.** Il legame con le aree c'è (`event_game_ref`),
+1. **Il calendario, da tenere vivo.** Rifare il datamine con `--fresh`
+   ogni settimana, poi `db:game-events` e `db:windows`: gli eventi nuovi
+   arrivano da lì, il wiki non ne scrive più. Japan resta senza finestre
+   vere, e 374 eventi Global restano "attivi, fine non nota" (312 del wiki,
+   62 del gioco). Le corse di un'area riaperta dopo più di un mese partono
+   dall'ultimo blocco: la corsa di prima non ha una run del gioco sua.
+2. **Gli eventi del gioco, da completare.** Non hanno descrizione né banner
+   (nessuna fonte: il datamine ha solo i percorsi dei file, il wiki non li
+   carica più), e 19 non hanno nemmeno la copertina, perché il boss è una
+   carta senza pagina sul wiki. Restano fuori, elencati da
+   `load-game-events`: i due archivi (1737 Ultimate Red Zone, 1738 Supreme
+   Magnificent Battle, che andrebbero modellati come finestre permanenti
+   delle edizioni che contengono), le aree 710/720 della Super Battle Road
+   (due aree per 15 pagine del wiki), l'area 807 (categoria 27, tipo ignoto)
+   e i capitoli della storia. Le edizioni RE e le Super EZA non sono ancora
+   collegate al loro originale nell'interfaccia (il dato per le Super c'è:
+   `related_game_id`). La fusione di un evento del gioco con una pagina del
+   wiki scritta dopo è a mano.
+3. **Le carte senza pagina sul wiki.** 59 unità Global giocabili non sono
+   nella tabella `card` (42 uscite fra agosto e settembre 2026, più copie
+   riemesse e secondi id): niente epiteto, niente immagini. Sono anche i
+   boss che mancano nelle copertine. E le immagini delle 19 carte nuove di
+   ottobre aspettano il CDN del wiki, che oggi risponde 403.
+4. **Le missioni dal gioco.** Il legame con le aree c'è (`event_game_ref`),
    le missioni no: `mission` è ancora vuota, e `mission.reward` →
    `reward_item` aspetta loro.
-3. **L'autenticazione.** Serve un account per inviare.
-4. **La prima fetta verticale:** una pagina evento che elenca i suoi clear,
+5. **L'autenticazione.** Serve un account per inviare.
+6. **La prima fetta verticale:** una pagina evento che elenca i suoi clear,
    più il form di invio dietro il login.
-5. **Il team builder.** Il grosso del lavoro di interfaccia, e il collo di
+7. **Il team builder.** Il grosso del lavoro di interfaccia, e il collo di
    bottiglia dell'invio. Ora ha dati veri e immagini su cui girare.
 
 ## Nota su Next.js

@@ -7,7 +7,9 @@
 // id che il wiki non conosce. Questo script:
 //
 //   1. lega i nostri eventi alle aree e alle EZA del gioco (game-map.mjs)
-//      e scrive il legame in event_game_ref, ricostruita a ogni giro;
+//      e scrive il legame in event_game_ref, ricostruito a ogni giro (le
+//      sue righe, source = 'wiki': quelle di load-game-events restano, e
+//      danno le finestre anche agli eventi creati dal gioco);
 //   2. ricava le finestre di ogni area/EZA:
 //        area  le missioni con missions.area_id = area (non i legami dentro
 //              `conditions`, che portano le campagne di piu' eventi). Ogni
@@ -50,7 +52,8 @@ import { fileURLToPath } from 'node:url'
 import pg from 'pg'
 import { connectionString, describeTarget } from '../env.mjs'
 import { gameEnd, gameStart, int, isPreLaunch, isSentinel, loadTable, snapshotInfo } from './datamine.mjs'
-import { mapEvents, wikiGlobalRelease } from './game-map.mjs'
+import { wikiGlobalRelease } from './game-map.mjs'
+import { wikiRefs } from './game-events/wiki-refs.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const DRY = process.argv.includes('--dry-run')
@@ -95,18 +98,34 @@ for (const m of dm.missions) {
   missionsByStage.get(z).push(m)
 }
 const areasWithQuests = new Set(dm.quests.filter((q) => !isSentinel(q.start_at)).map((q) => int(q.area_id)))
+// la prima partenza vera delle quest di un'area (2015-10-30 e' la data
+// fittizia degli archivi): serve solo agli eventi del gioco, sotto
+const questStart = new Map()
+for (const q of dm.quests) {
+  const s = q.start_at, a = int(q.area_id)
+  if (!s || s === '2015-10-30 00:00:00' || isSentinel(s) || isPreLaunch(s)) continue
+  if (!questStart.has(a) || s < questStart.get(a)) questStart.set(a, s)
+}
 const stageById = new Map(dm.zStages.map((s) => [int(s.id), s]))
 const max = (a) => a.reduce((x, y) => (y > x ? y : x))
 
 // Le finestre di un'area: [{ start, end (esclusiva, null = aperta), known,
 // kind }], oppure { none } col motivo.
-function areaWindows(id) {
+// fromQuests: per i legami di load-game-events. Un evento del wiki senza
+// missioni tiene la run del wiki; uno creato dal gioco non ne ha nessuna, e
+// una riedizione attaccata dal gioco (1226, 1219-1223) senza missioni non
+// darebbe nessun segno di essere tornata. Allora vale la partenza delle
+// quest: si sa quando e' iniziata, non quando finisce.
+function areaWindows(id, fromQuests = false) {
   // le missioni cancellate, quelle ereditate dal giapponese e quelle che
   // finiscono quando iniziano (o prima) non dicono niente sull'evento. Una
   // riga giapponese puo' anche essere ancora accesa: l'area 120 ha una
   // missione dal 2015-04-01 che scade nel 2038, e senza il filtro sull'inizio
   // Korin Tower risultava su Global da prima del lancio.
   const ms = (missionsByArea.get(id) ?? []).filter(validMission)
+  if (!ms.length && fromQuests && questStart.has(id)) {
+    return [{ start: gameStart(questStart.get(id)), end: null, known: false, kind: 'open' }]
+  }
   if (!ms.length) return { none: areasWithQuests.has(id) ? 'area con sole quest' : 'area spenta o senza quest' }
   const firstStart = new Map()   // fine vera -> primo inizio con quella fine
   for (const m of ms) {
@@ -212,19 +231,10 @@ async function statusNow() {
 }
 
 try {
-  // gli eventi del wiki con i nomi degli stage, come li ha scritti load-events
-  const { rows: evRows } = await client.query(`
-    select e.id, e.kind::text as kind, e.wiki_title, et.name,
-           coalesce(array_agg(stx.name order by s.seq) filter (where stx.name is not null), '{}') as stages
-    from event e
-    join event_text et on et.event_id = e.id and et.locale = 'en'
-    left join stage s on s.event_id = e.id
-    left join stage_text stx on stx.stage_id = s.id and stx.locale = 'en'
-    where e.imported_from = 'wiki' and e.wiki_title is not null
-    group by e.id, et.name`)
-  const events = evRows.map((r) => ({ ...r, id: Number(r.id) }))
+  // gli eventi del wiki e i loro legami, con le stesse regole che usa
+  // load-game-events prima di questo script (game-events/wiki-refs.mjs)
+  const { events, refs, unmatched } = await wikiRefs(client, pages, dm)
   const evById = new Map(events.map((e) => [e.id, e]))
-  const { refs, unmatched } = mapEvents(events, pages, dm)
 
   const kinds = [...tally(events.map((e) => e.kind))].sort((a, b) => b[1] - a[1])
   const mappedIds = new Set(refs.map((r) => r.event_id))
@@ -252,14 +262,27 @@ try {
          as d(event_id, game_kind, game_id, via, keys, confidence)
     on conflict (game_kind, game_id) do update set
       event_id = excluded.event_id, via = excluded.via, keys = excluded.keys, confidence = excluded.confidence
-    where (event_game_ref.event_id, event_game_ref.via, event_game_ref.keys, event_game_ref.confidence)
+    where event_game_ref.source = 'wiki'
+      and (event_game_ref.event_id, event_game_ref.via, event_game_ref.keys, event_game_ref.confidence)
           is distinct from (excluded.event_id, excluded.via, excluded.keys, excluded.confidence)
     returning (xmax = 0) as inserted`,
     [refs.map((r) => r.event_id), refs.map((r) => r.game_kind), refs.map((r) => r.game_id),
      refs.map((r) => r.via), refs.map((r) => r.keys.join(',')), refs.map((r) => r.confidence)])
+  // Le righe di load-game-events (source = 'game': gli eventi creati dal
+  // gioco e le riedizioni che riconosce lui) non si toccano, e una che il
+  // wiki rivendica resta del gioco: lo si dice, e la fusione e' a mano.
+  const { rows: gameHeld } = await client.query(`
+    select g.game_kind, g.game_id, g.event_id, d.event_id as wiki_event
+    from event_game_ref g join unnest($1::text[], $2::int[], $3::bigint[]) as d(k, id, event_id)
+      on d.k = g.game_kind and d.id = g.game_id
+    where g.source = 'game' and g.event_id <> d.event_id`,
+    [refs.map((r) => r.game_kind), refs.map((r) => r.game_id), refs.map((r) => r.event_id)])
+  for (const r of gameHeld) {
+    console.log(`  ${r.game_kind} ${r.game_id}: il wiki lo lega a ${r.wiki_event}, ma e' gia' dell'evento ${r.event_id} (dal gioco)`)
+  }
   const { rowCount: refGone } = await client.query(`
     delete from event_game_ref g
-    where not exists (select 1 from unnest($1::text[], $2::int[]) as d(k, id)
+    where g.source = 'wiki' and not exists (select 1 from unnest($1::text[], $2::int[]) as d(k, id)
                       where d.k = g.game_kind and d.id = g.game_id)`,
     [refs.map((r) => r.game_kind), refs.map((r) => r.game_id)])
   console.log(`  legami scritti: ${refs.length}   nuovi ${refRows.filter((r) => r.inserted).length},` +
@@ -268,10 +291,21 @@ try {
   // 2. le finestre per evento
   const windows = new Map()   // event_id -> [finestre fuse]
   const noWindow = [], earlier = [], wikiWrong = []
+  // tutti i legami, anche quelli del gioco: gli eventi creati da
+  // load-game-events e le riedizioni che ha attaccato prendono le finestre qui
+  const { rows: allRefs } = await client.query(`
+    select event_id::text, game_kind, game_id, via, confidence, source from event_game_ref`)
   const refsByEvent = new Map()
-  for (const r of refs) { if (!refsByEvent.has(r.event_id)) refsByEvent.set(r.event_id, []); refsByEvent.get(r.event_id).push(r) }
+  for (const r of allRefs) {
+    r.event_id = Number(r.event_id)
+    if (!refsByEvent.has(r.event_id)) refsByEvent.set(r.event_id, [])
+    refsByEvent.get(r.event_id).push(r)
+  }
+  const fromGame = allRefs.filter((r) => r.source === 'game')
+  console.log(`  legami scritti da load-game-events: ${fromGame.length}, su ${new Set(fromGame.map((r) => r.event_id)).size} eventi` +
+              ` (${new Set(fromGame.filter((r) => evById.has(r.event_id)).map((r) => r.event_id)).size} del wiki, riedizioni)`)
   for (const [id, rs] of refsByEvent) {
-    const per = rs.map((r) => ({ r, w: r.game_kind === 'area' ? areaWindows(r.game_id) : stageWindows(r.game_id) }))
+    const per = rs.map((r) => ({ r, w: r.game_kind === 'area' ? areaWindows(r.game_id, r.source === 'game') : stageWindows(r.game_id) }))
     let ok = per.filter((x) => !x.w.none).flatMap((x) => x.w.map((w) => ({ ...w, ref: x.r })))
     // Una finestra finita prima della prima uscita Global (secondo il wiki)
     // non e' di questo evento: e' l'edizione precedente, che il wiki tiene
@@ -331,7 +365,7 @@ try {
 
   const n = { adopted: 0, updated: 0, unchanged: 0, inserted: 0, closed: 0, absorbed: 0 }
   const skipped = [], conflicts = [], oddities = []
-  const label = (id) => `${id} ${evById.get(id)?.wiki_title ?? ''}`
+  const label = (id) => `${id} ${evById.get(id)?.wiki_title ?? '(dal gioco)'}`
 
   for (const [id, ws] of windows) {
     const runs = runsOf.get(id) ?? []

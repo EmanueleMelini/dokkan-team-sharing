@@ -7,8 +7,8 @@
 // serve un database suo, potenzialmente modificato, ed e' anche la
 // categoria di progetti che Bandai colpisce davvero.
 //
-// COSA FA: le 2632 carte che abbiamo dal wiki hanno gia' l'id VERO del
-// gioco (verificato: 2632 su 2632 presenti nel datamine), quindi questo
+// COSA FA: le carte che abbiamo dal wiki hanno gia' l'id VERO del gioco
+// (verificato all'ultimo import: 2651 su 2651 presenti nel datamine), quindi questo
 // import non le sostituisce — le corregge dove il gioco e' autorevole:
 // tipo, classe, rarita', link skill, categorie, catene di risveglio.
 //

@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # npm run db:test: tutte le verifiche, in fila, su un database di test.
 #
-#   reset -> schema -> API di scrittura -> import dei dati veri -> query
+#   reset -> schema -> API di scrittura -> id delle carte dal wiki ->
+#   import dei dati veri -> query
 #   delle pagine (lib/queries.ts vero) -> parametri dell'URL (lib/parametri.ts)
-#   -> finestre degli eventi dal gioco (load-windows)
+#   -> finestre degli eventi dal gioco (load-windows) -> eventi creati dal
+#   gioco (load-game-events)
 #
 # Gira su dokkan_test, o su TEST_DATABASE_URL se c'e' (il nome deve finire
 # per _test): il database di sviluppo non si tocca. Prima db:test lo
@@ -42,6 +44,9 @@ riepilogo () {
 passo "reset del database di test" prepara node db/reset.mjs --fixture
 passo "schema e vincoli" verifica env DB_TEST_SENZA_RESET=1 ./db/test/schema.test.sh
 passo "API di scrittura" verifica ./db/test/write_api.test.sh
+# Funzioni pure, niente database: come load-cards e fetch-assets ricavano
+# l'id di una carta dalla pagina del wiki (db/import/wiki-card.mjs).
+passo "id delle carte dal wiki" verifica node db/test/wiki-card.test.mjs
 # Le cache locali, nessuna rete. fetch-assets resta fuori: anche con le
 # immagini sul disco interroga il wiki (il template degli oggetti a ogni
 # giro completo, e ogni file che non trova), quindi non e' un passo
@@ -49,12 +54,16 @@ passo "API di scrittura" verifica ./db/test/write_api.test.sh
 passo "import carte (cache)" prepara node db/import/load-cards.mjs
 passo "import eventi (cache)" prepara node db/import/load-events.mjs
 passo "import datamine (cache)" prepara node db/import/load-datamine.mjs
+passo "import eventi dal gioco (cache)" prepara node db/import/load-game-events.mjs
 passo "import finestre (cache)" prepara node db/import/load-windows.mjs
 passo "query delle pagine" verifica node_ts db/test/queries.test.mts
 passo "parametri dell'URL" verifica node_ts db/test/parametri.test.mts
 # Per ultima: rilancia load-windows e set-event-window, e ritocca qualche
 # run per provarli (rimettendole come le ha trovate).
 passo "finestre dal gioco" verifica node_ts db/test/windows.test.mts
+# Dopo le finestre: rilancia load-game-events, load-events e load-windows
+# e controlla che un secondo giro non cambi niente.
+passo "eventi dal gioco" verifica node_ts db/test/game-events.test.mts
 
 riepilogo
 if [ "$rosso" -eq 0 ]; then echo "TUTTO VERDE"; else echo "$rosso passi rossi"; exit 1; fi

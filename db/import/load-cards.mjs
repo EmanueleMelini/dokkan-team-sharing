@@ -12,6 +12,8 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import pg from 'pg'
 import { connectionString, describeTarget } from '../env.mjs'
+import { snapshotInfo } from './datamine.mjs'
+import { assignCardIds, awakensInto, datamineCards, field, idsByTitle, scalar } from './wiki-card.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const CACHE = join(HERE, '.cache', 'wiki-cards.json')
@@ -20,27 +22,8 @@ const LOCALE = 'en'   // il wiki e' in inglese
 
 // ---------------------------------------------------------------- parsing
 
-// Il valore grezzo del campo: tutto quello che segue "|chiave =" fino a
-// fine riga. Grezzo perche' il wikitext e' scritto a mano e mette piu'
-// parametri sulla stessa riga separati da "|" — e i link skill sono
-// scritti PROPRIO con quella sintassi ([[Pagina|Etichetta]]), quindi
-// tagliare al primo "|" li distruggerebbe.
-const field = (txt, key) => {
-  const m = txt.match(new RegExp(
-    '^\\|\\s*' + key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*=\\s*(.*)$', 'mi'))
-  const v = m ? m[1].trim() : null
-  return v || null
-}
-
-// Per i valori semplici (rarita', tipo, date, statistiche): qui si', il
-// }} di chiusura e un eventuale secondo parametro sulla riga vanno via.
-// Non contengono mai wikilink, quindi tagliare al "|" e' sicuro.
-const scalar = (txt, key) => {
-  const v = field(txt, key)
-  if (!v) return null
-  const t = v.replace(/\}\}.*$/, '').replace(/\|\s*[A-Za-z][\w ]*=.*$/, '').trim()
-  return t || null
-}
+// field(), scalar() e l'id della carta stanno in wiki-card.mjs: li usa
+// anche fetch-assets, e i due devono vedere la stessa carta.
 
 // Le leader skill sul wiki scrivono i tipi come icone, non come testo:
 // "[[File:TEQ icon.png|30px]] & [[File:INT icon.png|30px]] Type ATK +30%".
@@ -76,8 +59,6 @@ function parseDate(raw) {
   return `${m[3]}-${String(mo).padStart(2, '0')}-${String(m[1]).padStart(2, '0')}`
 }
 
-const TYPES = new Set(['AGL', 'TEQ', 'INT', 'STR', 'PHY'])
-
 function parseType(raw) {
   if (!raw) return { skip: 'tipo assente' }
   const t = raw.trim().toUpperCase()
@@ -91,17 +72,18 @@ function parseType(raw) {
 
 const RARITIES = new Set(['N', 'R', 'SR', 'SSR', 'UR', 'LR'])
 const int = (s) => { const n = Number(String(s ?? '').replace(/[,\s]/g, '')); return Number.isFinite(n) && n > 0 ? Math.round(n) : null }
-const cardIdFrom = (s) => { const m = (s ?? '').match(/Card[ _](\d+)[ _](?:thumb|bg|artwork)/i); return m ? Number(m[1]) : null }
 
-function parseCard(page) {
+// assigned: l'id deciso da assignCardIds; byTitle: titolo -> id, per la
+// catena di risveglio
+function parseCard(page, assigned, byTitle) {
   const w = page.wikitext
   const bad = (why) => ({ skipped: { title: page.title, why } })
 
   const ty = parseType(scalar(w, 'type'))
   if (ty.skip) return bad(ty.skip)
 
-  const id = cardIdFrom(field(w, 'thumb')) ?? cardIdFrom(field(w, 'thumb apng')) ?? cardIdFrom(field(w, 'artwork'))
-  if (!id) return bad('nessun id carta ricavabile da thumb/artwork')
+  const { id, from, why } = assigned
+  if (!id) return bad(why)
 
   const rarity = (scalar(w, 'rarity') ?? '').toUpperCase()
   if (!RARITIES.has(rarity)) return bad(`rarita' non riconosciuta: "${rarity}"`)
@@ -133,7 +115,8 @@ function parseCard(page) {
     ].filter((r) => r.released_at),
     links: [...new Set(wikiLinks(field(w, 'Link skill')))],
     cats:  [...new Set(wikiLinks(field(w, 'Category')))],
-    awakens_into: cardIdFrom(field(w, 'dokkan thumb')),
+    awakens_into: awakensInto(w, byTitle),
+    id_from: from,
   }
 }
 
@@ -141,33 +124,35 @@ function parseCard(page) {
 
 const raw = JSON.parse(readFileSync(CACHE, 'utf8'))
 console.log(`  sorgente: ${raw.source}`)
-console.log(`  scaricata il ${raw.fetched_at}, ${raw.pages.length} pagine\n`)
+console.log(`  scaricata il ${raw.fetched_at}, ${raw.pages.length} pagine`)
 
-const parsed = raw.pages.map(parseCard)
+// Il datamine serve a verificare gli id presi dal campo |ID: senza, quelle
+// pagine restano fuori come prima, e lo si dice.
+const dm = datamineCards()
+console.log(dm ? `  datamine per verificare |ID: ${snapshotInfo()}\n`
+               : `  datamine assente: gli id dal campo |ID non si usano (node db/import/fetch-datamine.mjs)\n`)
+
+const assigned = assignCardIds(raw.pages, dm)
+const byTitle = idsByTitle(raw.pages, assigned)
+const parsed = raw.pages.map((p) => parseCard(p, assigned.get(p.pageid), byTitle))
 const skipped = parsed.filter((p) => p.skipped).map((p) => p.skipped)
-let cards = parsed.filter((p) => p.card)
-
-// un id che compare su piu' pagine non identifica una carta: il wiki
-// riusa la stessa immagine per le varianti a cinque tipi. Meglio saltarle
-// tutte e dirlo, che importarne una a caso.
-const byId = new Map()
-for (const c of cards) (byId.get(c.card.id) ?? byId.set(c.card.id, []).get(c.card.id)).push(c)
-const ambiguous = [...byId.entries()].filter(([, v]) => v.length > 1)
-for (const [id, group] of ambiguous) {
-  for (const c of group) skipped.push({ title: c.card.wiki_title, why: `id ${id} condiviso con altre ${group.length - 1} pagine` })
-}
-cards = cards.filter((c) => byId.get(c.card.id).length === 1)
+const cards = parsed.filter((p) => p.card)
 
 console.log(`  carte utilizzabili: ${cards.length}`)
 console.log(`  scartate: ${skipped.length}`)
 const byReason = new Map()
 for (const s of skipped) {
   const k = s.why.replace(/"[^"]*"/, '"..."').replace(/id \d+ condiviso.*/, 'id condiviso fra piu\' pagine')
+    .replace(/\|ID \d+/, '|ID')
   byReason.set(k, (byReason.get(k) ?? 0) + 1)
 }
 for (const [why, n] of [...byReason].sort((a, b) => b[1] - a[1])) {
   console.log(`    ${String(n).padStart(4)}  ${why}`)
 }
+// Quelle che hanno l'id solo grazie a |ID: poche, e conviene vederle.
+const viaId = cards.filter((c) => c.id_from === 'ID')
+console.log(`  id dal campo |ID (verificati sul datamine): ${viaId.length}`)
+if (DRY) for (const c of viaId) console.log(`    ${c.card.id}  ${c.card.wiki_title}`)
 
 // La distribuzione dice se il parsing e' sano: in Dokkan una carta ha
 // 5-7 link skill. Se comparissero degli 1 o dei 2, vorrebbe dire che

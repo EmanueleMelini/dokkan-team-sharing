@@ -9,7 +9,8 @@ import { assetUrl } from '@/lib/db'
 import { quando } from '@/lib/date'
 import { pagina as leggiPagina, regione, uno, type Ricerca } from '@/lib/parametri'
 import {
-  CLEAR_PER_PAGINA, getEvent, getStages, listClears, type EventDetail, type Region, type StageRow,
+  CLEAR_PER_PAGINA, getEvent, getEzaLinks, getStages, listClears,
+  type EventDetail, type Region, type StageRow,
 } from '@/lib/queries'
 import { AttesaLink } from '@/components/attesa-link'
 import { Clear } from '@/components/clear'
@@ -85,7 +86,7 @@ export default async function Evento(props: PageProps<'/events/[id]'>) {
   const reg = regione(sp)
   const pagina = leggiPagina(sp)
 
-  const [e, stages] = await Promise.all([evento(id, reg), getStages(id, reg)])
+  const [e, stages, legami] = await Promise.all([evento(id, reg), getStages(id, reg), getEzaLinks(id)])
   if (!e) notFound()
 
   const richiesto = uno(sp.tier)
@@ -111,6 +112,8 @@ export default async function Evento(props: PageProps<'/events/[id]'>) {
   const fasciaScelta = scelto ? fasciaDi(scelto.seq) : 0
   const livelliVisibili = fasce.size ? (fasce.get(fasciaScelta) ?? []) : stages
   const banner = assetUrl(e.banner_key)
+  const copertina = assetUrl(e.cover_thumb_key)
+  const linkEvento = (altro: string) => (reg === 'japan' ? `/events/${altro}?region=japan` : `/events/${altro}`)
   const href = (tier: string, n = 1) => `/events/${e.id}?${new URLSearchParams({
     ...(reg === 'japan' ? { region: reg } : {}), tier, ...(n > 1 ? { page: String(n) } : {}),
   })}`
@@ -137,9 +140,12 @@ export default async function Evento(props: PageProps<'/events/[id]'>) {
       </Link>
 
       <header className="mt-5 grid gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] md:items-end">
-        <div className="relative aspect-[16/7] rounded-[var(--raggio)] overflow-hidden bg-superficie-2 border border-linea">
-          {banner && (
+        <div className="relative aspect-[16/7] rounded-[var(--raggio)] overflow-hidden bg-superficie-2 border border-linea flex items-center justify-center">
+          {banner ? (
             <Image src={banner} alt="" fill preload sizes="(max-width: 768px) 100vw, 50vw" className="object-cover" />
+          ) : (
+            // Gli eventi presi dal gioco non hanno banner: la carta del boss
+            copertina && <Image src={copertina} alt="" width={96} height={96} preload className="rounded-[var(--raggio)]" />
           )}
         </div>
         <div>
@@ -163,6 +169,23 @@ export default async function Evento(props: PageProps<'/events/[id]'>) {
               <span className="text-tenue">We have no dates for this version of the game.</span>
             )}
           </p>
+          {/* EZA e Super EZA sono due eventi: ciascuno porta all'altro */}
+          {legami.normal && (
+            <p className="mt-2 text-[13px] text-testo">
+              Super version of{' '}
+              <Link href={linkEvento(legami.normal.id)} className="underline decoration-oro-linea underline-offset-2 hover:text-inchiostro">
+                {legami.normal.name}
+              </Link>
+            </p>
+          )}
+          {legami.supers.map((s) => (
+            <p key={s.id} className="mt-2 text-[13px] text-testo">
+              Super version:{' '}
+              <Link href={linkEvento(s.id)} className="underline decoration-oro-linea underline-offset-2 hover:text-inchiostro">
+                {s.name}
+              </Link>
+            </p>
+          ))}
         </div>
       </header>
 

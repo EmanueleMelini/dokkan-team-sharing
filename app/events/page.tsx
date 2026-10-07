@@ -230,6 +230,7 @@ export default async function Eventi(props: PageProps<'/events'>) {
         <ul className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {eventi.map((e, i) => {
             const banner = assetUrl(e.banner_key)
+            const copertina = assetUrl(e.cover_thumb_key)
             const st = statoBreve(e)
             return (
               <li key={e.id}>
@@ -250,9 +251,16 @@ export default async function Eventi(props: PageProps<'/events'>) {
                         className="object-cover"
                       />
                     ) : (
-                      <span className="text-[11px] text-tenue">
-                        {TIPI.find((t) => t.valore === e.kind)?.etichetta ?? 'Event'}
-                      </span>
+                      // Senza banner (gli eventi presi dal gioco non lo hanno):
+                      // la carta del boss, se la conosciamo, e il tipo di evento.
+                      <div className="flex flex-col items-center gap-1.5">
+                        {copertina && (
+                          <Image src={copertina} alt="" width={56} height={56} className="rounded-[var(--raggio)]" />
+                        )}
+                        <span className="text-[11px] text-tenue">
+                          {TIPI.find((t) => t.valore === e.kind)?.etichetta ?? 'Event'}
+                        </span>
+                      </div>
                     )}
                   </div>
                   <div className="p-3">
