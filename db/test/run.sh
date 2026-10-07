@@ -5,7 +5,7 @@
 #   import dei dati veri -> query
 #   delle pagine (lib/queries.ts vero) -> parametri dell'URL (lib/parametri.ts)
 #   -> finestre degli eventi dal gioco (load-windows) -> eventi creati dal
-#   gioco (load-game-events)
+#   gioco (load-game-events) -> classificazione (story, SBR, archivi)
 #
 # Gira su dokkan_test, o su TEST_DATABASE_URL se c'e' (il nome deve finire
 # per _test): il database di sviluppo non si tocca. Prima db:test lo
@@ -64,6 +64,10 @@ passo "finestre dal gioco" verifica node_ts db/test/windows.test.mts
 # Dopo le finestre: rilancia load-game-events, load-events e load-windows
 # e controlla che un secondo giro non cambi niente.
 passo "eventi dal gioco" verifica node_ts db/test/game-events.test.mts
+# Il tipo dei remake della storia, le pagine della Super Battle Road e gli
+# archivi delle edizioni (legami per quest): rilancia load-events e
+# load-windows, e ritocca una run e un clear (rimettendoli a posto).
+passo "classificazione" verifica node_ts db/test/classification.test.mts
 
 riepilogo
 if [ "$rosso" -eq 0 ]; then echo "TUTTO VERDE"; else echo "$rosso passi rossi"; exit 1; fi

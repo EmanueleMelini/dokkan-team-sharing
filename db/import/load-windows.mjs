@@ -25,6 +25,10 @@
 //        EZA   z_battle_stages.start_at/end_at, la finestra in lista. Qui
 //              il 2038 vuol dire davvero "per sempre": permanente, fine nota.
 //              Il Portale dei Ricordi (eventkagi_*, a chiavi) non e' "attivo".
+//        quest le pagine della Super Battle Road e le edizioni degli archivi,
+//              legate per quest (quest-refs.mjs, migrazione 0012): corsa
+//              permanente dalla partenza della quest, o dall'apertura
+//              dell'archivio, finche' l'area e' accesa.
 //   3. le riconcilia con le run Global che ci sono, una per una.
 //
 // Il database del gioco e' una fotografia: ogni giro SOVRASCRIVE la corsa
@@ -54,6 +58,7 @@ import { connectionString, describeTarget } from '../env.mjs'
 import { gameEnd, gameStart, int, isPreLaunch, isSentinel, loadTable, snapshotInfo } from './datamine.mjs'
 import { wikiGlobalRelease } from './game-map.mjs'
 import { wikiRefs } from './game-events/wiki-refs.mjs'
+import { questRefs, questWindows } from './quest-refs.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const DRY = process.argv.includes('--dry-run')
@@ -197,9 +202,29 @@ function mergeWindows(ws) {
       cur.end = end
       cur.kind = end == null ? (cur.known ? 'permanent' : 'open') : 'window'
       cur.wikiWrong ||= w.wikiWrong
+      cur.sameRelease ||= w.sameRelease
     } else out.push({ ...w })
   }
   return out
+}
+
+// Le corse permanenti delle quest (SBR, archivi) e le finestre aperte, a
+// fine non nota, delle aree dello stesso evento: l'area di un'edizione del
+// gioco (1715, 1736...) non ha piu' missioni, e la sua finestra viene dalla
+// partenza delle quest. Fuse, la corsa diventerebbe "fine non nota" e
+// l'archivio non si vedrebbe. Invece l'apertura finisce, non dopo, dove
+// comincia la permanenza (come una run del wiki che il gioco chiude), e
+// un'apertura che parte insieme o dopo e' gia' dentro la permanenza.
+function withPermanent(ws) {
+  const perm = ws.filter((w) => w.ref.game_kind === 'quest')
+  if (!perm.length) return mergeWindows(ws)
+  const p0 = perm.reduce((a, w) => (w.start < a ? w.start : a), perm[0].start)
+  const rest = ws.filter((w) => w.ref.game_kind !== 'quest').flatMap((w) => {
+    if (w.end != null && w.end <= p0) return [w]
+    if (w.start >= p0 - TOL) return []
+    return [{ ...w, end: p0, known: false, kind: 'window' }]
+  })
+  return [...mergeWindows(rest), ...mergeWindows(perm)]
 }
 
 // ------------------------------------------------------------ scrittura
@@ -233,19 +258,33 @@ async function statusNow() {
 try {
   // gli eventi del wiki e i loro legami, con le stesse regole che usa
   // load-game-events prima di questo script (game-events/wiki-refs.mjs)
-  const { events, refs, unmatched } = await wikiRefs(client, pages, dm)
+  const { events, refs: areaRefs, unmatched: unmatchedAll } = await wikiRefs(client, pages, dm)
   const evById = new Map(events.map((e) => [e.id, e]))
+  // Le aree che il wiki divide in piu' pagine (Super Battle Road) e gli
+  // archivi delle edizioni si legano per quest (quest-refs.mjs, migrazione
+  // 0012). Gli archivi puntano agli eventi delle edizioni, che possono
+  // essere anche del gioco: servono i legami di load-game-events.
+  const { rows: gameAreas } = await client.query(`
+    select event_id, game_id from event_game_ref where source = 'game' and game_kind = 'area'`)
+  const qr = questRefs(events, dm, [...areaRefs.filter((r) => r.game_kind === 'area'), ...gameAreas])
+  const refs = [...areaRefs, ...qr.refs]
+  const byQuest = new Set(qr.refs.map((r) => r.event_id))
+  const unmatched = unmatchedAll.filter((u) => !byQuest.has(u.ev.id))
 
   const kinds = [...tally(events.map((e) => e.kind))].sort((a, b) => b[1] - a[1])
-  const mappedIds = new Set(refs.map((r) => r.event_id))
-  const confOf = new Map(refs.map((r) => [r.event_id, r.confidence]))
+  // gli archivi legano anche eventi del gioco: qui si contano quelli del wiki
+  const mappedIds = new Set(refs.map((r) => r.event_id).filter((id) => evById.has(id)))
+  const confOf = new Map(refs.filter((r) => evById.has(r.event_id)).map((r) => [r.event_id, r.confidence]))
   console.log(`\n  eventi del wiki: ${events.length}, legati al gioco: ${mappedIds.size}` +
               `  (high ${[...confOf.values()].filter((c) => c === 'high').length},` +
               ` medium ${[...confOf.values()].filter((c) => c === 'medium').length})`)
   console.log(`    ${kinds.map(([k, n]) => `${k} ${events.filter((e) => e.kind === k && mappedIds.has(e.id)).length}/${n}`).join('  ')}`)
   console.log(`    aree ${refs.filter((r) => r.game_kind === 'area').length}` +
               ` (di cui riedizioni ${refs.filter((r) => r.via === 'sibling').length}),` +
-              ` EZA ${refs.filter((r) => r.game_kind === 'z_battle_stage').length}`)
+              ` EZA ${refs.filter((r) => r.game_kind === 'z_battle_stage').length},` +
+              ` quest ${qr.refs.length} (${tally(qr.refs.map((r) => `${r.via} ${r.area}`)).size} gruppi su` +
+              ` ${byQuest.size} eventi: ${[...tally(qr.refs.map((r) => r.via))].map(([v, k]) => `${v} ${k}`).join(', ')})`)
+  for (const x of qr.skipped) console.log(`    quest dell'area ${x.area} non legate: ${x.what} — ${x.why}`)
   console.log(`  non legati: ${unmatched.length}`)
   for (const u of unmatched.sort((a, b) => a.reason.localeCompare(b.reason))) {
     console.log(`    ${String(u.ev.id).padStart(7)}  ${u.ev.wiki_title}  — ${u.reason}`)
@@ -305,7 +344,8 @@ try {
   console.log(`  legami scritti da load-game-events: ${fromGame.length}, su ${new Set(fromGame.map((r) => r.event_id)).size} eventi` +
               ` (${new Set(fromGame.filter((r) => evById.has(r.event_id)).map((r) => r.event_id)).size} del wiki, riedizioni)`)
   for (const [id, rs] of refsByEvent) {
-    const per = rs.map((r) => ({ r, w: r.game_kind === 'area' ? areaWindows(r.game_id, r.source === 'game') : stageWindows(r.game_id) }))
+    const per = rs.map((r) => ({ r, w: r.game_kind === 'area' ? areaWindows(r.game_id, r.source === 'game')
+      : r.game_kind === 'quest' ? questWindows(qr.ix, r.game_id, r.via) : stageWindows(r.game_id) }))
     let ok = per.filter((x) => !x.w.none).flatMap((x) => x.w.map((w) => ({ ...w, ref: x.r })))
     // Una finestra finita prima della prima uscita Global (secondo il wiki)
     // non e' di questo evento: e' l'edizione precedente, che il wiki tiene
@@ -330,7 +370,7 @@ try {
         return false
       })
     }
-    if (ok.length) windows.set(id, mergeWindows(ok))
+    if (ok.length) windows.set(id, withPermanent(ok))
     else noWindow.push({ id, why: per.find((x) => x.w.none)?.w.none ?? 'edizione precedente' })
   }
   const lastKind = (id) => windows.get(id).at(-1).kind
@@ -338,7 +378,7 @@ try {
   const nWin = [...windows.values()].reduce((a, ws) => a + ws.length, 0)
   console.log(`\n  finestre dal gioco (solo Global): ${nWin} su ${withWin.length} eventi; l'ultima di ogni evento e':`)
   console.log(`    con inizio e fine          ${withWin.filter((id) => lastKind(id) === 'window').length}`)
-  console.log(`    permanenti (EZA in lista)  ${withWin.filter((id) => lastKind(id) === 'permanent').length}`)
+  console.log(`    permanenti                 ${withWin.filter((id) => lastKind(id) === 'permanent').length}   (EZA in lista, Super Battle Road, archivi)`)
   console.log(`    iniziate, fine non nota    ${withWin.filter((id) => lastKind(id) === 'open').length}   (missioni che scadono nel 2038)`)
   for (const [why, n] of tally(noWindow.map((x) => x.why))) console.log(`    senza finestra             ${n}   (${why}: resta la run del wiki)`)
   if (earlier.length) console.log(`    scartate, finite prima della prima uscita Global: ${earlier.length}`)
@@ -383,7 +423,9 @@ try {
       let conflict = null
       for (const r of over) {
         const d = r.starts_at - w.start
-        if (r.source === 'game' ? Math.abs(d) <= TOL : d >= -TOL) same.push(r)
+        // una pagina di SBR e' la sua fetta di piani: la run del wiki e' la
+        // stessa uscita anche quando la data del wiki sbaglia (81 - 90)
+        if (r.source === 'game' ? Math.abs(d) <= TOL : (d >= -TOL || w.sameRelease)) same.push(r)
         else if (d < 0) close.push(r)
         // una run del gioco che inizia dentro la finestra e finisce come lei e'
         // la stessa corsa datata dall'ultimo blocco (la regola di prima sulle

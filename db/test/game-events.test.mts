@@ -288,8 +288,10 @@ try {
   await sezione('niente doppioni col wiki', async () => {
     const dup = await righe(`select game_kind, game_id, count(distinct event_id)::int as n from event_game_ref group by 1, 2 having count(distinct event_id) > 1`)
     check('ogni area/EZA e\' di un evento solo', dup.length === 0, JSON.stringify(dup.slice(0, 3)))
+    // le quest degli archivi le lega load-windows (source 'wiki') anche agli
+    // eventi del gioco, le edizioni: non sono aree contese, e restano fuori
     const wikiHeld = await valore(`select count(*)::int from event_game_ref g join event e on e.id = g.event_id
-                                   where e.imported_from = 'datamine' and g.source <> 'game'`)
+                                   where e.imported_from = 'datamine' and g.source <> 'game' and g.game_kind <> 'quest'`)
     check('nessun legame del wiki su un evento del gioco', wikiHeld === 0, String(wikiHeld))
     // la guardia di load-events: una pagina "nuova" che ritrova un'area gia'
     // di un evento del gioco. 709063 e' legata all'area 221: fingiamo che

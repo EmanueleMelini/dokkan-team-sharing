@@ -6,8 +6,9 @@
 //   1. MainArea e TutorialArea sono capitoli della storia, non eventi;
 //   2. 30 quest o piu', 20 delle quali con la partenza fittizia: e' un
 //      archivio (Ultimate Red Zone, Supreme Magnificent Battle). Gli archivi
-//      ripropongono edizioni che hanno gia' il loro evento: per ora si
-//      dicono e basta;
+//      ripropongono edizioni che hanno gia' il loro evento: non diventano un
+//      evento, e load-windows lega le loro quest a quelli delle edizioni
+//      (quest-refs.mjs);
 //   3. stesso nome (norm) di un'area piu' vecchia dello stesso tipo, e
 //      almeno meta' dei boss o delle quest non generiche in comune: e' la
 //      stessa cosa che torna. Solo i nomi delle quest non bastano ("Stage
@@ -45,8 +46,9 @@ const KIND = {
 // variante in singolo, quattro aree (e tre categorie diverse) per una gara.
 const FAMILY = { 1718: 1717, 1719: 1717, 1721: 1717 }
 const BY_HAND = {
-  710: { skip: "il wiki ha Super Battle Road in pagine per intervallo di livelli (1 - 10, 11 - 20...): un'area non si lega a piu' eventi" },
-  720: { skip: "il wiki ha Extreme Super Battle Road in pagine per intervallo di livelli: un'area non si lega a piu' eventi" },
+  // le pagine le lega load-windows, quest per quest (quest-refs.mjs)
+  710: { skip: "il wiki ha Super Battle Road in pagine per intervallo di livelli (1 - 10, 11 - 20...): legate per quest" },
+  720: { skip: "il wiki ha Extreme Super Battle Road in pagine per intervallo di livelli: legate per quest" },
   // un'area figlia di 607 (stesso boss, stesso nome con il prefisso
   // "Extreme Z-Area"): si apre con il suo evento
   791: { sameAs: 607 },
@@ -111,7 +113,7 @@ export function classify(d, refs, wiki) {
     if (wikiArea.has(id)) { done.set(id, wikiArea.get(id)); return wikiArea.get(id) }
     if (/MainArea|TutorialArea/.test(a.type)) return skip(id, 'non e\' un evento', `${a.type}: capitolo della storia`)
     const { nq, nph } = activity(id)
-    if (nq >= 30 && nph >= 20) return skip(id, 'archivio', `${nq} quest, ${nph} con la partenza fittizia: ripropone edizioni che hanno gia' un evento`)
+    if (nq >= 30 && nph >= 20) return skip(id, 'archivio', `${nq} quest, ${nph} con la partenza fittizia: ripropone edizioni che hanno gia' un evento, legate per quest`)
     const hand = BY_HAND[id]
     if (hand?.skip) return skip(id, 'deciso a mano', hand.skip)
     if (hand?.sameAs != null) return link(id, decide(hand.sameAs), `parte dell'area ${hand.sameAs}`, ['by-hand', 'boss'])

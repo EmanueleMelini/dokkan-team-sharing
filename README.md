@@ -222,6 +222,7 @@ db/
     load-events.mjs         idem per eventi, stage e difficoltà
     load-game-events.mjs    gli eventi che il wiki non ha, dal datamine del gioco
     game-events/            i suoi moduli: classify, build, write, i legami del wiki
+    quest-refs.mjs          i legami per quest (Super Battle Road, archivi), per load-windows
     fetch-assets.mjs        scarica le immagini e le registra in asset
     .cache/                 il wikitext scaricato (non versionato)
 public/assets/              le immagini ospitate da noi (non versionate)
@@ -412,18 +413,41 @@ Pettan Battle, Explosive Chain Battle).
 
 | tipo | eventi | stage |
 |---|---|---|
-| challenge | 209 | 742 |
-| zbattle (Extreme Z-Battle) | 150 | 3718 |
-| limited | 113 | 327 |
-| story | 84 | 604 |
-| other | 22 | 189 |
+| challenge | 208 | 739 |
+| zbattle (Extreme Z-Battle) | 152 | 4788 |
+| limited | 114 | 339 |
+| story | 100 | 738 |
 | bonus | 20 | 26 |
-| world_tournament | 1 | 12 |
+| other | 6 | 55 |
+
+(Su `dokkan_dev`, 8 ottobre 2026: 600 eventi del wiki.)
 
 La classificazione viene dal template di navigazione in fondo alla pagina:
-è il wiki stesso a dire in che elenco sta un evento. I 22 `other` sono
-quelli senza navigazione e senza un titolo riconoscibile — inventare una
-categoria plausibile sarebbe stato peggio che ammettere di non saperlo.
+è il wiki stesso a dire in che elenco sta un evento. Se non c'è, prova il
+titolo, e per ultime due categorie del wiki che il tipo lo dicono senza
+dubbi: "Story Events" (story in 84 pagine classificate su 84) e "Special
+Events" (limited in 60 su 61). Le due pagine che prendono, 710308 (Super
+Hero) e 2542 (Countdown to Resurrection), hanno nel gioco la categoria che
+dice la stessa cosa (7 e 2).
+
+**I remake della storia sono `story`.** Le 15 pagine con la navigazione
+"Dragon Ball Story Nav" sono le aree DbStory del gioco (categoria 9000, 901-917),
+e `load-game-events` crea quelle nuove come `story`: prima quelle del wiki
+finivano 14 in `other` e una (722687, "The 21st World Tournament") in
+`world_tournament`, per il titolo. Ora la regola sta in `load-events`, dove
+il tipo si decide, quindi un reimport non la disfa; il test lo verifica
+anche dal lato del gioco (ogni evento legato a un'area 9000 è `story`). Con
+722687 `world_tournament` resta senza eventi, e il filtro del sito lo offre
+lo stesso.
+
+I 6 `other` che restano: quattro pagine "Limit Events" (4285 e 5467 Hero
+Extermination Plan, 56171 The Bizarre Rabbit Mob!, 648656 Awakened Power!),
+una famiglia del wiki che il sito non ha fra i tipi e che il gioco mette
+nella categoria 8 (648656 nella 6), che anche `load-game-events` lascia
+`other`; e due pagine senza navigazione né categorie (727138 Rebel Plotting
+for Dominance, 727287 Miraculous Strike!, aree 1508 e 1507, categoria 10).
+Il wiki non dice niente, e una regola sulla sola categoria del gioco per
+due pagine sarebbe un tipo indovinato: meglio ammettere di non saperlo.
 
 **Due strutture diverse, entrambe gestite.** Gli eventi normali hanno stage
 con difficoltà: le righe di gruppo dicono `Level N: Nome` e sotto ci sono i
@@ -506,13 +530,15 @@ che gira prima, le deve applicare uguali senza leggerle dal database:
 
 | tipo | legati | | tipo | legati |
 |---|---|---|---|---|
-| zbattle | 152 / 152 | | other | 22 / 22 |
-| challenge | 193 / 208 | | bonus | 18 / 20 |
-| limited | 109 / 113 | | world_tournament | 1 / 1 |
-| story | 84 / 84 | | **totale** | **579 / 600** (534 high, 45 medium) |
+| zbattle | 152 / 152 | | other | 6 / 6 |
+| challenge | 208 / 208 | | bonus | 18 / 20 |
+| limited | 110 / 114 | | | |
+| story | 100 / 100 | | **totale** | **594 / 600** (549 high, 45 medium) |
 
-I 21 non legati restano col calendario del wiki, ed è voluto: le 15 pagine
-della Super Battle Road (90 piani su due aree del gioco, una chiave sola),
+Le 15 pagine della Super Battle Road sono legate per quest, non per area:
+vedi "Super Battle Road e archivi: un'area, più eventi".
+
+I 6 non legati restano col calendario del wiki, ed è voluto:
 137827 (la sua area il gioco non l'ha più) e la collaborazione 703308, che ha
 solo una quest in comune con un evento già legato. Altri quattro un'area nel
 gioco ce l'hanno, ma le chiavi non ci arrivano: la Snaky Way (869, aree
@@ -601,16 +627,18 @@ la finestra) diventa la run a mano sul posto, con lo stesso id.
 **Il risultato su `dokkan_dev`**, una ricorrenza per evento come la lista
 del sito, oggi (7 ottobre 2026), con la fotografia del 2 ottobre:
 
-| Global | prima | dopo | con gli eventi dal gioco (8 ottobre) |
-|---|---|---|---|
-| attivi con la fine | 0 | 6 (fino al 20 ottobre) | 28 (6 del wiki, 22 del gioco) |
-| attivi permanenti (EZA) | 0 | 147 | 219 (147 + 72) |
-| attivi, fine non nota | 560 | 306 | 374 (312 + 62) |
-| conclusi | 0 | 120 | 150 (114 + 36) |
-| in arrivo | 0 | 0 | 0 |
+| Global | prima | dopo | con gli eventi dal gioco (8 ottobre) | con SBR e archivi |
+|---|---|---|---|---|
+| attivi con la fine | 0 | 6 (fino al 20 ottobre) | 28 (6 del wiki, 22 del gioco) | 28 (6 + 22) |
+| attivi permanenti | 0 | 147 | 219 (147 + 72) | 251 (173 + 78) |
+| attivi, fine non nota | 560 | 306 | 374 (312 + 62) | 346 (290 + 56) |
+| conclusi | 0 | 120 | 150 (114 + 36) | 150 (114 + 36) |
+| in arrivo | 0 | 0 | 0 | 0 |
 
-Nell'ultima colonna gli eventi sono 792, 771 con una run Global (i 21 del
-wiki non legati restano senza). Sei eventi del wiki sono passati da
+Nella quarta colonna gli eventi sono 792, 771 con una run Global; nella
+quinta 775: quattro edizioni che il wiki dava solo su Japan (o senza data)
+ora ce l'hanno dall'archivio. Le 32 permanenti in più sono le 15 pagine
+della Super Battle Road e le 17 edizioni degli archivi. Sei eventi del wiki sono passati da
 "conclusi" a "in corso": il gioco li ha riaperti sotto un'altra area, e
 `load-game-events` li ha riconosciuti come riedizioni (vedi sotto).
 
@@ -672,8 +700,8 @@ EZA che `game-map` non ha legato a una pagina del wiki
 | evento nuovo | 106 aree, 86 EZA | 71 challenge, 21 limited, 14 story, 86 zbattle (58 Normal, 28 Super) |
 | riedizione di un evento che c'è | 20 aree | una riga in `event_game_ref` sull'evento esistente, niente evento nuovo |
 | non è un evento | 5 | i capitoli della storia (MainArea 38-42) |
-| archivio | 2 | 1737 Ultimate Red Zone, 1738 Supreme Magnificent Battle: ripropongono edizioni che hanno già un evento; per ora solo elencati |
-| deciso a mano | 2 | 710 e 720 Super Battle Road: il wiki le ha in pagine per intervallo di piani, un'area non si lega a più eventi |
+| archivio | 2 | 1737 Ultimate Red Zone, 1738 Supreme Magnificent Battle: ripropongono edizioni che hanno già un evento: nessun evento nuovo, le loro quest le lega `load-windows` alle edizioni |
+| deciso a mano | 2 | 710 e 720 Super Battle Road: il wiki le ha in pagine per intervallo di piani, legate per quest da `load-windows` |
 | tipo sconosciuto | 1 | 807, categoria 27: nessun evento legato da cui ricavare il tipo |
 
 - **Riedizione** = stesso nome di un'area più vecchia dello stesso tipo, e
@@ -756,6 +784,79 @@ file, e il wiki non li carica più dal febbraio 2025), la data Japan, i nomi
 degli stage "Stage N", l'exp del personaggio e i drop, e il nome dei boss
 la cui carta non abbiamo (manca anche la copertina: 19 eventi). Le missioni
 il gioco le ha, ma non sono ancora importate.
+
+## Super Battle Road e archivi: un'area, più eventi
+
+`event_game_ref` vuole un'area per evento (la chiave è `(game_kind,
+game_id)`), ed è giusto quasi sempre. Due famiglie no:
+
+- **Super Battle Road**: il gioco ha due aree, 710 (90 piani) e 720 Extreme
+  (85), un piano per quest. Il wiki ha una pagina ogni dieci piani, 9 + 6
+  pagine, e nessuna si legava: restavano con la prima uscita del wiki.
+- **Gli archivi** 1737 Ultimate Red Zone e 1738 Supreme Magnificent Battle
+  ripropongono le edizioni vecchie, ognuna già evento a sé, come quest
+  "GT Edition Stage 3". Le edizioni risultavano "fine non nota" dal 2022,
+  anche se sono in gioco.
+
+Allargare la chiave avrebbe reso ambiguo ogni altro legame. La migrazione
+0012 fa scendere la riga di un livello: `game_kind = 'quest'`, `game_id` =
+id della quest. Una quest sta in una pagina sola, e la chiave regge com'è.
+Le righe le scrive `load-windows` (`source = 'wiki'`, ricostruite a ogni
+giro come le altre sue), con le regole di `db/import/quest-refs.mjs`, due
+chiavi ciascuna:
+
+- `via = 'range'`: "Super Battle Road 11 - 20" prende le quest dalla 11a
+  alla 20a dell'area che si chiama come la pagina senza l'intervallo, se i
+  nomi degli stage sono quelli delle quest (almeno metà: 81 - 90 ne ha 5 su
+  10; Extreme 1 - 10 ripete i nomi della Super, che il gioco tronca).
+- `via = 'archive'`: la quest "<Edizione> Stage N" dell'archivio va
+  all'evento dell'area "<nome dell'archivio> [<Edizione>]", del wiki o del
+  gioco, se i boss delle quest con quel prefisso sono quelli dell'edizione
+  (sono uguali, 1.00, in tutte). 110 quest su 117: Movie Edition di 1738
+  (area 797) non ha un evento, e l'import lo dice.
+
+**Le finestre.** Le due famiglie non chiudono: SBR aggiunge piani alle
+stesse aree dal 2018 (l'ultimo il 22/07/2026) e i primi sono ancora lì, con
+le missioni del 2018; un archivio esiste per tenere in gioco le edizioni
+finite (la SDBH Edition, che è finita il 07/12/2023, non c'è). Quindi, finché
+l'area è accesa (il suo ultimo blocco di missioni scade nel 2038, la regola
+delle aree), la quest è una corsa **permanente**, dalla sua partenza vera.
+Quasi tutte le quest degli archivi hanno la partenza fittizia 2015-10-30:
+per loro vale l'apertura dell'archivio, la prima missione che parla solo
+delle sue mappe. Le missioni più vecchie sono quelle delle edizioni,
+trasferite con la loro data e con le mappe di prima accanto a quelle nuove
+(la 31506 del 06/01/2026 ha `[17360035, 17370825]`). Le prime solo sue sono
+del **22/01/2026 05:00** per entrambi, e torna con la storia del repo: gli
+archivi non ci sono nella fotografia del 26/12/2025, ci sono in quella del
+23/03/2026. Artificial Life Forms entra nell'archivio il 26/02/2026 08:00,
+con la partenza vera delle sue quest.
+
+**La riconciliazione** è quella di sempre, con due ritocchi:
+
+- una pagina SBR **è** la sua fetta di piani, quindi la sua run del wiki è
+  la stessa uscita anche quando la data sbaglia, e diventa quella del gioco
+  sul posto: 81 - 90 il wiki la dà il 10/11/2023 (la data di 71 - 80), il
+  piano 81 apre il 18/07/2024; Extreme 51 - 60 il 14/04/2023 contro il
+  02/04/2024. Senza, resterebbe un tratto "concluso" inventato;
+- per un'edizione la run di prima (la prima uscita del wiki, o la finestra
+  dall'area del gioco, che non ha più missioni perché sono passate
+  all'archivio) **finisce, non dopo, dove comincia l'archivio**, con la fine
+  non nota, e la permanenza entra come run nuova. Fuse, la corsa sarebbe
+  stata "fine non nota" e l'archivio non si sarebbe visto.
+
+Il resto non cambia: una run a mano vince e la finestra si salta, non si
+cancella niente, e un clear scritto oggi sulla run chiusa la porta con sé
+sulla permanenza (lo scambio). Il test (`db/test/classification.test.mts`)
+li prova tutti e due, su GT Edition.
+
+**Il risultato** su `dokkan_dev`: le 15 pagine SBR hanno una run Global sola,
+permanente, dal primo piano del loro intervallo (1 - 10 dal 14/02/2018 06:30,
+Extreme 1 - 10 dal 15/09/2020 06:00). Le 17 edizioni (13 Ultimate Red Zone,
+4 Supreme Magnificent Battle) sono in corso, permanenti dal 22/01/2026
+(Artificial Life Forms dal 26/02); 7 run del wiki e 6 del gioco sono state
+chiuse lì, e quattro edizioni che il
+wiki dava solo su Japan o senza data (725181, 726771, 725305, 726799) ora
+hanno la loro run Global. Un secondo giro non cambia niente.
 
 ## Cosa manca, in ordine
 

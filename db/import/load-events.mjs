@@ -86,6 +86,9 @@ const NAV = {
   'Challenge Events Nav': 'challenge',
   'Prime Battle Events Nav': 'challenge',
   'Story Events Nav': 'story',
+  // i remake della storia (DbStory nel gioco, categoria 9000): il gioco li
+  // mette fra le storie, e load-game-events crea quelli nuovi come 'story'
+  'Dragon Ball Story Nav': 'story',
   'Special Events Nav': 'limited',
   'Limited-Attempts Events Nav': 'limited',
   'Limited Events Nav': 'limited',
@@ -106,12 +109,22 @@ const BY_TITLE = [
   [/awakening medals/i, 'growth'],
 ]
 
+// ultimo ripiego, per le pagine senza navigazione e con un titolo qualsiasi:
+// le categorie del wiki che dicono il tipo senza dubbi. Misurate sulle
+// pagine gia' classificate: "Story Events" e' story in 84 su 84, "Special
+// Events" limited in 60 su 61. Le due pagine che prendono (710308, 2542)
+// hanno nel gioco la categoria che dice la stessa cosa (7 e 2).
+const BY_CATEGORY = { 'Story Events': 'story', 'Special Events': 'limited' }
+
 function kindOf(page) {
   for (const [tpl, k] of Object.entries(NAV)) {
     const re = new RegExp('\\{\\{\\s*' + tpl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i')
     if (re.test(page.wikitext)) return k
   }
   for (const [re, k] of BY_TITLE) if (re.test(page.title)) return k
+  for (const m of page.wikitext.matchAll(/\[\[\s*Category:\s*([^\]|]+?)\s*(?:\|[^\]]*)?\]\]/gi)) {
+    if (BY_CATEGORY[m[1]]) return BY_CATEGORY[m[1]]
+  }
   return 'other'
 }
 
