@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
 import { EmailSignIn } from '@/components/auth/email-sign-in'
@@ -49,7 +50,16 @@ export default async function LoginPage({ searchParams }: PageProps<'/login'>) {
         </div>
 
         <p className="mt-6 text-[11px] leading-relaxed text-tenue">
-          New here? Signing in creates your account. You will pick a handle next.
+          New here? Signing in creates your account. You will pick a handle next. By continuing you
+          agree to the{' '}
+          <Link href="/terms" className="underline decoration-oro-linea underline-offset-2 hover:text-inchiostro">
+            Terms of Service
+          </Link>{' '}
+          and acknowledge the{' '}
+          <Link href="/privacy" className="underline decoration-oro-linea underline-offset-2 hover:text-inchiostro">
+            Privacy Policy
+          </Link>
+          .
         </p>
       </div>
     </div>

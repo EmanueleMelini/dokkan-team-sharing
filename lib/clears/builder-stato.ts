@@ -57,6 +57,7 @@ export type Azione =
   | { t: 'squadra'; l: number; campo: 'label' | 'note'; valore: string }
   | { t: 'aggiungi_cambio' }
   | { t: 'togli_cambio'; l: number }
+  | { t: 'ricopia_partenza'; l: number }
   | { t: 'campo'; campo: Campo; valore: string | boolean }
   | { t: 'aggiungi_prova' }
   | { t: 'prova'; i: number; kind?: ProofKind; url?: string }
@@ -78,6 +79,26 @@ export function statoVuoto(run: string): BuilderStato {
     squadre: [squadraVuota()], run, turns: '', noItems: false, deathless: false,
     note: '', lang: 'en', proofs: [], changeNote: '',
   }
+}
+
+/** Copia profonda degli slot: carta, ruolo e build, con le sfere a parte. */
+function copiaSlots(slots: SlotStato[]): SlotStato[] {
+  return slots.map((x) => ({ ...x, build: { ...x.build, sfere: [...x.build.sfere] } }))
+}
+
+const stessoSlot = (a: SlotStato, b: SlotStato): boolean =>
+  (a.carta?.id ?? null) === (b.carta?.id ?? null) && a.role === b.role &&
+  a.build.routes === b.build.routes && a.build.path === b.build.path && a.build.note === b.build.note &&
+  a.build.sfere.every((x, k) => (x?.id ?? null) === (b.build.sfere[k]?.id ?? null))
+
+/**
+ * Vero se il cambio l ha gli stessi slot della partenza (carte, ruoli,
+ * build). Il builder lo usa per chiedere conferma prima di ricopiare: se
+ * sono uguali non c'è niente da perdere, e il bottone non serve.
+ */
+export function comeLaPartenza(s: BuilderStato, l: number): boolean {
+  const q = s.squadre[l]
+  return !!q && s.squadre[0].slots.every((x, k) => stessoSlot(x, q.slots[k]))
 }
 
 function cambiaSquadra(s: BuilderStato, l: number, f: (q: SquadraStato) => SquadraStato): BuilderStato {
@@ -129,12 +150,17 @@ export function reducer(s: BuilderStato, a: Azione): BuilderStato {
       // Il cambio parte dalla squadra precedente: di solito si toccano
       // una o due carte, non sette.
       const prima = s.squadre[s.squadre.length - 1]
-      // Anche le build: nel cambio restano le stesse carte, buildate uguali.
-      const slots = prima.slots.map((x) => ({ ...x, build: { ...x.build, sfere: [...x.build.sfere] } }))
-      return { ...s, squadre: [...s.squadre, { label: '', note: '', slots }] }
+      // Anche ruoli e build: nel cambio restano le stesse carte, buildate
+      // uguali. Da qui in poi il cambio è indipendente.
+      return { ...s, squadre: [...s.squadre, { label: '', note: '', slots: copiaSlots(prima.slots) }] }
     }
     case 'togli_cambio':
       return a.l === 0 ? s : { ...s, squadre: s.squadre.filter((_, k) => k !== a.l) }
+    case 'ricopia_partenza':
+      // Il cambio è una copia, non un riferimento: se la partenza cambia
+      // dopo, si riallinea a mano. Nome e nota del cambio restano.
+      if (a.l <= 0 || a.l >= s.squadre.length) return s
+      return cambiaSquadra(s, a.l, (q) => ({ ...q, slots: copiaSlots(s.squadre[0].slots) }))
     case 'campo':
       return { ...s, [a.campo]: a.valore }
     case 'aggiungi_prova':

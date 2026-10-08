@@ -29,8 +29,12 @@ function conBuild(base: Payload, orbs: number[]): Payload {
 
 try {
   const d = await dati()
+  // sfere che tutte le carte del payload possono montare: le esclusive
+  // (0021) le prova orbs.test.mts
   const orbs = (await q<{ id: string }>(
-    'select (select min(id) from equipment where tier = t)::text as id from generate_series(3, 1, -1) t')).map((r) => Number(r.id))
+    `select (select min(id) from equipment e where tier = t
+              and (select bool_and(equipment_fits(e.id, c)) from unnest($1::bigint[]) c))::text as id
+     from generate_series(3, 1, -1) t`, [d.cards])).map((r) => Number(r.id))
   check('ci sono sfere dei tre gradi (load-equipment)', orbs.length === 3 && orbs.every((x) => x > 0), orbs.join())
   check('le sfere hanno il nome inglese del gioco', await num(
     "select count(*) from equipment_text where locale = 'en' and name like '%Skill Orb%'") > 8000)

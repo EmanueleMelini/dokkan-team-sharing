@@ -7,7 +7,8 @@ import { GRADI, nomeRoutes } from '@/lib/clears/build'
 import { buildPiena, type Azione, type BuildStato } from '@/lib/clears/builder-stato'
 import { LIMITS } from '@/lib/clears/validate'
 
-export type BuildAperta = { l: number; i: number; dove: string; carta: string }
+/** carta: il nome per il titolo; cartaId: per cercare solo le sfere che puo' montare */
+export type BuildAperta = { l: number; i: number; dove: string; carta: string; cartaId: number | null }
 
 type Props = {
   aperta: BuildAperta | null
@@ -51,7 +52,7 @@ export function BuildEditor({ aperta, build, abilita, dispatch, onChiudi }: Prop
     if (!aperto && d.open) d.close()
   }, [aperto])
 
-  const a = aperta ?? { l: 0, i: 0, dove: '', carta: '' }
+  const a = aperta ?? { l: 0, i: 0, dove: '', carta: '', cartaId: null }
   const b = build
   const set = (c: 'routes' | 'path' | 'note', valore: string) => dispatch({ t: 'build', l: a.l, i: a.i, campo: c, valore })
 
@@ -107,6 +108,7 @@ export function BuildEditor({ aperta, build, abilita, dispatch, onChiudi }: Prop
                       {cerca === k ? (
                         <SferaPicker
                           dove={dove}
+                          carta={a.cartaId}
                           onAnnulla={chiudiRicerca}
                           onScegli={(x) => {
                             dispatch({ t: 'sfera', l: a.l, i: a.i, k, sfera: { id: x.id, name: x.name, tier: x.tier } })

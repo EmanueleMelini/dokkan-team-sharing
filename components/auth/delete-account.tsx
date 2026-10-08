@@ -1,6 +1,7 @@
 'use client'
 
 import { useActionState, useEffect, useId, useRef, useState } from 'react'
+import { ReauthNotice } from '@/components/auth/reauth-notice'
 import { deleteAccountAction, type AccountState } from '@/lib/auth/actions'
 import { handleMatches } from '@/lib/auth/account'
 
@@ -11,8 +12,9 @@ const bottone =
  * La cancellazione dell'account: prima un bottone, poi il campo dove si
  * scrive il proprio handle. Il bottone finale resta spento finche'
  * l'handle non coincide; lo ricontrollano la Server Action e il database.
+ * Con una sessione vecchia il campo non compare: prima si rientra.
  */
-export function DeleteAccount({ handle }: { handle: string }) {
+export function DeleteAccount({ handle, fresh }: { handle: string; fresh: boolean }) {
   const [apre, setApre] = useState(false)
   const [scritto, setScritto] = useState('')
   const [stato, azione, inCorso] = useActionState<AccountState, FormData>(deleteAccountAction, {})
@@ -40,6 +42,10 @@ export function DeleteAccount({ handle }: { handle: string }) {
         Delete account
       </button>
     )
+  }
+
+  if (!fresh || stato.reauth) {
+    return <ReauthNotice onCancel={() => { setApre(false); setScritto('') }} />
   }
 
   return (

@@ -8,6 +8,8 @@ import { useSfere, type SferaTrovata } from '@/components/builder/use-sfere'
 type Props = {
   /** "Skill Orb slot 2": il nome accessibile della ricerca */
   dove: string
+  /** la carta dello slot: la ricerca mostra solo le sfere che puo' montare */
+  carta: number | null
   onScegli: (s: SferaTrovata) => void
   onAnnulla: () => void
 }
@@ -17,15 +19,16 @@ const campo = 'w-full py-1.5 text-[13px] rounded-[var(--raggio)] bg-superficie b
 /**
  * La ricerca di una Skill Orb dentro l'editor della build. Le esclusive
  * hanno tutte lo stesso nome: la riga mostra anche la descrizione del
- * gioco, che dice a chi si monta, e la ricerca guarda anche lì.
+ * gioco, che dice a chi si monta, e la ricerca guarda anche lì. Le
+ * esclusive di altre carte non arrivano: il database le rifiuterebbe.
  */
-export function SferaPicker({ dove, onScegli, onAnnulla }: Props) {
+export function SferaPicker({ dove, carta, onScegli, onAnnulla }: Props) {
   const id = useId()
   const campoQ = useRef<HTMLInputElement>(null)
   const [q, setQ] = useState('')
   const [tier, setTier] = useState('')
   const [attiva, setAttiva] = useState(0)
-  const { ricerca, altre } = useSfere(q, tier, true)
+  const { ricerca, altre } = useSfere(q, tier, carta, true)
   const listaId = `${id}-lista`
   const opz = (i: number) => `${listaId}-o${i}`
   const n = ricerca.sfere.length
@@ -99,7 +102,9 @@ export function SferaPicker({ dove, onScegli, onAnnulla }: Props) {
             ))}
           </ul>
         ) : !n ? (
-          <p className="px-2 py-4 text-center text-[12px] text-tenue">No Skill Orbs match. Try fewer words.</p>
+          <p className="px-2 py-4 text-center text-[12px] text-tenue">
+            {ricerca.nascoste ? 'This card cannot equip any Skill Orb that matches. Try other words.' : 'No Skill Orbs match. Try fewer words.'}
+          </p>
         ) : (
           <ul id={listaId} role="listbox" aria-label="Skill Orbs" className="divide-y divide-linea">
             {ricerca.sfere.map((s, i) => (
@@ -126,6 +131,9 @@ export function SferaPicker({ dove, onScegli, onAnnulla }: Props) {
       <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-tenue">
         <span aria-live="polite">
           {ricerca.stato === 'pronto' ? <><span className="numeri">{n}</span> of <span className="numeri">{ricerca.totale}</span></> : ''}
+          {ricerca.stato === 'pronto' && ricerca.nascoste > 0 && (
+            <>. <span className="numeri">{ricerca.nascoste}</span> hidden because this card cannot equip them</>
+          )}
         </span>
         <span className="flex gap-2">
           {ricerca.prossimo != null && (

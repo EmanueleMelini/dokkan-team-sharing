@@ -5,7 +5,7 @@
 //
 // Funzioni pure, niente database.
 import {
-  payloadDa, reducer, statoVuoto, type Azione, type BuilderStato, type CartaScelta,
+  comeLaPartenza, payloadDa, reducer, statoVuoto, type Azione, type BuilderStato, type CartaScelta,
 } from '@/lib/clears/builder-stato'
 import { LIMITS, parseBuilderPayload } from '@/lib/clears/validate'
 
@@ -72,6 +72,34 @@ for (let k = 0; k < 5; k++) c = applica(c, { t: 'aggiungi_cambio' })
 check(`al massimo ${LIMITS.lineups - 1} cambi`, c.squadre.length === LIMITS.lineups)
 c = applica(c, { t: 'togli_cambio', l: 2 }, { t: 'togli_cambio', l: 0 })
 check('si toglie un cambio, mai la partenza', c.squadre.length === LIMITS.lineups - 1 && c.squadre[0].slots[4].carta?.id === 104)
+
+console.log('ricopiare la partenza')
+const sfera = { id: 812, name: 'Orb', tier: 3 }
+let r = applica(pieno, { t: 'sfera', l: 0, i: 1, k: 0, sfera }, { t: 'build', l: 0, i: 1, campo: 'routes', valore: '4' })
+r = applica(r, { t: 'aggiungi_cambio' }, { t: 'squadra', l: 1, campo: 'label', valore: 'Phase 2' })
+check('il cambio nuovo è come la partenza, build comprese', comeLaPartenza(r, 1) &&
+  r.squadre[1].slots[1].build.sfere[0]?.id === 812 && r.squadre[1].slots[1].build.routes === '4')
+check('le sfere del cambio sono un array a parte', r.squadre[1].slots[1].build.sfere !== r.squadre[0].slots[1].build.sfere)
+// La partenza cambia dopo: il cambio resta com'era, finché non si ricopia
+r = applica(r, { t: 'carta', l: 0, i: 3, carta: carta(500) }, { t: 'ruolo', l: 0, i: 3, role: 'friend' })
+r = applica(r, { t: 'sfera', l: 0, i: 1, k: 1, sfera: { id: 813, name: 'Orb 2', tier: 2 } })
+check('modificare la partenza non tocca il cambio', r.squadre[1].slots[3].carta?.id === 103 &&
+  ruoli(r, 1) === 'lmmmmmf' && r.squadre[1].slots[1].build.sfere[1] === null, ruoli(r, 1))
+check('e il cambio non è più come la partenza', !comeLaPartenza(r, 1))
+r = applica(r, { t: 'carta', l: 1, i: 5, carta: carta(777) }, { t: 'squadra', l: 1, campo: 'note', valore: 'Swap' })
+r = applica(r, { t: 'ricopia_partenza', l: 1 })
+check('ricopiare riporta carte, ruoli e build della partenza', comeLaPartenza(r, 1) &&
+  r.squadre[1].slots[3].carta?.id === 500 && r.squadre[1].slots[5].carta?.id === 105 &&
+  ruoli(r, 1) === ruoli(r, 0) && r.squadre[1].slots[1].build.sfere[1]?.id === 813, ruoli(r, 1))
+check('nome e nota del cambio restano', r.squadre[1].label === 'Phase 2' && r.squadre[1].note === 'Swap')
+r = applica(r, { t: 'sfera', l: 1, i: 1, k: 2, sfera })
+check('dopo la copia le build restano indipendenti', r.squadre[0].slots[1].build.sfere[2] === null)
+check('la partenza non si ricopia su se stessa', applica(r, { t: 'ricopia_partenza', l: 0 }) === r)
+check('un cambio che non esiste: niente', applica(r, { t: 'ricopia_partenza', l: 5 }) === r && !comeLaPartenza(r, 5))
+r = applica(r, { t: 'aggiungi_cambio' }, { t: 'carta', l: 1, i: 0, carta: carta(901) }, { t: 'ricopia_partenza', l: 2 })
+check('ricopia solo il cambio indicato', r.squadre[1].slots[0].carta?.id === 901 && r.squadre[2].slots[0].carta?.id === 100)
+const ricopiato = parseBuilderPayload(payloadDa(applica(r, { t: 'squadra', l: 2, campo: 'label', valore: 'Phase 3' })))
+check('il payload dopo la copia passa', ricopiato.ok, ricopiato.ok ? '' : ricopiato.error)
 
 console.log('le prove')
 let p = pieno

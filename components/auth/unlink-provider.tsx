@@ -1,6 +1,7 @@
 'use client'
 
 import { useActionState, useEffect, useRef, useState } from 'react'
+import { ReauthNotice } from '@/components/auth/reauth-notice'
 import { unlinkProviderAction, type AccountState } from '@/lib/auth/actions'
 
 const piccolo =
@@ -9,9 +10,11 @@ const piccolo =
 /**
  * Scollega in due passi, come Delete sui clear: la domanda compare nella
  * riga, senza dialogo modale. Il focus va alla conferma e torna a Unlink
- * se si annulla. `fallback` dice con cosa si entrera' dopo.
+ * se si annulla. `fallback` dice con cosa si entrera' dopo. Con una
+ * sessione vecchia (`fresh` falso al render, o la risposta reauth della
+ * Server Action) al posto della domanda c'e' l'invito a rientrare.
  */
-export function UnlinkProvider({ id, label, fallback }: { id: string; label: string; fallback: string }) {
+export function UnlinkProvider({ id, label, fallback, fresh }: { id: string; label: string; fallback: string; fresh: boolean }) {
   const [chiede, setChiede] = useState(false)
   const [stato, azione, inCorso] = useActionState<AccountState, FormData>(unlinkProviderAction, {})
   const conferma = useRef<HTMLButtonElement>(null)
@@ -37,6 +40,8 @@ export function UnlinkProvider({ id, label, fallback }: { id: string; label: str
       </button>
     )
   }
+
+  if (!fresh || stato.reauth) return <ReauthNotice className="w-full" onCancel={() => setChiede(false)} />
 
   return (
     <form action={azione} className="w-full flex flex-wrap items-center gap-2" aria-busy={inCorso}>

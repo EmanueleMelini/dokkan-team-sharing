@@ -3,6 +3,7 @@ import { cache } from 'react'
 import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { auth } from '@/lib/auth/auth'
+import { isFreshSession } from '@/lib/auth/fresh'
 import { safeNext } from '@/lib/auth/safe-next'
 
 // Il livello di accesso ai dati per l'identita' (guida authentication di
@@ -68,6 +69,24 @@ export async function requireOnboardedUser(next = '/'): Promise<CurrentUser> {
     redirect(n ? `/welcome?next=${encodeURIComponent(n)}` : '/welcome')
   }
   return user
+}
+
+/** Se la sessione della richiesta e' nata da meno di 15 minuti (lib/auth/fresh.ts). */
+export const sessionIsFresh = cache(async (): Promise<boolean> => {
+  const s = await getSession()
+  return isFreshSession(s?.session.createdAt)
+})
+
+/**
+ * Per le azioni che chiedono un accesso recente (scollegare un provider,
+ * cancellare l'account): l'utente se la sessione e' fresca, null se e'
+ * vecchia, e allora l'azione risponde "rientra" senza toccare il database.
+ * Senza sessione porta a /login come requireUser. La data viene dalla riga
+ * di auth_session (niente cache nel cookie, config.ts), non dal client.
+ */
+export async function requireFreshUser(next = '/'): Promise<CurrentUser | null> {
+  const user = await requireUser(next)
+  return (await sessionIsFresh()) ? user : null
 }
 
 /** I provider collegati all'utente della sessione: solo gli id, nessun token. */

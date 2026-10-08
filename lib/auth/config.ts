@@ -1,9 +1,11 @@
 import { randomBytes } from 'node:crypto'
-import { betterAuth, type BetterAuthPlugin } from 'better-auth'
+import { BASE_ERROR_CODES, betterAuth, type BetterAuthPlugin } from 'better-auth'
+import { APIError, createAuthMiddleware, getSessionFromCtx } from 'better-auth/api'
 import { magicLink } from 'better-auth/plugins/magic-link'
 import { db } from '@/lib/db'
 import type { MagicLinkSender } from '@/lib/auth/email'
 import type { AuthEnv } from '@/lib/auth/env'
+import { FRESH_SESSION_SECONDS, isFreshSession } from '@/lib/auth/fresh'
 import { mayEmail, rateLimitStorage } from '@/lib/auth/rate-limit'
 
 export const MAGIC_LINK_TTL_SECONDS = 600
@@ -91,7 +93,12 @@ export function createAuth({ env, sendMagicLink, plugins = [] }: Options) {
       expiresIn: SESSION_DAYS * 24 * 60 * 60,
       updateAge: 24 * 60 * 60, // scadenza scorrevole, rinnovata al massimo una volta al giorno
       // Niente cache nel cookie: una sessione revocata deve smettere subito.
+      // E' anche cio' che rende vera la data di nascita letta dalla DAL.
       cookieCache: { enabled: false },
+      // La stessa soglia delle Server Action di Settings (lib/auth/fresh.ts)
+      // per le rotte di better-auth che la usano (/list-sessions; quelle
+      // di scollegamento e cancellazione sono spente qui sotto).
+      freshAge: FRESH_SESSION_SECONDS,
     },
     account: {
       modelName: 'auth_account',
@@ -132,6 +139,21 @@ export function createAuth({ env, sendMagicLink, plugins = [] }: Options) {
     advanced: {
       cookiePrefix: 'dts',
       database: { generateId: 'uuid' },
+    },
+
+    // Collegare un provider aggiunge un modo di entrare che sopravvive alla
+    // revoca della sessione: con un cookie rubato si terrebbe l'account per
+    // sempre. Per questo /link-social chiede una sessione fresca come
+    // scollegare e cancellare. better-auth non lo fa da se' su questa rotta.
+    hooks: {
+      before: createAuthMiddleware(async (ctx) => {
+        if (ctx.path !== '/link-social') return
+        const s = await getSessionFromCtx(ctx)
+        // Senza sessione risponde la rotta stessa (401).
+        if (s && !isFreshSession(s.session.createdAt)) {
+          throw APIError.from('FORBIDDEN', BASE_ERROR_CODES.SESSION_NOT_FRESH)
+        }
+      }),
     },
 
     databaseHooks: {

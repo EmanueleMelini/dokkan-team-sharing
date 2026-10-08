@@ -8,6 +8,7 @@ import { randomBytes } from 'node:crypto'
 import pg from 'pg'
 import { createAuth } from '@/lib/auth/config'
 import { readAuthEnv } from '@/lib/auth/env'
+import { FRESH_SESSION_SECONDS, isFreshSession } from '@/lib/auth/fresh'
 import { suggestHandle } from '@/lib/auth/handle'
 import { safeNext } from '@/lib/auth/safe-next'
 import { db } from '@/lib/db'
@@ -285,6 +286,68 @@ try {
     "select access_token, refresh_token, id_token from auth_account where provider_id = 'twitch' and user_id = $1", [u.id])
   check('i token del provider sono azzerati prima di salvare', !!acc && salvato.access_token === null
     && salvato.refresh_token === null && salvato.id_token === null, JSON.stringify(salvato))
+
+  // ---------------------------------------- sessione fresca (lib/auth/fresh.ts)
+  console.log('\n  -- sessione fresca: 15 minuti per scollegare, collegare, cancellare')
+  {
+    const ora = Date.now()
+    const min = (m: number) => new Date(ora - m * 60_000)
+    check('isFreshSession: appena nata si', isFreshSession(min(0), ora))
+    check('isFreshSession: 14 min si', isFreshSession(min(14), ora))
+    check('isFreshSession: 15 min esatti no', !isFreshSession(min(15), ora))
+    check('isFreshSession: 16 min no', !isFreshSession(min(16), ora))
+    check('isFreshSession: senza data o con una data illeggibile no', !isFreshSession(null) && !isFreshSession('nope'))
+    check('better-auth usa la stessa soglia (freshAge)', actx.sessionConfig.freshAge === FRESH_SESSION_SECONDS,
+      String(actx.sessionConfig.freshAge))
+
+    // Le sessioni vere di dokkan_test: quella aperta dal magic link sopra.
+    const nata = async () => (await auth.api.getSession({ headers: new Headers({ cookie }) }))?.session.createdAt
+    const invecchia = (m: number) => q(
+      `update auth_session set created_at = now() - make_interval(mins => $2) where user_id = $1`, [u.id, m])
+    const collega = (c: string) => auth.handler(new Request(`${BASE}/api/auth/link-social`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', origin: BASE, cookie: c, 'x-forwarded-for': `10.9.4.${ip++}` },
+      body: JSON.stringify({ provider: 'discord', callbackURL: '/settings' }),
+    }))
+    const codice = async (r: Response) => { try { return String((await r.json()).code ?? '') } catch { return '' } }
+
+    check('la sessione appena aperta dal magic link e\' fresca', isFreshSession(await nata()))
+    res = await collega(cookie)
+    let c = await codice(res)
+    check('  e /link-social non la ferma per l\'eta\'', c !== 'SESSION_NOT_FRESH', `${res.status} ${c}`)
+
+    await invecchia(14)
+    check('nata 14 minuti fa (auth_session.created_at): ancora fresca', isFreshSession(await nata()))
+    await invecchia(16)
+    const vecchia = await auth.api.getSession({ headers: new Headers({ cookie }) })
+    check('nata 16 minuti fa: si resta dentro, ma non e\' piu\' fresca', !!vecchia && !isFreshSession(vecchia.session.createdAt),
+      String(vecchia?.session.createdAt))
+    res = await collega(cookie)
+    c = await codice(res)
+    check('  e /link-social risponde 403 SESSION_NOT_FRESH', res.status === 403 && c === 'SESSION_NOT_FRESH', `${res.status} ${c}`)
+
+    // Rientrare da dentro (la pagina /settings/sign-in): un nuovo magic link
+    // aperto con il vecchio cookie ancora nel browser da' una sessione nuova.
+    await q('delete from auth_email_send where email = $1', [em])
+    const next = '/welcome?next=' + encodeURIComponent('/settings')
+    res = await auth.handler(new Request(`${BASE}/api/auth/sign-in/magic-link`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', origin: BASE, cookie, 'x-forwarded-for': `10.9.4.${ip++}` },
+      body: JSON.stringify({ email: em, callbackURL: next }),
+    }))
+    const nuovo = inviati.at(-1)
+    check('da dentro si chiede un altro link', res.status === 200 && nuovo?.email === em && nuovo.url !== link!.url, `${res.status}`)
+    res = await auth.handler(new Request(nuovo!.url, { headers: { cookie, 'x-forwarded-for': `10.9.4.${ip++}` } }))
+    const cookie2 = (res.headers.get('set-cookie') ?? '').split(';')[0]
+    check('  aprirlo con il vecchio cookie porta a /welcome?next=/settings con un cookie nuovo', res.status === 302
+      && res.headers.get('location') === `${BASE}/welcome?next=/settings` && cookie2.startsWith('dts.session_token=') && cookie2 !== cookie,
+      `${res.status} ${res.headers.get('location')}`)
+    const fresca = await auth.api.getSession({ headers: new Headers({ cookie: cookie2 }) })
+    check('  la sessione nuova e\' dello stesso utente ed e\' fresca', fresca?.user.id === u.id && isFreshSession(fresca.session.createdAt))
+    res = await collega(cookie2)
+    c = await codice(res)
+    check('  e /link-social la lascia passare', c !== 'SESSION_NOT_FRESH', `${res.status} ${c}`)
+  }
 } catch (e) {
   check('nessuna eccezione inattesa', false, e instanceof Error ? e.stack ?? e.message : String(e))
 } finally {

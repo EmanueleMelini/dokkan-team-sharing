@@ -67,14 +67,14 @@ function validatori(cards: number[]) {
   check('parseChangeNote', parseChangeNote('Fixed a slot').ok && !parseChangeNote('').ok && !parseChangeNote('x'.repeat(301)).ok)
 
   console.log('\n  -- ogni rifiuto del database ha la sua frase')
-  // 0016 il builder, 0018 le build degli slot
-  const sqlText = ['0016_clear_builder.sql', '0018_slot_builds.sql']
+  // 0016 il builder, 0018 le build degli slot, 0021 le sfere esclusive
+  const sqlText = ['0016_clear_builder.sql', '0018_slot_builds.sql', '0021_equipment_limits.sql']
     .map((f) => readFileSync(new URL(`../migrations/${f}`, import.meta.url), 'utf8')).join('\n')
   const nomi = [...new Set([...sqlText.matchAll(/'(builder_[a-z_]+)'/g)].map((m) => m[1]))]
     .filter((n) => n !== 'builder_fail')
   const senza = nomi.filter((n) => !friendlyClearError({ code: '23514', constraint: n }))
-  check(`tutti i ${nomi.length} nomi builder_* della 0016 e della 0018 sono tradotti`,
-    nomi.length > 25 && nomi.includes('builder_build_equipment') && senza.length === 0, senza.join(', '))
+  check(`tutti i ${nomi.length} nomi builder_* della 0016, 0018 e 0021 sono tradotti`,
+    nomi.length > 25 && nomi.includes('builder_build_equipment_card') && senza.length === 0, senza.join(', '))
   check('nessuna frase con il trattino lungo', nomi.every((n) => !/—/.test(friendlyClearError({ constraint: n }) ?? '')))
   check('42501 senza nome e\' "non tuo"', /not yours/.test(friendlyClearError({ code: '42501' }) ?? ''))
   check('un errore sconosciuto non si traduce', friendlyClearError({ code: '23505', constraint: 'altro' }) === null)

@@ -7,7 +7,7 @@ import { canUnlink } from '@/lib/auth/account'
 import { PROVIDERS } from '@/lib/auth/env'
 import { providers } from '@/lib/auth/auth'
 import { authErrorMessage } from '@/lib/auth/messages'
-import { accountEmail, linkedProviderIds, requireOnboardedUser } from '@/lib/dal'
+import { accountEmail, linkedProviderIds, requireOnboardedUser, sessionIsFresh } from '@/lib/dal'
 
 export const metadata: Metadata = { title: 'Settings', robots: { index: false } }
 
@@ -16,7 +16,9 @@ const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v)
 export default async function SettingsPage({ searchParams }: PageProps<'/settings'>) {
   const user = await requireOnboardedUser('/settings')
   const sp = await searchParams
-  const [linked, { email, verified }] = await Promise.all([linkedProviderIds(), accountEmail()])
+  // fresh decide solo cosa mostrare al clic: lo ricontrollano le Server
+  // Action e l'hook di /link-social, perche' la pagina puo' restare aperta.
+  const [linked, { email, verified }, fresh] = await Promise.all([linkedProviderIds(), accountEmail(), sessionIsFresh()])
   const error = authErrorMessage(one(sp.error))
   const justLinked = PROVIDERS.find((p) => p.id === one(sp.linked) && linked.includes(p.id))
   const justUnlinked = PROVIDERS.find((p) => p.id === one(sp.unlinked) && !linked.includes(p.id))
@@ -74,9 +76,9 @@ export default async function SettingsPage({ searchParams }: PageProps<'/setting
                 {linked.includes(p.id) && <span className="ml-2 text-[12px] text-oro font-medium">Linked</span>}
               </p>
               {!linked.includes(p.id) ? (
-                <LinkProvider id={p.id} label={p.label} />
+                <LinkProvider id={p.id} label={p.label} fresh={fresh} />
               ) : canUnlink(linked, verified, p.id) ? (
-                <UnlinkProvider id={p.id} label={p.label} fallback={fallback(p.id)} />
+                <UnlinkProvider id={p.id} label={p.label} fallback={fallback(p.id)} fresh={fresh} />
               ) : (
                 <span className="text-[12px] text-tenue">Your only way to sign in</span>
               )}
@@ -102,7 +104,7 @@ export default async function SettingsPage({ searchParams }: PageProps<'/setting
               players&apos; clears. Linked sign-in methods are removed and you are signed out everywhere.
             </p>
           </div>
-          <DeleteAccount handle={user.handle} />
+          <DeleteAccount handle={user.handle} fresh={fresh} />
         </div>
       </section>
     </div>

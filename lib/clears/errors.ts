@@ -38,6 +38,8 @@ const BY_CONSTRAINT: Record<string, string> = {
   builder_build_path: 'Keep the Hidden Potential path under 40 characters.',
   builder_build_note: 'Keep each build note under 200 characters.',
   builder_build_equipment: 'A card holds at most 3 Skill Orbs, and each one must exist. Pick them again.',
+  // le esclusive (0021): succede se si cambia la carta dopo aver scelto le sfere
+  builder_build_equipment_card: 'One card has a Skill Orb it cannot equip. Open its build and pick the orbs again.',
 }
 
 /**

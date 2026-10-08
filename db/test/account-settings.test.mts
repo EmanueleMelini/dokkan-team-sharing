@@ -180,7 +180,9 @@ async function cancella() {
   await collega(a, 'discord', 'google')
   await db.query(`insert into auth_session (token, user_id, expires_at) values ($1, $2, now() + interval '1 day')`,
     [`${P}-${randomBytes(8).toString('hex')}`, a])
-  const orb = (await one<{ id: string }>('select id::text from equipment order by id limit 1')).id
+  // una sfera che la carta dello slot puo' montare (le esclusive, 0021)
+  const orb = (await one<{ id: string }>(
+    'select id::text from equipment where equipment_fits(id, $1) order by id limit 1', [d.cards[0]])).id
   const conBuild = copia(payload(d.cards))
   conBuild.lineups[0].slots[0].build = { hp_routes: 4, hp_path: 'Critical Hit', note: 'Rainbow.', equipment: [Number(orb), null, null] }
   const clearA = (await one<{ id: string }>(SUBMIT, [a, d.run, d.tier, JSON.stringify(conBuild)])).id

@@ -10,22 +10,42 @@ a questa conclusione sta in `docs/`.
 
 ## Stato
 
-Lo strato database è completo e verificato, e dentro ci sono le carte vere.
-Il codice applicativo non è ancora iniziato: quello che c'è è lo scheletro
-Next.js appena generato.
+Lo strato database è completo e verificato, con le carte, gli eventi e le
+missioni veri. Sopra c'è il sito: le pagine degli eventi, gli account e il
+builder con cui si inviano i clear. I numeri sono quelli di `dokkan_dev`
+all'8 ottobre 2026.
 
-- **42 tabelle, 3 view, 4 trigger, 16 funzioni** su PostgreSQL 15
-- **2651 carte** importate dal wiki, con link skill, categorie, statistiche
-  e date di uscita separate per Japan e Global
-- **599 eventi** con 5618 stage e 6916 difficoltà, banner compresi; più
-  **192 eventi dal gioco** che il wiki non documenta (2025-2026, EZA e Super
-  EZA), con 1667 stage e 1890 difficoltà, senza banner né descrizione
+- **63 tabelle, 3 view, 11 trigger, 49 funzioni** su PostgreSQL 15, in 21
+  migrazioni
+- **2697 carte**: 2651 dal wiki, con link skill, categorie, statistiche e
+  date di uscita separate per Japan e Global, più 46 che ha solo il gioco
+  (senza epiteto). 662 hanno l'EZA, 299 anche la Super EZA
+- **792 eventi**: 600 dal wiki (100 storia, 208 challenge, 152 Extreme
+  Z-Battle, 114 limited, 20 bonus, 6 altri), banner compresi, e **192 dal
+  gioco** che il wiki non documenta (2025-2026: 14 storia, 71 challenge, 86
+  EZA e Super EZA, 21 limited), senza banner né descrizione. 1747
+  ricorrenze in tutto
+- **2396 stage con 3916 difficoltà** (1916 e 3213 dal wiki, 480 e 703 dal
+  gioco), più **5976 livelli EZA** (4788 dal wiki, 1188 dal gioco)
 - **7720 missioni Global** dal gioco su 642 eventi, con 13322 premi
   strutturati (1677 oggetti, ognuno col suo nome)
+- **8857 Skill Orb** (2214 bronzo, 2824 argento, 3819 oro), ognuna con la
+  sua regola su chi la monta: 1852 per tipo e classe, 5042 per categoria,
+  1825 per lista di carte, 138 per nome
 - **6246 immagini** ospitate da noi
-- **262 verifiche automatiche** in `db:test`, tutte verdi, su un database
-  a parte che non è quello di sviluppo
-- **0 righe** di codice applicativo
+- **1135 verifiche automatiche** in `db:test`: 27 passi, di cui 9
+  preparano il database e 18 sono suite di verifica, tutte verdi, su un
+  database a parte che non è quello di sviluppo
+
+Due regole recenti da sapere:
+
+- **Le azioni sensibili chiedono un accesso recente.** Scollegare o
+  collegare un provider e cancellare l'account passano solo con una
+  sessione nata da meno di 15 minuti; altrimenti si rientra da
+  `/settings/sign-in`, senza uscire (sezione "Gli account").
+- **Le Skill Orb esclusive si rispettano.** Il builder mostra solo le sfere
+  che la carta dello slot può montare, e il database rifiuta le altre
+  (sezione sul 0021).
 
 ## Le tre decisioni da avere in testa
 
@@ -220,6 +240,7 @@ db/
     0017_rerun_stages.sql   stage.game_quest_id: gli stage che una riedizione aggiunge
     0018_slot_builds.sql    le build degli slot (Hidden Potential, Skill Orb), congelate con la versione
     0019_account_settings.sql  Settings: unlink_provider, delete_account, le segnalazioni col bersaglio
+    0021_equipment_limits.sql  le Skill Orb esclusive: chi puo' montare quale sfera, controllato dal builder
   seed/                     demo-clears.mjs: tre clear dimostrativi su un evento vero (db:demo)
   queries/reference.sql     le query di lettura principali, documentate
   test/                     le verifiche: run.sh le mette in fila (npm run db:test)
@@ -235,7 +256,8 @@ db/
     quest-refs.mjs          i legami per quest (Super Battle Road, archivi), per load-windows
     load-missions.mjs       le missioni Global e i loro premi, dal datamine (db:missions)
     missions/               i suoi moduli: owner (di che evento), text, rewards, write
-    load-equipment.mjs      le Skill Orb e le abilita' del Hidden Potential, per le build (db:equipment)
+    load-equipment.mjs      le Skill Orb, le loro regole e le abilita' del Hidden Potential (db:equipment)
+    equipment-limits.mjs    le regole delle esclusive dal gioco alle nostre carte (funzioni pure)
     fetch-assets.mjs        scarica le immagini e le registra in asset
     .cache/                 il wikitext scaricato (non versionato)
 public/assets/              le immagini ospitate da noi (non versionate)
@@ -1169,7 +1191,24 @@ per il dominio vero, che ancora non c'è.
   `delete_clear`). Dopo, `signOut` toglie il cookie e si torna a
   `/events?account=deleted`, con un avviso che chi è dentro non vede.
 - Il limite è nella natura: si cancella una volta, e si scollegano al più
-  tre provider. Entrambe le azioni partono da `requireUser`.
+  tre provider.
+- *La sessione fresca.* Scollegare, collegare un provider e cancellare
+  l'account chiedono un accesso di meno di 15 minuti (`lib/auth/fresh.ts`,
+  `isFreshSession`): conta `auth_session.created_at`, che il rinnovo
+  giornaliero non sposta, quindi solo un accesso vero. Così un cookie di
+  sessione vecchio, anche rubato, non basta per agganciare un altro
+  provider né per chiudere l'account. Le due Server Action partono da
+  `requireFreshUser` in `lib/dal.ts`: con una sessione vecchia rispondono
+  `{ reauth: true }` senza toccare il database. Collegare passa dalla rotta
+  `/link-social` di better-auth, che da sola non controlla: lo fa un hook
+  `before` in `config.ts`, che risponde 403 `SESSION_NOT_FRESH`; la stessa
+  soglia è `session.freshAge`. In pagina, al clic, al posto della conferma
+  compare "Sign in again" (`components/auth/reauth-notice.tsx`), che porta a
+  `/settings/sign-in`: lì si rientra con un modo di entrare di questo
+  account (un provider collegato, o il link se l'email è verificata) senza
+  uscire, e si torna a Settings con una sessione nuova. `/login` non va bene
+  per questo: rimanda via chi ha già una sessione. Lo prova il passo
+  "account" (`db/test/auth.test.mts`).
 - Il test è il passo "settings dell'account"
   (`db/test/account-settings.test.mts`): regole pure, FK tutte a cascata,
   `unlink_provider` (anche in parallelo), le rotte di better-auth spente,
@@ -1252,6 +1291,15 @@ Le verifiche sono `db/test/submit.test.mts` (gli ingressi SQL) e
   640px) su `/api/cards`, con frecce, Enter ed Escape. In modifica la
   ricorrenza non si cambia: `revise_clear_from_builder` non la prende.
   La modifica di un clear altrui risponde 404.
+- **I cambi di squadra sono copie.** "Add a rotation change" copia la
+  squadra sopra, con carte, leader, friend e build; da lì il cambio è
+  indipendente, e una modifica alla partenza non lo tocca (lo dice una riga
+  sotto il bottone). Per riallinearlo, ogni cambio ha "Copy the starting
+  team again" (azione `ricopia_partenza` del reducer): riporta carte, ruoli
+  e build della partenza e lascia nome e nota del cambio. Se il cambio è
+  diverso dalla partenza chiede conferma in riga, perché le sue modifiche
+  andrebbero perse; se è uguale (`comeLaPartenza`) dice "Same as the
+  starting team" e non offre niente.
 
 Lo stato del form lo prova `db/test/builder-stato.test.mts`.
 
@@ -1272,9 +1320,7 @@ scelte, fino a tre Skill Orb e una nota.
   (`equipment_skill_items`, 8857 con nome inglese e grado bronzo, argento,
   oro): `load-equipment` le scrive in `equipment` (tier 1-3) ed
   `equipment_text`, e non ne cancella mai una, perché una build congelata
-  ci punta. Chi può montare quale sfera (esclusive per carta, categoria,
-  tipo) sta in `equipment_skill_limitations`: non lo importiamo ancora, e
-  il database non lo controlla.
+  ci punta. Chi può montare quale sfera lo dice il 0021 (sezione sotto).
 - **Il payload.** Ogni slot può avere
   `"build": {"hp_routes": 0-4, "hp_path": "...", "note": "...", "equipment": [id|null x 3]}`;
   la posizione nell'array è lo slot della sfera. Una build vuota vale come
@@ -1294,12 +1340,47 @@ scelte, fino a tre Skill Orb e una nota.
   `<dialog>` (a schermo pieno sotto i 640px): percorsi, percorso, tre
   sfere cercate su `GET /api/equipment?q=&tier=&offset=` (tutte le parole,
   nel nome o nella descrizione, perché le esclusive hanno lo stesso nome)
-  e la nota. Un cambio di squadra parte con le build della squadra sopra;
-  in modifica il form parte dalle build della versione corrente. Nei clear
+  e la nota. Un cambio di squadra parte con le build della squadra sopra
+  (e le ricopia dalla partenza con "Copy the starting team again"); in
+  modifica il form parte dalle build della versione corrente. Nei clear
   la build è una riga piccola sotto la carta, solo se c'è.
 
 Le verifiche sono in `db/test/builds.test.mts` (e i suoi moduli
 `builds-revise.ts`, `builds-pure.ts`): 83 controlli.
+
+## Le Skill Orb esclusive (migrazione 0021)
+
+Ogni sfera del gioco ha una regola (`equipment_skill_limitations`, una per
+set), di quattro tipi:
+
+- **tipo e classe**: `element_bitpattern`, dove i bit 0-4 sono AGL..PHY
+  con qualunque classe, 12-16 le Super e 17-21 le Extreme (31 = tutte,
+  4096 = Super AGL). Si espande nelle coppie ammesse
+  (`equipment_limit_type`);
+- **categoria**: le categorie del gioco (`equipment_limit_category`), che
+  si confrontano con `card_category`;
+- **lista di carte** ([Character-Exclusive]): gli id del gioco nominano
+  spesso la forma Z-awakened (x...1) e tutta la catena del Dokkan
+  Awakening; ogni id torna all'unità che abbiamo, con l'id della base
+  (`equipment_limit_card`);
+- **nome** ("name includes Goku"): un set di `card_unique_infos`
+  (`card_unique_info_set_relations`), risolto nelle nostre carte con
+  `cards.card_unique_info_id`, nella stessa tabella delle liste.
+
+`load-equipment` le riscrive tutte a ogni giro (nessuno ci punta) e dice
+se qualcosa è cambiato; una carta importata dopo entra con il giro dopo.
+`equipment_fits(sfera, carta)` dice se la carta la monta; una sfera senza
+regola si monta su tutte, una regola senza carte nostre su nessuna (3 oggi,
+per carte non ancora uscite). Il builder rifiuta una sfera sbagliata con
+`builder_build_equipment_card`, in invio e in revisione:
+`builder_check_payload` è riscritta con tutti i controlli del 0018 e poi
+questo. Nel builder la ricerca passa la carta dello slot
+(`GET /api/equipment?card=`), mostra solo le sfere giuste e dice quante ne
+nasconde (`hidden`). Non si controllano i limiti della copia del
+giocatore: livello della Super Attack, percorsi sbloccati, rarità UR/LR
+scritta solo nella descrizione.
+
+Le verifiche sono in `db/test/orbs.test.mts` (e `orbs-search.ts`).
 
 ## Cosa manca, in ordine
 
@@ -1334,10 +1415,7 @@ Le verifiche sono in `db/test/builds.test.mts` (e i suoi moduli
    le campagne su più eventi. Japan non ha missioni: il datamine è Global.
    Solo 45 oggetti su 1677 hanno un'icona; le altre aspettano il CDN del
    wiki o le immagini del gioco.
-5. **Gli account, da rifinire.** Scollegare e cancellare non chiedono un
-   accesso recente: chi ha in mano una sessione aperta può cancellare
-   l'account scrivendo l'handle, che è pubblico.
-6. **L'invio, da rifinire.** Le pagine ci sono (sotto). Mancano la storia
+5. **L'invio, da rifinire.** Le pagine ci sono (sotto). Mancano la storia
    delle versioni nella pagina (`getClearVersions` è pronta), un modo di
    riusare le proprie squadre invece di ricomporle, e la ricerca delle
    carte per chi gioca la versione giapponese (il picker mostra solo le

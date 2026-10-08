@@ -9,7 +9,7 @@ import { auth } from '@/lib/auth/auth'
 import { friendlyAccountError, handleMatches } from '@/lib/auth/account'
 import { PROVIDERS } from '@/lib/auth/env'
 import { safeNext } from '@/lib/auth/safe-next'
-import { requireUser } from '@/lib/dal'
+import { requireFreshUser, requireUser } from '@/lib/dal'
 
 // Le Server Action dell'accesso. Ognuna si comporta come un endpoint
 // pubblico (una POST diretta la raggiunge): rilegge la sessione da sola
@@ -74,7 +74,11 @@ function onboardingError(e: unknown): string {
 //  Settings: scollegare un provider, cancellare l'account (0019)
 // ---------------------------------------------------------------------
 
-export type AccountState = { error?: string }
+/**
+ * reauth: la sessione ha piu' di 15 minuti (lib/auth/fresh.ts) e la UI
+ * chiede di rientrare al posto della conferma. Nessuna query e' partita.
+ */
+export type AccountState = { error?: string; reauth?: boolean }
 
 /** Il rifiuto di Postgres come frase, o rilancia se e' un guasto. */
 function accountError(e: unknown): AccountState {
@@ -92,7 +96,8 @@ function accountError(e: unknown): AccountState {
  * e' l'unica strada.
  */
 export async function unlinkProviderAction(_prev: AccountState, form: FormData): Promise<AccountState> {
-  const user = await requireUser('/settings')
+  const user = await requireFreshUser('/settings')
+  if (!user) return { reauth: true }
   const provider = PROVIDERS.find((p) => p.id === form.get('provider'))
   if (!provider) return { error: 'That provider is not linked to your account.' }
   try {
@@ -110,7 +115,8 @@ export async function unlinkProviderAction(_prev: AccountState, form: FormData):
  * sessioni comprese; signOut toglie poi il cookie rimasto nel browser.
  */
 export async function deleteAccountAction(_prev: AccountState, form: FormData): Promise<AccountState> {
-  const user = await requireUser('/settings')
+  const user = await requireFreshUser('/settings')
+  if (!user) return { reauth: true }
   const typed = form.get('handle')
   if (!handleMatches(typed, user.handle)) {
     return { error: 'That is not your handle. Type it exactly as shown above the box.' }

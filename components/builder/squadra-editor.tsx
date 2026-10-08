@@ -1,5 +1,6 @@
 'use client'
 
+import { RicopiaPartenza } from '@/components/builder/ricopia-partenza'
 import { Slot } from '@/components/builder/slot'
 import { LIMITS, SHAPE } from '@/lib/clears/validate'
 import type { Azione, SquadraStato } from '@/lib/clears/builder-stato'
@@ -16,13 +17,15 @@ type Props = {
   squadra: SquadraStato
   l: number
   idBase: string
+  /** solo per i cambi: vero se ha gli stessi slot della partenza */
+  uguale: boolean
   dispatch: (a: Azione) => void
   onApri: (l: number, i: number, dove: string) => void
   onBuild: (l: number, i: number, dove: string) => void
 }
 
 /** Una squadra del clear: la partenza (l = 0) o un cambio a metà evento. */
-export function SquadraEditor({ squadra, l, idBase, dispatch, onApri, onBuild }: Props) {
+export function SquadraEditor({ squadra, l, idBase, uguale, dispatch, onApri, onBuild }: Props) {
   const nome = l === 0 ? 'Starting team' : `Change ${l}`
   const titoloId = `${idBase}-titolo`
   return (
@@ -64,6 +67,12 @@ export function SquadraEditor({ squadra, l, idBase, dispatch, onApri, onBuild }:
               className={campo}
             />
           </div>
+        </div>
+      )}
+
+      {l > 0 && (
+        <div className="mt-2">
+          <RicopiaPartenza nome={nome} uguale={uguale} onRicopia={() => dispatch({ t: 'ricopia_partenza', l })} />
         </div>
       )}
 

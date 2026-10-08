@@ -52,6 +52,10 @@ const TABLES = [
   // Hidden Potential, che il builder suggerisce come percorso. Le Skill
   // Orb (l'equipaggiamento) stanno gia' in equipment_skill_items.
   'potential_skills',
+  // chi puo' montare quale sfera (0021): una regola per set, per tipo e
+  // classe, categoria, lista di carte o "nome che contiene" (un set di
+  // card_unique_infos, la colonna card_unique_info_id di cards)
+  'equipment_skill_limitations', 'card_unique_info_set_relations',
 ]
 
 mkdirSync(DIR, { recursive: true })

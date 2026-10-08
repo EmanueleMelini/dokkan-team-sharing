@@ -57,6 +57,14 @@ export default function RootLayout({ children }: LayoutProps<'/'>) {
               Entertainment Inc. Developed by Akatsuki Inc. This is an informational fan site and is
               not affiliated with, endorsed, sponsored or approved by any of the parties above.
             </p>
+            <nav aria-label="Legal" className="flex gap-4">
+              <Link href="/privacy" className="underline decoration-oro-linea underline-offset-2 hover:text-inchiostro">
+                Privacy Policy
+              </Link>
+              <Link href="/terms" className="underline decoration-oro-linea underline-offset-2 hover:text-inchiostro">
+                Terms of Service
+              </Link>
+            </nav>
           </div>
         </footer>
       </body>

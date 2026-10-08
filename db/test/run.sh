@@ -5,7 +5,8 @@
 #   import dei dati veri (carte del wiki, poi quelle solo nel gioco) -> query
 #   delle pagine (lib/queries.ts vero) -> parametri dell'URL (lib/parametri.ts)
 #   -> builder dei clear (0016, lib/clears*, lib/cards.ts, /api/cards)
-#   -> build degli slot (0018, Skill Orb, /api/equipment)
+#   -> build degli slot (0018, Skill Orb, /api/equipment) -> sfere
+#   esclusive (0021)
 #   -> settings dell'account (0019: scollegare, cancellare l'account)
 #   -> carte solo nel gioco (load-game-cards) -> finestre degli eventi dal
 #   gioco (load-windows) -> eventi creati dal gioco (load-game-events) ->
@@ -87,6 +88,11 @@ passo "builder dei clear (stato del form)" verifica node_ts db/test/builder-stat
 # versione, la revisione che non tocca le vecchie, letture, validatori,
 # stato del form e /api/equipment. Crea solo utenti buildtest+ e li toglie.
 passo "build degli slot" verifica node_ts db/test/builds.test.mts
+# Le Skill Orb esclusive (0021): le regole del gioco lette in JS e
+# importate sulle nostre carte, il rifiuto in invio e revisione per tipo,
+# categoria, lista e nome, e la ricerca filtrata per la carta dello slot.
+# Crea solo l'utente orbtest+orb_author e lo toglie.
+passo "sfere esclusive" verifica node_ts db/test/orbs.test.mts
 # Settings (0019): scollegare un provider solo se resta un modo di
 # entrare, e cancellare l'account con tutto quello che ha scritto (ogni
 # FK verso app_user e i clear a cascata, le segnalazioni col bersaglio),

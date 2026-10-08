@@ -10,7 +10,7 @@ import type { Categoria } from '@/components/builder/picker-filtri'
 import { Prove } from '@/components/builder/prove'
 import { SquadraEditor } from '@/components/builder/squadra-editor'
 import { reviseClear, submitClear, type ClearActionState } from '@/lib/clears/actions'
-import { payloadDa, reducer, type BuilderStato } from '@/lib/clears/builder-stato'
+import { comeLaPartenza, payloadDa, reducer, type BuilderStato } from '@/lib/clears/builder-stato'
 import { LIMITS, parseChangeNote, parsePayloadField } from '@/lib/clears/validate'
 
 type Props = {
@@ -74,24 +74,34 @@ export function Builder({ modo, eventId, tierId, clearId, runs, categorie, abili
             squadra={q}
             l={l}
             idBase={`b-l${l}`}
+            uguale={l > 0 && comeLaPartenza(stato, l)}
             dispatch={dispatch}
             onApri={(ll, i, dove) => setAperto({ l: ll, i, dove })}
-            onBuild={(ll, i, dove) => setBuild({ l: ll, i, dove, carta: stato.squadre[ll].slots[i].carta?.name ?? '' })}
+            onBuild={(ll, i, dove) => {
+              const c = stato.squadre[ll].slots[i].carta
+              setBuild({ l: ll, i, dove, carta: c?.name ?? '', cartaId: c?.id ?? null })
+            }}
           />
         ))}
         {stato.squadre.length < LIMITS.lineups && (
-          <div className="flex flex-wrap items-center gap-3">
-            <button
-              type="button"
-              onClick={() => dispatch({ t: 'aggiungi_cambio' })}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[13px] rounded-[var(--raggio)] border border-campo bg-superficie text-inchiostro hover:border-linea-forte active:scale-[0.98]"
-            >
-              <Plus size={13} weight="bold" aria-hidden />
-              Add a rotation change
-            </button>
-            <span className="text-[11px] text-tenue">
-              For a team switch mid-event. It starts as a copy of the team above. {LIMITS.lineups - 1 - cambi} left.
-            </span>
+          <div>
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={() => dispatch({ t: 'aggiungi_cambio' })}
+                aria-describedby="b-cambio-aiuto"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[13px] rounded-[var(--raggio)] border border-campo bg-superficie text-inchiostro hover:border-linea-forte active:scale-[0.98]"
+              >
+                <Plus size={13} weight="bold" aria-hidden />
+                Add a rotation change
+              </button>
+              <span className="text-[11px] text-tenue">
+                For a team switch mid-event. It starts as a copy of the team above. {LIMITS.lineups - 1 - cambi} left.
+              </span>
+            </div>
+            <p id="b-cambio-aiuto" className="mt-1.5 text-[11px] text-tenue">
+              Later edits to the starting team do not change the copies. Each change can copy it again.
+            </p>
           </div>
         )}
       </section>

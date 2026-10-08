@@ -6,10 +6,16 @@ import { authClient } from '@/lib/auth/client'
 /**
  * Il link per email. La risposta e' sempre "controlla la posta", che
  * l'indirizzo sia iscritto o no e anche se e' in pausa: la pagina non
- * deve dire a nessuno chi ha un account.
+ * deve dire a nessuno chi ha un account. `errorPath` e `defaultEmail`
+ * servono a /settings/sign-in: chi rientra e' gia' dentro, e /login lo
+ * rimanderebbe via perdendo l'errore.
  */
-export function EmailSignIn({ next }: { next: string }) {
-  const [email, setEmail] = useState('')
+export function EmailSignIn({ next, errorPath = '/login', defaultEmail = '' }: {
+  next: string
+  errorPath?: string
+  defaultEmail?: string
+}) {
+  const [email, setEmail] = useState(defaultEmail)
   const [state, setState] = useState<'idle' | 'sending' | 'sent'>('idle')
   const [error, setError] = useState<string | null>(null)
 
@@ -20,7 +26,7 @@ export function EmailSignIn({ next }: { next: string }) {
     const res = await authClient.signIn.magicLink({
       email: email.trim(),
       callbackURL: `/welcome?next=${encodeURIComponent(next)}`,
-      errorCallbackURL: `/login?next=${encodeURIComponent(next)}`,
+      errorCallbackURL: `${errorPath}?next=${encodeURIComponent(next)}`,
     })
     if (res.error) {
       setState('idle')
