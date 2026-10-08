@@ -42,3 +42,20 @@ export function selectJobs(jobs, haveKeys, { missing = false, offline = false } 
   }
   return { todo, kept, dropped }
 }
+
+/**
+ * Se un file immagine si muove davvero, dai suoi primi byte: GIF, WebP con
+ * il blocco ANIM, PNG con acTL (APNG). Il campo "apng" del wiki a volte
+ * punta a un'immagine ferma (un WebP VP8 semplice, piu' piccolo
+ * dell'artwork): collegata come animata, la pagina della carta offrirebbe
+ * "Animated" per mostrare un'immagine immobile e peggiore.
+ *
+ * @param {Uint8Array} testa i primi byte del file (64 KB bastano)
+ */
+export function siMuove(testa) {
+  const s = Buffer.from(testa.buffer, testa.byteOffset, testa.byteLength).toString('latin1')
+  if (s.startsWith('GIF8')) return true
+  if (s.startsWith('RIFF') && s.slice(8, 12) === 'WEBP') return s.includes('ANIM')
+  if (s.startsWith('\x89PNG')) return s.includes('acTL')
+  return false
+}

@@ -347,7 +347,8 @@ export type UserFootprint = { eventIds: string[]; cardIds: string[]; handles: st
 
 /**
  * Le pagine pubbliche che mostrano qualcosa di un utente: gli eventi dei
- * suoi clear, dei clear che ha commentato o votato; le carte dei suoi
+ * suoi clear, dei clear che ha commentato o votato, delle sue tip e di
+ * quelle che ha votato; le carte dei suoi
  * clear; il suo profilo e quello degli autori che ha votato (i voti
  * ricevuti stanno nel profilo). Da leggere PRIMA di cancellare.
  */
@@ -360,6 +361,9 @@ export async function userFootprint(userId: string, extraHandles: string[] = [])
         where m.author_id = $1::uuid
        union select c.event_id::text from clear_vote x
          join clear_version v on v.id = x.version_id join clear c on c.id = v.clear_id
+        where x.user_id = $1::uuid
+       union select t.event_id::text from tip t where t.author_id = $1::uuid
+       union select t.event_id::text from tip_vote x join tip t on t.id = x.tip_id
         where x.user_id = $1::uuid`,
       [userId],
     ),

@@ -29,13 +29,13 @@
 // poche per sessione).
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import pg from 'pg'
 import { connectionString, describeTarget } from '../env.mjs'
-import { selectJobs } from './asset-select.mjs'
+import { selectJobs, siMuove } from './asset-select.mjs'
 import { assignCardIds, datamineCards, field, lineField } from './wiki-card.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -342,11 +342,14 @@ if (want('icons')) {
 }
 
 // Riparazione: gli asset animati salvati prima che ci fosse il flatten.
-// Si convertono dal file locale, senza riscaricare niente.
+// Si convertono dal file locale, senza riscaricare niente. Le versioni
+// animate delle carte sono escluse: devono muoversi, e appiattirle le
+// lasciava collegate come animate ma ferme (82 artwork e 171 miniature).
 if (has('--flatten-existing')) {
   const { rows } = await client.query(`
     select key, kind, source_url from asset
-    where kind <> 'rarity_icon' and (content_type = 'image/gif' or width is null)
+    where kind not in ('rarity_icon', 'card_thumb_animated', 'card_art_animated')
+      and (content_type = 'image/gif' or width is null)
     order by key`)
   console.log(`  ${rows.length} asset animati da appiattire`)
   let fixed = 0, before = 0, after = 0
@@ -418,6 +421,18 @@ if (CI && orfani.length) console.log(`::warning::${orfani.length} images have no
 
 let done = 0, skipped = kept.length, adoptedN = 0, failed = 0, bytes = 0
 const results = [...kept]
+
+// I primi 64 KB del file bastano a siMuove; un file che qui non c'e' conta
+// come animato, perche' non lo si puo' controllare.
+function muoveSulDisco(key) {
+  const p = join(ASSET_DIR, key)
+  if (!existsSync(p)) return true
+  const fd = openSync(p, 'r')
+  try {
+    const testa = Buffer.alloc(65536)
+    return siMuove(testa.subarray(0, readSync(fd, testa, 0, testa.length, 0)))
+  } finally { closeSync(fd) }
+}
 
 // Il file c'e' sul disco ma la riga in asset no. Succede a ogni db:reset,
 // che ricrea il database ma non tocca public/assets. Riscaricare mezzo
@@ -522,6 +537,17 @@ try {
 
   const cardCols = { thumb_key: [], art_key: [], thumb_animated_key: [], art_animated_key: [] }
   for (const r of results) if (r.col) cardCols[r.col].push([r.card, r.key])
+  // Un "animato" che non si muove si scollega (siMuove in asset-select).
+  // Senza il file su questo disco (--offline in produzione) non si puo'
+  // sapere: il collegamento resta com'e'.
+  for (const col of ['thumb_animated_key', 'art_animated_key']) {
+    const fermi = cardCols[col].filter(([, k]) => !muoveSulDisco(k))
+    if (!fermi.length) continue
+    const tolti = new Set(fermi.map(([id]) => id))
+    cardCols[col] = cardCols[col].filter(([id]) => !tolti.has(id))
+    await tx.query(`update card set ${col} = null where id = any($1::bigint[])`, [[...tolti]])
+    console.log(`  card.${col}: ${fermi.length} non animati, scollegati`)
+  }
   for (const [col, pairs] of Object.entries(cardCols)) {
     if (!pairs.length) continue
     await tx.query(`update card set ${col} = m.k

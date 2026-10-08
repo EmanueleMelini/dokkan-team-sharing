@@ -99,7 +99,10 @@ r = await chiama({ dev: true, secret: SEGRETO, auth: 'Bearer sbagliato' })
 check('next dev con segreto: il segreto vale', r.status === 401)
 
 console.log('i moduli di query puri restano senza cache')
-for (const f of ['lib/queries.ts', 'lib/clears.ts', 'lib/cards.ts', 'lib/equipment.ts']) {
+for (const f of [
+  'lib/queries.ts', 'lib/clears.ts', 'lib/cards.ts', 'lib/equipment.ts',
+  'lib/tips.ts', 'lib/card-page.ts', 'lib/card-art.ts',
+]) {
   const testo = readFileSync(new URL(`../../${f}`, import.meta.url), 'utf8')
   const trovato = testo.match(/['"]use cache|cacheTag\(|cacheLife\(|from 'next\/cache'/)
   check(`${f} senza 'use cache', cacheTag, cacheLife`, !trovato, trovato?.[0] ?? '')

@@ -49,6 +49,18 @@ function Bersaglio({ g }: { g: GruppoReport }) {
       </>
     )
   }
+  if (g.kind === 'tip' && g.tip) {
+    return (
+      <>
+        <p className="text-[11px] text-tenue">
+          Tip{g.posto && <> in <Link href={g.posto.href} prefetch={false} className="underline decoration-linea-forte underline-offset-2 hover:text-inchiostro">{g.posto.eventName}, {g.posto.tier}</Link></>}
+        </p>
+        <p className="mt-1 text-[13px] leading-relaxed text-testo whitespace-pre-line break-words line-clamp-6">{g.tip.body}</p>
+        {/* il link come testo, mai come href: lo vede solo chi modera, e decide se aprirlo */}
+        {g.tip.link && <p className="mt-1 text-[12px] text-tenue break-all">Link: {g.tip.link}</p>}
+      </>
+    )
+  }
   return <p className="text-[13px] text-tenue">This {g.kind} no longer exists.</p>
 }
 
@@ -56,8 +68,9 @@ export function CodaReport({ gruppi }: { gruppi: GruppoReport[] }) {
   return (
     <ol className="border border-linea rounded-[var(--raggio)] bg-superficie divide-y divide-linea">
       {gruppi.map((g) => {
-        const nascosto = g.kind === 'comment' ? g.comment?.status !== 'published' : g.clear?.status !== 'published'
-        const esiste = g.kind === 'comment' ? !!g.comment : g.kind === 'clear' ? !!g.clear : false
+        const nascosto = g.kind === 'comment' ? g.comment?.status !== 'published'
+          : g.kind === 'tip' ? g.tip?.status !== 'published' : g.clear?.status !== 'published'
+        const esiste = g.kind === 'comment' ? !!g.comment : g.kind === 'clear' ? !!g.clear : g.kind === 'tip' ? !!g.tip : false
         return (
           <li key={`${g.kind}:${g.targetId}`} className="px-4 py-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_16rem]">
             <div className="min-w-0">

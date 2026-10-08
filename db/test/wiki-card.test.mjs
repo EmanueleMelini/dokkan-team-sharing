@@ -14,6 +14,7 @@ import {
   assignCardIds, awakensInto, baseTexts, cleanSkill, datamineCards, field, idFieldIds, idsByTitle, imageCardId,
   inlineField, lineField, refsOf, skillsFromPage,
 } from '../import/wiki-card.mjs'
+import { lookupKey } from '../import/wiki-skills.mjs'
 
 let fails = 0
 let passes = 0
@@ -187,6 +188,22 @@ console.log('\ncleanSkill')
   vale('spazi e righe vuote via, "-x" diventa "- x"', c('  <br><br>-ATK   +1<br> <br>').text, '- ATK +1')
   vale('commenti e template sconosciuti via', c('ATK<!-- nota | con pipe --> +1{{Foo|bar}}').text, 'ATK +1')
   vale('null resta null', c(null), { text: null, details: [] })
+  vale('il link "How does it work?" non resta nella nota',
+       c('raises ATK<ref>Raises ATK by 67% for 99 turns ([[Stack Attack|How does it work?]])</ref> and hits'),
+       { text: 'raises ATK and hits', details: ['Raises ATK by 67% for 99 turns'] })
+  vale('...nemmeno senza la parentesi chiusa, ne\' con Stack Defense',
+       c('a<ref>DEF +9% for 9 turns ([[Stack Defense|How does it work?]]</ref>, b').details, ['DEF +9% for 9 turns'])
+}
+
+console.log('\nlookupKey')
+{
+  const stessa = (a, b) => check(`"${a}" e "${b}" sono lo stesso nome`, lookupKey(a) === lookupKey(b), `${lookupKey(a)} / ${lookupKey(b)}`)
+  stessa('Universe’s Most Malevolent', "Universe's Most Malevolent")
+  stessa('Warriors of Universe 6 ', 'Warriors of Universe 6')
+  stessa('Namekians', 'Namekian')
+  stessa('Androids/Cell Saga', 'Androids-Cell Saga')
+  stessa('Fused Fighters', 'Fused Fighter')
+  check('nomi diversi restano diversi', lookupKey('Androids') !== lookupKey('Androids/Cell Saga'))
 }
 
 console.log('\nskillsFromPage')
@@ -265,6 +282,8 @@ if (existsSync(CACHE)) {
   const sporche = tutte.filter((r) => [r.name, r.description, r.condition, ...r.details]
     .some((v) => v && /\[\[|\]\]|\{\{|\}\}|<\/?(ref|br|hr|b)\b/i.test(v)))
   check('nessun markup nei testi', sporche.length === 0, sporche.length ? JSON.stringify(sporche[0]).slice(0, 200) : `${tutte.length} righe`)
+  const come = tutte.filter((r) => [r.description, ...r.details].some((v) => /How does it work/i.test(v ?? '')))
+  check('nessun "How does it work?" rimasto', come.length === 0, come.length ? JSON.stringify(come[0].details) : '')
   const conNome = tutte.filter((r) => r.kind === 'super' && r.tier === 'base' && r.name).length
   check('le super di base hanno il nome', conNome > 2500, `${conNome}`)
   const dup = new Set(), doppie = []

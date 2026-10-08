@@ -35,12 +35,18 @@ export default function Privacy() {
           (performance of a contract, GDPR Art. 6(1)(b)).
         </li>
         <li>
-          <strong>What you post.</strong> Clears (teams, builds, notes and proof links), comments
-          and votes. Clears and comments are public together with your handle. Votes count toward
-          public scores, but who voted is not shown. Same legal basis as above.
+          <strong>Display preference.</strong> Whether card pages show the still or the animated
+          artwork by default, stored with your account until you change it or delete the account.
+          Same legal basis as above.
         </li>
         <li>
-          <strong>Reports and moderation.</strong> When you report a clear or a comment, the site
+          <strong>What you post.</strong> Clears (teams, builds, notes and proof links), comments,
+          tips (short advice with an optional link) and votes. Clears, comments and tips are public
+          together with your handle. Votes count toward public scores, including the Helpful count
+          on tips, but who voted is not shown. Same legal basis as above.
+        </li>
+        <li>
+          <strong>Reports and moderation.</strong> When you report a clear, a comment or a tip, the site
           stores your account, the post, the reason you picked, the details you wrote, if any, and
           the time. Only moderators (accounts the site owner gives the admin role) see reports;
           the author of the post is not told who reported it. When a moderator hides or restores a
@@ -69,6 +75,11 @@ export default function Privacy() {
         One cookie keeps you signed in, and a few short-lived ones protect the sign-in step from
         forgery while it happens. They are strictly necessary, so no consent banner is needed.
         Nothing is set when you only browse.
+      </p>
+      <p>
+        If you switch a card&apos;s artwork between still and animated on its page, your browser
+        remembers that choice in its local storage, for the last 200 cards. It stays on your device
+        and is never sent to the site; clearing your browser data removes it.
       </p>
 
       <h2>Who else handles the data</h2>
@@ -107,7 +118,8 @@ export default function Privacy() {
       </ul>
       <p>
         Deleting your account from <Link href="/settings">Settings</Link> removes it immediately,
-        together with everything you posted: clears, comments, votes and the reports you sent.
+        together with everything you posted: clears, comments, tips, votes and the reports you
+        sent.
         Copies inside database
         backups disappear when those backups expire, within 30 days.
       </p>

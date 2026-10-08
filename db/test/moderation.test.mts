@@ -104,7 +104,7 @@ async function regole() {
   const unione = new Set(Object.values(REASONS_BY_KIND).flat())
   check('ogni codice ha un\'etichetta ed e\' usato da un tipo',
     ALL_REASONS.every((r) => REASON_LABELS[r] && unione.has(r)) && unione.size === ALL_REASONS.length)
-  check('si segnalano clear e commenti (tip con 0025)',
+  check('il form generico segnala clear e commenti (le tip hanno reportTip)',
     REPORTABLE_KINDS.join() === 'clear,comment' && isReportKind('comment') && !isReportKind('tip') && !isReportKind('proof'))
   check('isReasonFor segue il tipo', isReasonFor('clear', 'fake_proof') && !isReasonFor('comment', 'fake_proof') &&
     isReasonFor('tip', 'wrong_info') && !isReasonFor('clear', 'wrong_info') && !isReasonFor('clear', 42))
@@ -137,9 +137,12 @@ async function segnalare(m: Mondo) {
 
   check('il proprio clear: report_own', await esito(REPORT, [m.autore, 'clear', m.clearA, 'spam', null]) === '23514 report_own')
   check('il proprio commento: report_own', await esito(REPORT, [m.autore, 'comment', m.commentoA, 'spam', null]) === '23514 report_own')
-  for (const k of ['proof', 'tip', 'user', null]) {
+  for (const k of ['proof', 'user', null]) {
     check(`tipo ${k}: report_kind`, await esito(REPORT, [m.altro, k, m.clearA, 'spam', null]) === '23514 report_kind')
   }
+  // 'tip' e' un tipo ammesso da 0025 (le sue regole in tips.test.mts): l'id di un clear non e' una tip
+  check('l\'id di un clear come tip: report_target_missing',
+    await esito(REPORT, [m.altro, 'tip', m.clearA, 'spam', null]) === '23514 report_target_missing')
   check('un clear che non c\'e\': report_target_missing',
     await esito(REPORT, [m.altro, 'clear', NESSUNO, 'spam', null]) === '23514 report_target_missing')
   check('un commento che non c\'e\': report_target_missing',

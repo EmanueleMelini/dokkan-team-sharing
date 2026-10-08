@@ -2,6 +2,7 @@ import { cookies } from 'next/headers'
 import type { NextRequest } from 'next/server'
 import { currentUser } from '@/lib/dal'
 import { viewerTierState } from '@/lib/clears'
+import { viewerTipState } from '@/lib/tips'
 import { parseBigintId } from '@/lib/clears/validate'
 import { readAuthEnv } from '@/lib/auth/env'
 import { SESSION_DAYS } from '@/lib/auth/config'
@@ -11,7 +12,7 @@ import { viewerUserOf } from '@/lib/viewer/utente'
 
 // Chi guarda, per le isole client delle pagine in cache: l'utente e, con
 // ?tier=<id>, i suoi voti, i suoi clear, i suoi commenti e i punteggi vivi
-// di quel tier.
+// di quel tier, piu' le sue tip e i suoi "helpful" (tier ed evento).
 // Una richiesta per pagina vista, e solo da chi ha l'indizio dts_signed_in.
 //
 // private, no-store e Vary: Cookie: nessuna cache condivisa la tiene.
@@ -37,6 +38,10 @@ export async function GET(request: NextRequest) {
   const body: MeResponse = { user: viewerUserOf(user) }
   const tier = parseBigintId(request.nextUrl.searchParams.get('tier'))
   // Senza handle non si vota e non si invia: niente da dire sul tier.
-  if (tier && user.onboarded) body.tier = await viewerTierState(user.id, tier)
+  if (tier && user.onboarded) {
+    // ogni sezione e' una funzione sua, in parallelo: una richiesta sola
+    const [clear, tips] = await Promise.all([viewerTierState(user.id, tier), viewerTipState(user.id, tier)])
+    body.tier = { ...clear, ...tips }
+  }
   return Response.json(body, { headers: HEADERS })
 }

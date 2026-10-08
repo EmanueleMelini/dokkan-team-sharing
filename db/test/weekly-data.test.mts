@@ -17,7 +17,7 @@ import { treeGuard, verifyFile, safePath } from '../prod/mirror-assets.mjs'
 import { checkDatamine, checkPages } from '../prod/sanity.mjs'
 import { TABLES, unclassified } from '../prod/tables.mjs'
 import { headersFor, resolveCommit } from '../import/datamine-source.mjs'
-import { selectJobs } from '../import/asset-select.mjs'
+import { selectJobs, siMuove } from '../import/asset-select.mjs'
 import { takeSnapshot } from '../prod/snapshot.mjs'
 import { db } from '@/lib/db'
 import { DOMINIO, SUBMIT, dati, guardia, one, payload, utente } from '@/db/test/builder-helpers'
@@ -159,6 +159,12 @@ console.log('fetch-assets: quali job')
   check('--offline: la riga c\'e\', si collega senza file', o.kept.length === 1 && o.kept[0].key === 'cards/1/thumb.webp')
   check('--offline: gli altri seguono la strada solita', o.todo.length === 2)
   check('thumb non prende la riga di thumb-animated', selectJobs([{ keyBase: 'cards/9/thumb' }], ['cards/9/thumb-animated.webp'], { missing: true }).todo.length === 1)
+  // Il campo apng del wiki a volte punta a un'immagine ferma
+  const head = (s: string) => new Uint8Array(Buffer.from(s, 'latin1'))
+  check('WebP con ANIM: si muove', siMuove(head('RIFF\x00\x00\x00\x00WEBPVP8X\x0a\x00\x00\x00\x12\x00\x00\x00ANIM')))
+  check('WebP VP8 semplice: fermo', !siMuove(head('RIFF\x00\x00\x00\x00WEBPVP8 \x00\x00')))
+  check('APNG (acTL) si muove, PNG no', siMuove(head('\x89PNG\r\n\x1a\n....IHDR........acTL')) && !siMuove(head('\x89PNG\r\n\x1a\n....IHDR........IDAT')))
+  check('GIF: si muove; altro: no', siMuove(head('GIF89a')) && !siMuove(head('<html>')))
 }
 
 console.log('mirror-assets')

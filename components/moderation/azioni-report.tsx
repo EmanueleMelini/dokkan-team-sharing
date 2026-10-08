@@ -2,7 +2,7 @@
 
 import { useActionState, useEffect, useId, useRef, useState } from 'react'
 import {
-  dismissReports, setClearStatus, setCommentStatus, type ModState,
+  dismissReports, setClearStatus, setCommentStatus, setTipStatus, type ModState,
 } from '@/lib/moderation/actions'
 import { NOTE_MAX } from '@/lib/moderation/reasons'
 
@@ -10,7 +10,7 @@ const piccolo =
   'px-2 py-1 text-[12px] rounded-[var(--raggio)] border transition-colors active:scale-[0.98] disabled:opacity-60'
 
 type Props = {
-  kind: 'clear' | 'comment' | string
+  kind: 'clear' | 'comment' | 'tip' | string
   targetId: string
   /** quante segnalazioni aperte: per la domanda di conferma */
   n: number
@@ -42,6 +42,7 @@ export function AzioniReport({ kind, targetId, n, canHide }: Props) {
     form.set('status', 'hidden')
     if (op === 'hide_clear') { form.set('clear', targetId); return setClearStatus(prev, form) }
     if (op === 'hide_comment') { form.set('comment', targetId); return setCommentStatus(prev, form) }
+    if (op === 'hide_tip') { form.set('tip', targetId); return setTipStatus(prev, form) }
     return prev
   }, {})
 
@@ -51,7 +52,7 @@ export function AzioniReport({ kind, targetId, n, canHide }: Props) {
     else apri.current?.focus()
   }, [chiede])
 
-  const hide = kind === 'clear' ? 'hide_clear' : kind === 'comment' ? 'hide_comment' : null
+  const hide = kind === 'clear' ? 'hide_clear' : kind === 'comment' ? 'hide_comment' : kind === 'tip' ? 'hide_tip' : null
 
   return (
     <form action={azione} className="space-y-2" aria-busy={inCorso}>
@@ -90,7 +91,7 @@ export function AzioniReport({ kind, targetId, n, canHide }: Props) {
           {hide && canHide && (
             <button type="submit" name="op" value={hide} disabled={inCorso}
               className={`${piccolo} border-str bg-superficie text-str hover:bg-str hover:text-sfondo`}>
-              {inCorso ? 'Hiding…' : kind === 'clear' ? 'Hide clear' : 'Hide comment'}
+              {inCorso ? 'Hiding…' : kind === 'clear' ? 'Hide clear' : kind === 'tip' ? 'Hide tip' : 'Hide comment'}
             </button>
           )}
           <button ref={apri} type="button" onClick={() => setChiede(true)} disabled={inCorso}

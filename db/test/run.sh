@@ -11,8 +11,9 @@
 #   esclusive (0021)
 #   -> settings dell'account (0019: scollegare, cancellare l'account)
 #   -> moderazione (0024: segnalazioni, nascosti, sospensioni, registro,
-#   letture di /admin, il lato di chi usa il sito)
+#   letture di /admin, il lato di chi usa il sito) -> tip (0025)
 #   -> carte solo nel gioco (load-game-cards) -> skill delle carte (0022)
+#   e la pagina della carta
 #   -> finestre degli eventi dal
 #   gioco (load-windows) -> eventi creati dal gioco (load-game-events) ->
 #   stage delle riedizioni -> classificazione (story, SBR, archivi) ->
@@ -93,8 +94,9 @@ passo "parametri dell'URL" verifica node_ts db/test/parametri.test.mts
 passo "URL degli eventi" verifica node_ts db/test/urls.test.mts
 # La cache (lib/cache/*): i tag di ogni scrittura, i tag ammessi,
 # /api/revalidate con una funzione finta al posto di next/cache, e la
-# guardia che tiene lib/queries.ts, lib/clears.ts, lib/cards.ts e
-# lib/equipment.ts senza 'use cache'. Funzioni pure.
+# guardia che tiene lib/queries.ts, lib/clears.ts, lib/cards.ts,
+# lib/equipment.ts, lib/tips.ts, lib/card-page.ts e lib/card-art.ts senza
+# 'use cache'. Funzioni pure.
 passo "cache: tag e /api/revalidate" verifica node_ts db/test/cache-tags.test.mts
 # Il builder dei clear (0016): invio e revisione in una transazione, gli
 # assetti congelati, chi puo' cosa, il limite per ora, voti e commenti.
@@ -135,6 +137,13 @@ passo "moderazione (area admin)" verifica node_ts db/test/moderation-admin.test.
 # sessione, la sezione user di /api/me, il form di Report e i rifiuti veri
 # di report_content come frasi. Crea solo utenti modapp+ e li toglie.
 passo "moderazione (lato utente)" verifica node_ts db/test/moderation-app.test.mts
+# Le tip (0025): il bersaglio (l'evento, e il tier solo se e' di quell'evento),
+# lunghezze e link (accorciatori rifiutati con proof_host), il tetto di 3 per
+# bersaglio, i doppioni, i limiti per ora, la modifica che tiene i voti, la
+# cancellazione con voti e segnalazioni, il voto solo "helpful", la
+# sospensione, report_content e mod_set_tip_status, le letture vere di
+# lib/tips.ts e della coda di /admin. Crea solo utenti tiptest+ e li toglie.
+passo "tip" verifica node_ts db/test/tips.test.mts
 # Rilancia load-game-cards e load-datamine, e prova il passaggio al wiki
 # con una pagina finta su 1034200 (poi rimette la carta com'era).
 passo "carte dal gioco" verifica node_ts db/test/game-cards.test.mts
@@ -144,6 +153,12 @@ passo "carte dal gioco" verifica node_ts db/test/game-cards.test.mts
 # Rilancia load-cards, poi load-game-cards e load-datamine come sopra.
 # Crea solo utenti cardpagetest+ e la carta finta 1999990, e li toglie.
 passo "pagina della carta (dati)" verifica node_ts db/test/card-page.test.mts
+# La pagina della carta, lato pagina: le letture vere di lib/card-page.ts
+# (catena, link, categorie, i clear che usano la carta con la pagina del
+# loro tier secondo ORDINE_CLEAR, la forma Z), le skill per livello e
+# lib/card-art.ts (quale artwork, la scelta per carta nel localStorage).
+# Crea solo utenti cardpageui+ con i loro clear, e li toglie.
+passo "pagina della carta (pagina)" verifica node_ts db/test/card-page-ui.test.mts
 # Per ultima: rilancia load-windows e set-event-window, e ritocca qualche
 # run per provarli (rimettendole come le ha trovate).
 passo "finestre dal gioco" verifica node_ts db/test/windows.test.mts

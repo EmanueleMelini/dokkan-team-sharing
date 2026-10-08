@@ -1,9 +1,10 @@
 'use client'
 
-import { Plus, X } from '@phosphor-icons/react/dist/ssr'
+import { ArrowSquareOut, Plus, X } from '@phosphor-icons/react/dist/ssr'
 import { Miniatura } from '@/components/builder/miniatura'
 import { buildPiena, type BuildStato, type SlotStato } from '@/lib/clears/builder-stato'
 import type { SlotRole } from '@/lib/clears/validate'
+import { cardHref } from '@/lib/urls'
 
 type Props = {
   slot: SlotStato
@@ -80,10 +81,22 @@ export function Slot({ slot, dove, onApri, onSvuota, onRuolo, onBuild }: Props) 
           >
             Build<span className="sr-only">{piena ? `, set: ${riassuntoBuild(build)}` : ' (optional)'}, {dove}</span>
           </button>
+          {/* In una scheda nuova: il builder non salva la bozza, e andare via
+              dalla pagina perderebbe la squadra */}
+          <a
+            href={cardHref(String(carta.id))}
+            target="_blank"
+            rel="noopener"
+            aria-label={`Open ${carta.name} in a new tab`}
+            title="Card page"
+            className="ml-auto inline-flex items-center justify-center w-6 h-6 rounded-[var(--raggio)] text-tenue hover:text-inchiostro"
+          >
+            <ArrowSquareOut size={12} weight="bold" aria-hidden />
+          </a>
           <button
             type="button"
             onClick={onSvuota}
-            className="ml-auto inline-flex items-center justify-center w-6 h-6 rounded-[var(--raggio)] text-tenue hover:text-str"
+            className="inline-flex items-center justify-center w-6 h-6 rounded-[var(--raggio)] text-tenue hover:text-str"
           >
             <X size={12} weight="bold" aria-hidden />
             <span className="sr-only">Remove the card from {dove}</span>

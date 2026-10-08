@@ -12,10 +12,12 @@ a questa conclusione sta in `docs/`.
 
 Lo strato database è completo e verificato, con le carte, gli eventi e le
 missioni veri. Sopra c'è il sito: le pagine degli eventi, gli account, il
-builder con cui si inviano i clear e la moderazione (segnalazioni e `/admin`). I numeri sono quelli di `dokkan_dev`
+builder con cui si inviano i clear, la moderazione (segnalazioni e `/admin`),
+le tip dei giocatori nella pagina evento e la pagina di ogni carta
+(`/cards/<id>`). I numeri sono quelli di `dokkan_dev`
 all'8 ottobre 2026.
 
-- **66 tabelle, 3 view, 14 trigger, 67 funzioni** su PostgreSQL 15, in 24
+- **66 tabelle, 3 view, 15 trigger, 77 funzioni** su PostgreSQL 15, in 25
   migrazioni
 - **2697 carte**: 2651 dal wiki, con link skill, categorie, statistiche e
   date di uscita separate per Japan e Global, più 46 che ha solo il gioco
@@ -34,8 +36,8 @@ all'8 ottobre 2026.
   sua regola su chi la monta: 1852 per tipo e classe, 5042 per categoria,
   1825 per lista di carte, 138 per nome
 - **6246 immagini** ospitate da noi
-- **1730 verifiche automatiche** in `db:test`: 36 passi, di cui 9
-  preparano il database e 27 sono suite di verifica, tutte verdi, su un
+- **1946 verifiche automatiche** in `db:test`: 38 passi, di cui 9
+  preparano il database e 29 sono suite di verifica, tutte verdi, su un
   database a parte che non è quello di sviluppo
 
 Tre regole recenti da sapere:
@@ -120,8 +122,10 @@ dopo `load-datamine` (`db/prod/pipeline.mjs`, spiegato in "Messa online").
    eventi** di `lib/urls.ts` (`urls.test.mts`) e i **tag della cache**
    (`cache-tags.test.mts`);
 5. poi le suite del builder, degli account, della moderazione (SQL, area
-   admin, lato utente), dei dati del gioco, dei testi delle skill (`card-page.test.mts`) e, per ultima, dell'aggiornamento
-   settimanale (`weekly-data.test.mts`).
+   admin, lato utente), delle tip (`tips.test.mts`), dei dati del gioco,
+   dei testi delle skill (`card-page.test.mts`), della pagina della carta
+   (`card-page-ui.test.mts`) e, per ultima, dell'aggiornamento settimanale
+   (`weekly-data.test.mts`).
 
 Un passo che prepara i dati, se fallisce, ferma tutto; una suite rossa non
 ferma le altre. Alla fine c'è un riepilogo, e il comando esce con errore se
@@ -159,7 +163,11 @@ codici HTTP e i testi chiave della lista eventi e delle viste filtrate
 (`/events/browse`, noindex), della ricerca con `_`, `%` e `%00`, delle
 pagine che non esistono (404, non 500), di un'EZA, di una sfida, degli URL
 delle viste (`/japan`, `/t/<tier>`, `/p/<n>`, con i loro 404), del 307 da
-`/` a `/events`, di `robots.txt` e di `/api/me` senza cookie. Gli eventi da
+`/` a `/events`, di `robots.txt`, della sitemap (con le carte), di
+`/settings` senza sessione (307 a `/login`) e di `/api/me` senza cookie.
+Sulla pagina di una sfida cerca il blocco delle tip nella versione anonima;
+sulle carte prova `/cards/<id>` (200), la forma Z (308 verso la base) e gli
+id sbagliati (404). Gli eventi da
 aprire li prende dalle viste filtrate: servono i dati importati, non i
 clear dimostrativi. Contro `next start` con `SMOKE_EXPECT_CACHE=1`
 controlla anche che la seconda visita esca dalla cache (`x-nextjs-cache:
@@ -253,6 +261,7 @@ database che finisce per `_test`.
 ```
 app/                        Next.js 16, App Router
   admin/                    l'area dei moderatori: coda, nascosti, utenti, registro (404 per chi non e' admin)
+  cards/[id]/               la pagina di una carta: pubblica, in cache, 308 dalla forma Z, 404 vero
 proxy.ts                    solo per /admin: senza cookie di sessione un 404 vero, senza database
 db/
   migrations/               NNNN_*.sql, applicate in ordine, mai modificate
@@ -266,6 +275,7 @@ db/
     0022_card_skills.sql    card_skill: i testi completi delle skill, con EZA e Super EZA; set_prefers_animated
     0023_import_run.sql     import_run: un import alla volta, e l'ultimo riuscito per l'aggiornamento settimanale
     0024_moderation.sql     segnalazioni con motivo, nascosti, sospensioni, moderation_action (solo in aggiunta)
+    0025_tips.sql           le tip: bersaglio, limiti, link senza accorciatori, voto Helpful, Report e mod_set_tip_status
   admin/set-role.mjs        il ruolo di un utente, solo da script (db:role, prod:role)
   seed/                     demo-clears.mjs: tre clear dimostrativi su un evento vero (db:demo)
   queries/reference.sql     le query di lettura principali, documentate
@@ -311,6 +321,10 @@ lib/viewer/                 chi guarda: il tipo di /api/me e il cookie dts_signe
 lib/clears/                 le Server Action dei clear, i loro validatori e le frasi d'errore
 lib/moderation/             motivi, frasi d'errore, Report (report-actions), requireAdmin (guard), letture e azioni di /admin
 lib/clears.ts               le letture del builder e del clear: modifica, cambi, voti, commenti
+lib/tips.ts                 le letture delle tip (pure): la lista per tier ed evento, lo stato di chi guarda per /api/me
+lib/tips/                   le Server Action delle tip, i loro validatori e le frasi d'errore
+lib/card-page.ts            le letture della pagina della carta (pure): carta, skill per livello, catena, clear che la usano
+lib/card-art.ts             statico o animato: la scelta dell'artwork e quella per carta nel localStorage
 lib/cards.ts                la ricerca delle carte per il picker (anche GET /api/cards)
 lib/equipment.ts            la ricerca delle Skill Orb per le build (anche GET /api/equipment)
 lib/db.ts, lib/db-config.ts la pool (una per processo) e le sue impostazioni: dimensioni, TLS
@@ -323,6 +337,8 @@ components/clears/          la scheda di un clear: squadre, cambi, voti, comment
 components/evento/, eventi/ la pagina evento e la lista, uguali per tutti (stanno in cache)
 components/viewer/          ViewerProvider e useViewer(): le isole client che leggono /api/me
 components/moderation/      Report e il banner della sospensione (isole), la coda, i form e il registro di /admin
+components/tips/            il blocco delle tip nella pagina evento: lista, Top/New, Helpful, Report, il form
+components/cards/           la pagina della carta: artwork, schede delle skill per livello, catena, clear con la carta
 test/cpu.sh                 la CPU per richiesta su next start (npm run test:cpu)
 ```
 
@@ -442,6 +458,8 @@ Si prende la prima scheda della pagina, cioè la carta. Attiva, Standby, dominio
 
 Sul database di sviluppo: 10.705 righe su 2.651 carte; leader EZA 649, passiva Super EZA 33, Ultra 185, attive 217. Le 46 carte solo del datamine non hanno testi. load-cards stampa la copertura per tipo e livello a ogni giro: un calo improvviso dice che il parser ha perso un campo. L'import resta idempotente: cancella e riscrive le righe `official` delle carte che importa, nella stessa transazione.
 
+Le note del wiki perdono il link "How does it work?" alla pagina sugli accumuli. load-cards riconosce un nome di link skill o di categoria scritto in un altro modo (apostrofo curvo, spazio in coda, "/" al posto di "-", singolare e plurale: `lookupKey` in `wiki-skills.mjs`). Così, dopo load-datamine, non crea più a ogni giro cinque link e due categorie "nuove", e un'immagine nella riga dei link (`[[File:Global server.png|20px]]`) non diventa più una link skill di nome "20px".
+
 ### Attribuzione, che non è opzionale
 
 Il contenuto del wiki Fandom è **CC BY-SA**. Usarlo richiede di attribuirlo
@@ -523,6 +541,17 @@ Il primo giro di import ne ha salvati 87 così, 1675 MB invece di 2,3 MB. Il
 fotogramma statico si estrae in locale con `ffmpeg`, che il download fa da
 sé quando riconosce un'immagine animata (`--flatten-existing` ripara quelle
 già salvate, leggendole dal disco senza riscaricare).
+
+**E una sua conseguenza:** quella riparazione prendeva anche le versioni
+animate delle carte, e ne ha lasciate ferme 82 di artwork e tutte le 171
+miniature, ancora collegate come animate (la pagina della carta offriva
+"Animated" per un'immagine immobile e più piccola). Ora le esclude, e il
+collegamento controlla i primi byte del file (`siMuove` in
+`db/import/asset-select.mjs`: GIF, WebP con ANIM, PNG con acTL): un
+"animato" che non si muove resta scollegato. Su `dokkan_dev` restano 88
+artwork animati e nessuna miniatura animata. Le originali si possono
+riprendere con `npm run db:assets -- --only anim --force` quando la CDN del
+wiki risponde di nuovo; il controllo anti-bot non si aggira.
 
 ### L'icona LR
 
@@ -1491,6 +1520,7 @@ sospensione e il link Moderation sono isole client che leggono GET /api/me.
 Le pagine `/privacy` e `/terms` (con `lib/legale.ts`) lo dicono a chi usa il
 sito:
 
+- si segnalano clear, commenti e tip (da 0025);
 - una segnalazione tiene chi l'ha fatta, il bersaglio, il motivo, i
   dettagli e l'ora. La vedono solo i moderatori; l'autore del post non sa
   chi l'ha segnalato;
@@ -1504,6 +1534,14 @@ sito:
   moderatore, mai il testo del post. Cancellare un account mette a null il
   suo id nel registro (FK `on delete set null`), l'handle del moderatore
   resta.
+
+Per le tip e la pagina della carta le stesse pagine dicono che le tip sono
+pubbliche con l'handle e che il conteggio Helpful non dice chi ha votato;
+che una tip si cancella con l'account; che il default dell'artwork sta
+nell'account (`prefers_animated`) e la scelta per carta solo nel
+localStorage del dispositivo. I Terms citano il wiki (CC BY-SA 3.0) per i
+testi delle carte (`FONTE_TESTI` in `lib/legale.ts`) e vietano le tip con
+link che nascondono dove portano.
 
 ### Il primo admin
 
@@ -1528,6 +1566,29 @@ sospensione dalla sessione, /api/me, il form di Report), più
 input:false su role e suspendedUntil). `test:smoke` controlla che ogni URL
 di `/admin` sia un 404 senza sessione e che la pagina in cache non abbia
 niente di chi guarda.
+
+## Le tip (migrazione 0025)
+
+Consigli brevi dei giocatori, nella pagina di un evento, tra l'intestazione del tier e la lista dei clear. Una tip vale per tutto l'evento o per un tier (uno stage a una difficoltà, o un livello EZA): la FK composita `tip_tier_in_event` impedisce il tier di un altro evento. Sono le stesse in Global e Japan, perché gli stage non hanno regione.
+
+- 10-500 caratteri di testo semplice (React lo mostra come testo, niente markdown) e al massimo un link https. Gli accorciatori sono rifiutati con la stessa tabella delle prove (`proof_host`); il provider (youtube, imgur...) viene da lì.
+- Voto solo "Helpful" (+1, o 0 per ritirarlo): una tip sbagliata si segnala, non si vota giù. Niente voto sulla propria.
+- Limiti: 10 tip e 30 modifiche all'ora (`clear_write_log`, kind `tip` e `tip_edit` di 0024), al massimo 3 tip vive per autore sullo stesso bersaglio, e la stessa tip due volte sullo stesso bersaglio no (`tip_no_duplicate`, maiuscole e spazi non contano).
+- La modifica tiene i voti e mostra "edited". La cancellazione porta via voti e segnalazioni. Chi è sospeso non scrive, non modifica, non vota e non segnala, ma cancella le proprie tip (come i clear).
+- Moderazione come clear e commenti: Report con i motivi di `report_reasons('tip')`, nessun nascondimento automatico, e da `/admin` "Hide tip" (`mod_set_tip_status`, che chiude le segnalazioni e scrive il registro), "Unhide" dalla scheda Hidden > Tips.
+- La pagina in cache porta fino a 50 tip per gruppo e per ordine; "Show all" e Top/New lavorano nel browser, senza parametri nell'URL. I propri voti e le proprie tip arrivano da `/api/me` (`tier.tipVotes`, `tier.ownTips`, `tier.tipScores`).
+
+Verbi SQL: `post_tip`, `edit_tip`, `delete_tip`, `vote_tip`; i rifiuti hanno un nome (`tip_*`) tradotto da `lib/tips/errors.ts`. Le verifiche sono nel passo "tip" (`db/test/tips.test.mts`).
+
+## La pagina della carta
+
+`/cards/<id>` è pubblica e in cache come le pagine evento: non legge mai la sessione. Le letture stanno in `lib/card-page.ts` (pure, provate da `db/test/card-page-ui.test.mts`), la cache in `lib/cache/cards.ts`: la carta con il tag `card:<id>` e `catalog`, i clear che la usano con `card:<id>` e `community`, che le scritture sui clear invalidano già. Al build si prerenderizzano al massimo 100 carte (le più usate nei clear); le altre nascono alla prima visita e poi restano in cache. L'id della forma Z (quello della base più uno) porta alla base con un 308; un id che non è una carta è un 404 vero. Le carte uscite solo in Giappone si aprono lo stesso, con "Not released on Global yet." e i clear della versione giapponese.
+
+La pagina mostra le skill per livello (Base, EZA, Super EZA) e si apre sul livello più alto che la carta ha. Una sezione che il wiki non riscrive per l'EZA prende il testo del livello sotto, segnato "Unchanged from EZA". Seguono link skill con l'effetto, categorie, la catena del Dokkan Awakening, i 10 clear migliori che usano la carta (prova, voti, i più recenti) con "Used in N clears". Ogni clear porta alla pagina del suo tier dove si vede davvero: la pagina si calcola con lo stesso `ORDINE_CLEAR` della lista. In fondo c'è il link alla pagina del wiki da cui vengono i testi (CC BY-SA).
+
+L'artwork parte sempre statico: è l'immagine che si vede subito, e chi non è entrato non scarica mai l'animato (in media 4 MB, circa 25 volte lo statico). Chi è entrato sceglie il default in Settings > Display > Artwork (`set_prefers_animated`, letto da `/api/me`). Movimento ridotto o risparmio dati riportano a statico un default "Animated", ma mai la scelta fatta su una carta. Quella scelta resta nel localStorage del dispositivo (`dts:card-art`, al massimo 200 carte), mai nel database. La logica sta in `lib/card-art.ts`.
+
+I nomi delle carte nei clear portano alla pagina nella stessa scheda, senza prefetch (20 clear per 7 carte farebbero 140 prefetch a pagina). Dal builder, l'icona dello slot e il link sotto il picker aprono una scheda nuova, perché il builder non salva la bozza. La sitemap ha tutte le carte uscite su Global.
 
 ## La produzione: Vercel, Supabase, Cloudflare
 
@@ -1595,14 +1656,14 @@ online sono nella sezione seguente. Le prove: `npm run db:test` (passi
 
 ## Cache e budget CPU
 
-Vercel Hobby dà 4 ore di CPU attiva al mese, senza extra. Per questo le pagine pubbliche (`/events`, `/events/<id>/…`) non leggono mai né la sessione né la query string: sono prerender (ISR) che la CDN serve senza invocare funzioni. Chi è dentro costa una sola richiesta a `/api/me` per pagina; chi non è dentro, niente.
+Vercel Hobby dà 4 ore di CPU attiva al mese, senza extra. Per questo le pagine pubbliche (`/events`, `/events/<id>/…`, `/cards/<id>`) non leggono mai né la sessione né la query string: sono prerender (ISR) che la CDN serve senza invocare funzioni. Chi è dentro costa una sola richiesta a `/api/me` per pagina; chi non è dentro, niente.
 
 - **URL**: `/events` (statica) · `/events/browse?region=&type=&status=&q=&page=` (viste filtrate, dinamiche, noindex, escluse da `robots.txt`) · `/events/<id>` · `/events/<id>/japan` · `/events/<id>[/japan]/t/<tier>` · `…/t/<tier>/p/<n>` (n ≥ 2). Si costruiscono solo con `lib/urls.ts`. Un tier che non è dell'evento, `p/1` o una pagina oltre l'ultima sono 404. Su `next start` e su Vercel la prima visita a un URL non prerenderizzato riceve lo shell con 200 e il 404 nello stream (noindex); dalla seconda visita è un 404 vero, dalla cache. `/` porta a `/events` con un 307 (`next.config.ts`). Restano con la query string le pagine per utente: `/events/<id>/submit?tier=` (e `region=japan`) e `/events?account=deleted` dopo la cancellazione dell'account (l'avviso lo legge un'isola client).
 - **Dati**: `lib/cache/data.ts` (`'use cache'` con `cacheLife` e `cacheTag`) avvolge `lib/queries.ts` e `lib/clears.ts`, che restano senza cache perché i test li importano fuori da Next. Tag: `catalog`, `events-list`, `community`, `event:<id>`, `card:<id>`, `profile:<handle>`. Lo stato degli eventi (Ongoing/Ended) scade al prossimo inizio o fine di una run (minimo 5 minuti).
 - **Invalidazione** (`lib/cache/invalidate.ts`): invio, revisione, cancellazione e commento rigenerano subito l'evento (`updateTag`); il voto lo segna vecchio senza rigenerare (`revalidateTag` `'max'`): gli altri vedono il voto dopo una visita, chi vota lo vede subito da `/api/me`. Mai `revalidatePath('/', 'layout')`.
 - **Chi guarda**: il cookie `dts_signed_in=1` (non segreto, non httpOnly) lo mette better-auth a ogni accesso e lo toglie l'uscita; solo con lui il browser chiama `/api/me` (private, no-store). Header, voto, Edit/Delete, commenti e invio sono isole client (`components/viewer`).
 - **Import**: in produzione `db/prod/update.mjs` chiama `POST /api/revalidate` (Bearer `CRON_SECRET`, la stessa variabile del cron; serve anche `PROD_SITE_URL`, da mettere in `~/.config/dokkants/prod.env` per la routine a mano). In locale `db:import`, `db:refresh` e `db:demo` finiscono con `npm run cache:clear`; dopo una modifica a mano con psql lancialo tu, altrimenti `next dev` mostra i dati vecchi fino al riavvio. In `next dev` senza `CRON_SECRET` la rotta è aperta.
-- **Build**: legge il database (solo SELECT): fino a 100 eventi Global in corso o in arrivo, `/events` e la sitemap (tutti gli eventi). Se Supabase Free è in pausa, il build fallisce. Ogni deploy riparte con la cache vuota.
+- **Build**: legge il database (solo SELECT): fino a 100 eventi Global in corso o in arrivo, fino a 100 carte (le più usate nei clear), `/events` e la sitemap (tutti gli eventi e le carte uscite su Global). Se Supabase Free è in pausa, il build fallisce. Ogni deploy riparte con la cache vuota.
 - **Misure** (`test/cpu.sh` su `next start` locale, 200 richieste per classe, ms di CPU per richiesta):
 
   | classe | prima (ogni pagina dinamica) | dopo | dopo, NEXT_CACHE_MEMORY=0 |
@@ -1616,7 +1677,7 @@ Vercel Hobby dà 4 ore di CPU attiva al mese, senza extra. Per questo le pagine 
   In locale anche una pagina in cache passa da Node (circa 1,5 ms); su Vercel esce dalla CDN e costa zero. La colonna NEXT_CACHE_MEMORY=0 è il caso peggiore: in locale le pagine generate a richiesta non restano, su Vercel stanno nella cache ISR durevole. Dopo il deploy: Vercel Observability → Functions (CPU attiva per rotta) e la pagina Usage (invocazioni, scritture ISR).
 - **Come misurare**: `npm run build`; `NODE_ENV=production NEXT_PRIVATE_DEBUG_CACHE=1 npx next start -p 3100 > /tmp/next.log 2>&1 &`; `CPU_URL=http://localhost:3100 CPU_LOG=/tmp/next.log npm run test:cpu`. In locale servono anche `RESEND_API_KEY` ed `EMAIL_FROM` finti, e `VERCEL=1` per non fare la pulizia delle sessioni su `dokkan_dev`.
 
-Le prove: `npm run db:test` (passi "URL degli eventi" e "cache: tag e /api/revalidate") e `npm run test:smoke`, che con `SMOKE_EXPECT_CACHE=1` contro `next start` controlla anche che la seconda visita a `/events` e a un evento sia un `x-nextjs-cache: HIT`.
+Le prove: `npm run db:test` (passi "URL degli eventi" e "cache: tag e /api/revalidate") e `npm run test:smoke`, che con `SMOKE_EXPECT_CACHE=1` contro `next start` controlla anche che la seconda visita a `/events`, a un evento e a una carta sia un `x-nextjs-cache: HIT`.
 
 ## Messa online
 

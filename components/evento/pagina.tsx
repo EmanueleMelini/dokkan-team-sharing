@@ -15,6 +15,8 @@ import { Clear } from '@/components/clear'
 import { InviaClear } from '@/components/clears/invia-cta'
 import { ViewerTier } from '@/components/viewer/provider'
 import { BannerSospesoIsola } from '@/components/moderation/banner-sospeso'
+import { Tips } from '@/components/tips/tips'
+import { listTipsCached } from '@/lib/cache/tips'
 import { extraClear } from '@/lib/clears/vista'
 import { DIFFICOLTA, nomeTier } from '@/lib/livelli'
 import { Missioni } from '@/components/missioni'
@@ -99,10 +101,12 @@ export async function EventPage({ id, view }: { id: string; view: EventView | nu
   const ultimaPagina = Math.max(1, Math.ceil(totaleClear / CLEAR_PER_PAGINA))
   if (pagina > ultimaPagina) notFound()
 
-  // Le missioni ci sono solo per Global: il datamine è quello della versione Global
-  const [clears, missioni] = await Promise.all([
+  // Le missioni ci sono solo per Global: il datamine è quello della versione Global.
+  // Le tip non hanno regione (gli stage nemmeno): le stesse in Global e Japan.
+  const [clears, missioni, tips] = await Promise.all([
     scelto ? listClearsCached(scelto.tier_id, reg, (pagina - 1) * CLEAR_PER_PAGINA, e.id) : Promise.resolve([]),
     reg === 'global' ? getMissionsCached(e.id, e.run_id) : Promise.resolve([]),
+    scelto ? listTipsCached(e.id, scelto.tier_id) : Promise.resolve(null),
   ])
   const extra = await extraClear(e.id, clears)
   const invia = scelto ? submitHref(e.id, reg, scelto.tier_id) : ''
@@ -374,6 +378,17 @@ export async function EventPage({ id, view }: { id: string; view: EventView | nu
 
             {/* chi e' sospeso lo sa da /api/me: nell'HTML in cache non c'e' */}
             <BannerSospesoIsola className="mt-4" />
+
+            {scelto && tips && (
+              <Tips
+                eventId={e.id}
+                tierId={scelto.tier_id}
+                nomeTier={nomeScelto}
+                eza={eza}
+                tips={tips}
+                ritorno={`${href(scelto.tier_id)}#tips`}
+              />
+            )}
 
             {totaleClear === 0 ? (
               // Lo stato vuoto è il caso normale, non quello raro: quasi

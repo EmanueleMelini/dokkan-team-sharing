@@ -16,6 +16,7 @@ import { snapshotInfo } from './datamine.mjs'
 import {
   assignCardIds, awakensInto, baseTexts, datamineCards, field, idsByTitle, scalar, skillsFromPage,
 } from './wiki-card.mjs'
+import { lookupKey } from './wiki-skills.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 // WIKI_CARDS_CACHE solo per i test: game-cards.test.mts gli passa una
@@ -51,9 +52,13 @@ const clean = (s) => (s ?? '')
   .replace(/\s+/g, ' ')
   .trim()
 
+// Le immagini si scartano guardando la pagina del link, non il testo:
+// [[File:Global server.png|20px]] ha come testo "20px", che diventava una
+// link skill finta.
 const wikiLinks = (s) => [...(s ?? '').matchAll(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g)]
+  .filter((m) => !/^\s*:?\s*File:/i.test(m[1]))
   .map((m) => (m[2] ?? m[1]).trim())
-  .filter((n) => n && !/^File:/i.test(n))
+  .filter(Boolean)
 
 const MONTHS = { jan:1, feb:2, mar:3, apr:4, may:5, jun:6,
                  jul:7, aug:8, sep:9, oct:10, nov:11, dec:12 }
@@ -210,6 +215,11 @@ async function ensureLookup(table, textTable, idCol, names) {
   const { rows } = await client.query(
     `select ${idCol} as id, name from ${textTable} where locale = $1`, [LOCALE])
   const byName = new Map(rows.map((r) => [r.name, r.id]))
+  // Lo stesso nome scritto in un altro modo (lookupKey) e' quello che c'e'
+  // gia': di solito il nome del gioco, che load-datamine ha rimesso.
+  const byKey = new Map()
+  for (const r of rows) if (!byKey.has(lookupKey(r.name))) byKey.set(lookupKey(r.name), r.id)
+  for (const n of names) if (!byName.has(n) && byKey.has(lookupKey(n))) byName.set(n, byKey.get(lookupKey(n)))
   let next = rows.length ? Math.max(...rows.map((r) => r.id)) + 1 : 1
   const fresh = names.filter((n) => !byName.has(n))
   for (const n of fresh) {

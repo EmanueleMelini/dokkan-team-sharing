@@ -110,6 +110,20 @@ verifica_404 "admin: i nascosti" /admin/hidden
 verifica_404 "admin: un utente" /admin/users/qualcuno
 verifica_404 "admin: il registro" /admin/log
 
+# /cards/<id> (lib/card-page.ts): pubblica e in cache. La forma Z (base + 1)
+# porta alla base con un 308; un id che non e' una carta e' un 404 vero.
+echo "la pagina di una carta"
+verifica "una carta" /cards/1032310 200 'Third Eye Gomah' "$ERRORE"
+verifica "una carta senza artwork ne' testi (solo datamine)" /cards/1031350 200 'Artwork not available yet' "$ERRORE"
+verifica_404 "carta: id non numerico" /cards/abc
+verifica_404 "carta: id che non esiste" /cards/99999999
+verifica_404 "carta: zeri iniziali" /cards/01032310
+read -r codice dove < <(curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' --max-time 120 "$BASE/cards/1032311")
+case "$codice $dove" in
+  "308 "*/cards/1032310) pass "la forma Z porta alla base (308)" ;;
+  *) fail "la forma Z: /cards/1032311 ha risposto $codice $dove, atteso 308 verso /cards/1032310" ;;
+esac
+
 echo "le pagine evento"
 EZA=${SMOKE_EZA_ID:-$(primo_evento '/events/browse?type=zbattle' '[0-9]+ levels')}
 STAGE=${SMOKE_STAGE_ID:-$(primo_evento '/events/browse?type=challenge' '[1-9][0-9]* stages?')}
@@ -118,6 +132,12 @@ else verifica "un'EZA ($EZA) parla di livelli" "/events/$EZA" 200 '[0-9]+ levels
 fi
 if [ -z "$STAGE" ]; then fail "nessuna sfida con stage nella lista: mancano i dati importati?"
 else verifica "una sfida ($STAGE) parla di stage" "/events/$STAGE" 200 '[0-9]+ stages?' "$ERRORE|[0-9]+ levels"
+  # Le tip (0025): il blocco c'e', nella versione anonima (il form e' un'isola)
+  if grep -q 'id="tips"' "$TMP/html" && grep -q 'Sign in to share a tip' "$TMP/testo"; then
+    if grep -q 'Share a tip</button>' "$TMP/html"; then fail "la pagina in cache ha il bottone Share a tip"
+    else pass "le tip nella pagina evento, versione anonima"; fi
+  else fail "/events/$STAGE senza il blocco delle tip (id=\"tips\", Sign in to share a tip)"
+  fi
   verifica "la versione giapponese nel percorso" "/events/$STAGE/japan" 200 'Japanese version' "$ERRORE"
 fi
 
@@ -140,6 +160,10 @@ read -r codice dove < <(curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n'
 prendi /robots.txt
 grep -q 'Disallow: /events/browse' "$TMP/html" && pass "robots.txt esclude /events/browse" || fail "robots.txt senza /events/browse"
 grep -q 'Disallow: /admin' "$TMP/html" && pass "robots.txt esclude /admin" || fail "robots.txt senza /admin"
+prendi /sitemap.xml
+grep -q '/cards/1032310</loc>' "$TMP/html" && pass "la sitemap ha le carte" || fail "la sitemap non ha /cards/1032310"
+prendi /settings
+[ "$codice" = 307 ] && pass "Settings senza sessione porta a /login (307)" || fail "/settings senza sessione ha risposto $codice, atteso 307"
 
 echo "chi guarda (/api/me)"
 intestazioni=$(curl -s -D - -o "$TMP/html" --max-time 60 "$BASE/api/me" | tr -d '\r')
@@ -152,7 +176,7 @@ grep -qi '^vary:.*cookie' <<<"$intestazioni" && pass "/api/me con Vary: Cookie" 
 # sospensione e il link Moderation arrivano solo dalle isole client.
 if [ -n "${STAGE:-}" ]; then
   prendi "/events/$STAGE"
-  grep -qE 'Report(<span[^>]*>)? this (clear|comment)|Your account is suspended|>Moderation<' "$TMP/html" \
+  grep -qE 'Report(<span[^>]*>)? this (clear|comment|tip)|Your account is suspended|>Moderation<' "$TMP/html" \
     && fail "la pagina in cache contiene Report, il banner o il link Moderation" \
     || pass "la pagina in cache non ha niente di chi guarda (Report, sospensione, Moderation)"
 fi
@@ -160,7 +184,7 @@ fi
 # Contro next start (non next dev): le pagine pubbliche escono dalla cache
 if [ "${SMOKE_EXPECT_CACHE:-}" = 1 ]; then
   echo "la cache (next start)"
-  for p in /events ${EZA:+/events/$EZA}; do
+  for p in /events ${EZA:+/events/$EZA} /cards/1032310; do
     curl -s -o /dev/null "$BASE$p"
     stato=$(curl -s -D - -o /dev/null "$BASE$p" | tr -d '\r' | grep -i '^x-nextjs-cache:' | awk '{print $2}')
     [ "$stato" = HIT ] && pass "$p al secondo giro: HIT" || fail "$p al secondo giro: x-nextjs-cache ${stato:-assente}"

@@ -16,8 +16,9 @@ export type Posto = {
   eventId: string
   eventName: string
   reg: Region
-  tierId: string
-  /** "Stage 3 name, Super 2" o "Level 30" per le EZA */
+  /** null per una tip di tutto l'evento */
+  tierId: string | null
+  /** "Stage 3 name, Super 2" o "Level 30" per le EZA, "Whole event" per una tip */
   tier: string
   /** il clear nella sua pagina, o solo il tier (clear nascosto, o nel registro) */
   href: string
@@ -66,6 +67,41 @@ async function posto(p: PostoRiga, clearId: string | null, visibile: boolean, es
   return { eventId: p.event_id, eventName: p.event_name ?? `Event ${p.event_id}`, reg: p.reg, tierId: p.tier_id, tier: nomeTier(p), href }
 }
 
+// Il posto di una tip (alias tp): l'evento e, se c'e', il tier. Le tip non
+// hanno regione: il link e' alla pagina Global, all'ancora del blocco.
+const POSTO_TIP_COLONNE = `tp.event_id::text as tip_event_id, tet.name as tip_event_name,
+  tp.stage_tier_id::text as tip_tier_id, tsx.name as tip_stage_name, tss.seq::int as tip_stage_seq,
+  tst.difficulty::text as tip_difficulty`
+
+const POSTO_TIP_JOIN = `left join event_text tet on tet.event_id = tp.event_id and tet.locale = 'en'
+  left join stage_tier tst on tst.id = tp.stage_tier_id
+  left join stage tss on tss.id = tst.stage_id
+  left join stage_text tsx on tsx.stage_id = tss.id and tsx.locale = 'en'`
+
+type PostoTipRiga = {
+  tip_event_id: string | null
+  tip_event_name: string | null
+  tip_tier_id: string | null
+  tip_stage_name: string | null
+  tip_stage_seq: number | null
+  tip_difficulty: string | null
+}
+
+function postoTip(p: PostoTipRiga): Posto | null {
+  if (!p.tip_event_id) return null
+  const tier = p.tip_tier_id
+    ? nomeTier({ stage_name: p.tip_stage_name, stage_seq: p.tip_stage_seq, difficulty: p.tip_difficulty } as PostoRiga)
+    : 'Whole event'
+  return {
+    eventId: p.tip_event_id,
+    eventName: p.tip_event_name ?? `Event ${p.tip_event_id}`,
+    reg: 'global',
+    tierId: p.tip_tier_id,
+    tier,
+    href: eventHref({ id: p.tip_event_id, tier: p.tip_tier_id }) + '#tips',
+  }
+}
+
 /** 'infinity' esce da node-postgres come numero: qui diventa indefinite. */
 const FINE = `case when u.suspended_until = 'infinity' then null else u.suspended_until end as until,
   coalesce(u.suspended_until = 'infinity', false) as indefinite`
@@ -91,10 +127,11 @@ export type GruppoReport = {
   /** il clear, o il clear del commento */
   clear: { id: string; status: string; note: string | null } | null
   comment: { id: string; status: string; body: string; onCurrent: boolean } | null
+  tip: { id: string; status: string; body: string; link: string | null } | null
   posto: Posto | null
 }
 
-type RigaGruppo = PostoRiga & {
+type RigaGruppo = PostoRiga & PostoTipRiga & {
   kind: string
   target_id: string
   n: number
@@ -111,6 +148,10 @@ type RigaGruppo = PostoRiga & {
   comment_status: string | null
   comment_body: string | null
   comment_current: boolean | null
+  tip_id: string | null
+  tip_status: string | null
+  tip_body: string | null
+  tip_link: string | null
 }
 
 /**
@@ -146,14 +187,19 @@ export async function listOpenReports(page = 1): Promise<{ gruppi: GruppoReport[
          c.id::text as clear_id, c.status as clear_status, cv.note as clear_note,
          m.id::text as comment_id, m.status as comment_status, m.body as comment_body,
          mv.is_current as comment_current,
-         ${POSTO_COLONNE}
+         tp.id::text as tip_id, tp.status as tip_status, tp.body as tip_body, tp.link_url as tip_link,
+         ${POSTO_COLONNE},
+         ${POSTO_TIP_COLONNE}
        from g
        left join clear_comment m on g.kind = 'comment' and m.id = g.target_id
        left join clear_version mv on mv.id = m.version_id
        left join clear c on c.id = case g.kind when 'clear' then g.target_id when 'comment' then mv.clear_id end
        left join clear_version cv on cv.clear_id = c.id and cv.is_current
-       left join app_user a on a.id = case g.kind when 'clear' then c.author_id when 'comment' then m.author_id end
+       left join tip tp on g.kind = 'tip' and tp.id = g.target_id
+       left join app_user a on a.id = case g.kind
+         when 'clear' then c.author_id when 'comment' then m.author_id when 'tip' then tp.author_id end
        ${POSTO_JOIN}
+       ${POSTO_TIP_JOIN}
        order by g.first_at, g.kind, g.target_id`,
       [PER_PAGINA, offset],
     ),
@@ -175,7 +221,8 @@ export async function listOpenReports(page = 1): Promise<{ gruppi: GruppoReport[
     comment: r.comment_id
       ? { id: r.comment_id, status: r.comment_status ?? 'published', body: r.comment_body ?? '', onCurrent: r.comment_current === true }
       : null,
-    posto: r.clear_id ? await posto(r, r.clear_id, r.clear_status === 'published') : null,
+    tip: r.tip_id ? { id: r.tip_id, status: r.tip_status ?? 'published', body: r.tip_body ?? '', link: r.tip_link } : null,
+    posto: r.tip_id ? postoTip(r) : r.clear_id ? await posto(r, r.clear_id, r.clear_status === 'published') : null,
   })))
   return { gruppi, totale: tot?.n ?? 0 }
 }
@@ -184,14 +231,16 @@ export async function listOpenReports(page = 1): Promise<{ gruppi: GruppoReport[
 //  Il contenuto nascosto
 // ---------------------------------------------------------------------
 
+export type KindNascosto = 'clear' | 'comment' | 'tip'
+
 export type Nascosto = {
-  kind: 'clear' | 'comment'
+  kind: KindNascosto
   id: string
-  /** il clear, o il clear del commento */
-  clearId: string
-  clearStatus: string
+  /** il clear, o il clear del commento; null per una tip */
+  clearId: string | null
+  clearStatus: string | null
   author: string | null
-  /** la nota del clear o il testo del commento */
+  /** la nota del clear, il testo del commento o della tip */
   text: string | null
   createdAt: Date
   /** l'ultima riga 'hide' del registro, se c'e' */
@@ -200,10 +249,10 @@ export type Nascosto = {
   posto: Posto | null
 }
 
-type RigaNascosto = PostoRiga & {
+type RigaNascosto = PostoRiga & Partial<PostoTipRiga> & {
   id: string
-  clear_id: string
-  clear_status: string
+  clear_id: string | null
+  clear_status: string | null
   author: string | null
   text: string | null
   created_at: Date
@@ -216,10 +265,28 @@ const ULTIMO_HIDE = (kind: string, id: string) => `left join lateral (
     where l.target_kind = '${kind}' and l.target_id = ${id} and l.action = 'hide'
     order by l.created_at desc limit 1) h on true`
 
-/** I clear o i commenti nascosti, l'ultimo nascosto per primo, 50 per pagina. */
-export async function listHidden(kind: 'clear' | 'comment', page = 1): Promise<{ righe: Nascosto[]; totale: number }> {
+// Le tip nascoste: niente clear, il posto e' l'evento (o il tier).
+const NASCOSTE_TIP = `select tp.id::text, null as clear_id, null as clear_status, a.handle::text as author,
+         tp.body as text, tp.created_at, h.created_at as hidden_at, h.moderator_handle::text as hidden_by,
+         ${POSTO_TIP_COLONNE}
+  from tip tp
+  left join app_user a on a.id = tp.author_id
+  ${ULTIMO_HIDE('tip', 'tp.id')}
+  ${POSTO_TIP_JOIN}
+  where tp.status = 'hidden'
+  order by h.created_at desc nulls last, tp.id
+  limit $1 offset $2`
+
+const CONTA_NASCOSTI: Record<KindNascosto, string> = {
+  clear: `select count(*)::int as n from clear where status = 'hidden'`,
+  comment: `select count(*)::int as n from clear_comment where status = 'hidden'`,
+  tip: `select count(*)::int as n from tip where status = 'hidden'`,
+}
+
+/** I clear, i commenti o le tip nascosti, l'ultimo nascosto per primo, 50 per pagina. */
+export async function listHidden(kind: KindNascosto, page = 1): Promise<{ righe: Nascosto[]; totale: number }> {
   const offset = (Math.max(1, page) - 1) * PER_PAGINA
-  const testo = kind === 'clear'
+  const testo = kind === 'tip' ? NASCOSTE_TIP : kind === 'clear'
     ? `select c.id::text, c.id::text as clear_id, c.status as clear_status, a.handle::text as author,
               cv.note as text, c.created_at, h.created_at as hidden_at, h.moderator_handle::text as hidden_by,
               ${POSTO_COLONNE}
@@ -243,10 +310,10 @@ export async function listHidden(kind: 'clear' | 'comment', page = 1): Promise<{
        where m.status = 'hidden'
        order by h.created_at desc nulls last, m.id
        limit $1 offset $2`
-  const conta = kind === 'clear'
-    ? `select count(*)::int as n from clear where status = 'hidden'`
-    : `select count(*)::int as n from clear_comment where status = 'hidden'`
-  const [righe, tot] = await Promise.all([sql<RigaNascosto>(testo, [PER_PAGINA, offset]), sqlOne<{ n: number }>(conta)])
+  const [righe, tot] = await Promise.all([
+    sql<RigaNascosto>(testo, [PER_PAGINA, offset]),
+    sqlOne<{ n: number }>(CONTA_NASCOSTI[kind]),
+  ])
   return {
     totale: tot?.n ?? 0,
     righe: await Promise.all(righe.map(async (r): Promise<Nascosto> => ({
@@ -259,8 +326,10 @@ export async function listHidden(kind: 'clear' | 'comment', page = 1): Promise<{
       createdAt: r.created_at,
       hiddenAt: r.hidden_at,
       hiddenBy: r.hidden_by,
-      // il commento porta al suo clear, se quello si vede
-      posto: await posto(r, r.clear_id, r.clear_status === 'published', kind === 'comment'),
+      // il commento porta al suo clear, se quello si vede; la tip al suo evento
+      posto: kind === 'tip'
+        ? postoTip(r as RigaNascosto & PostoTipRiga)
+        : await posto(r, r.clear_id, r.clear_status === 'published', kind === 'comment'),
     }))),
   }
 }
@@ -327,6 +396,8 @@ export type RiepilogoUtente = UtenteTrovato & {
   clearsHidden: number
   comments: number
   commentsHidden: number
+  tips: number
+  tipsHidden: number
   /** segnalazioni sul suo contenuto: aperte, e in tutto (anche chiuse) */
   openReports: number
   allReports: number
@@ -340,18 +411,22 @@ export async function userModerationSummary(handle: string): Promise<RiepilogoUt
   if (!v) return null
   const r = await sqlOne<RigaUtente & {
     created_at: Date; clears: number; clears_hidden: number; comments: number; comments_hidden: number
-    open_reports: number; all_reports: number; reports_sent: number
+    tips: number; tips_hidden: number; open_reports: number; all_reports: number; reports_sent: number
   }>(
     `with u as (select * from app_user where handle = $1::citext and onboarded_at is not null),
      suoi as (
        select 'clear'::text as kind, c.id from clear c, u where c.author_id = u.id
        union all
-       select 'comment', m.id from clear_comment m, u where m.author_id = u.id)
+       select 'comment', m.id from clear_comment m, u where m.author_id = u.id
+       union all
+       select 'tip', t.id from tip t, u where t.author_id = u.id)
      select ${UTENTE_COLONNE}, u.created_at,
        (select count(*) from clear c where c.author_id = u.id)::int as clears,
        (select count(*) from clear c where c.author_id = u.id and c.status = 'hidden')::int as clears_hidden,
        (select count(*) from clear_comment m where m.author_id = u.id)::int as comments,
        (select count(*) from clear_comment m where m.author_id = u.id and m.status = 'hidden')::int as comments_hidden,
+       (select count(*) from tip t where t.author_id = u.id)::int as tips,
+       (select count(*) from tip t where t.author_id = u.id and t.status = 'hidden')::int as tips_hidden,
        (select count(*) from report x join suoi s on s.kind = x.target_kind and s.id = x.target_id
          where x.status = 'open')::int as open_reports,
        (select count(*) from report x join suoi s on s.kind = x.target_kind and s.id = x.target_id)::int as all_reports,
@@ -367,6 +442,8 @@ export async function userModerationSummary(handle: string): Promise<RiepilogoUt
     clearsHidden: r.clears_hidden,
     comments: r.comments,
     commentsHidden: r.comments_hidden,
+    tips: r.tips,
+    tipsHidden: r.tips_hidden,
     openReports: r.open_reports,
     allReports: r.all_reports,
     reportsSent: r.reports_sent,
@@ -394,7 +471,7 @@ export type VoceRegistro = {
   posto: Posto | null
 }
 
-type RigaRegistro = PostoRiga & {
+type RigaRegistro = PostoRiga & PostoTipRiga & {
   id: string
   at: Date
   moderator: string | null
@@ -407,6 +484,7 @@ type RigaRegistro = PostoRiga & {
   detail: Record<string, unknown> | null
   clear_id: string | null
   clear_status: string | null
+  tip_id: string | null
 }
 
 /**
@@ -420,13 +498,17 @@ export async function listLog(offset = 0, { authorId }: { authorId?: string } = 
             l.target_kind, l.target_id::text, a.handle::text as target_handle,
             l.reports_closed, l.note, l.detail,
             c.id::text as clear_id, c.status as clear_status,
-            ${POSTO_COLONNE}
+            tp.id::text as tip_id,
+            ${POSTO_COLONNE},
+            ${POSTO_TIP_COLONNE}
      from moderation_action l
      left join app_user a on a.id = l.target_author_id
      left join clear c on c.id = case l.target_kind
        when 'clear' then l.target_id
        when 'comment' then (l.detail->>'clear_id')::uuid end
+     left join tip tp on l.target_kind = 'tip' and tp.id = l.target_id
      ${POSTO_JOIN}
+     ${POSTO_TIP_JOIN}
      where ($3::uuid is null or l.target_author_id = $3::uuid)
      order by l.created_at desc, l.id desc
      limit $1 offset $2`,
@@ -443,7 +525,7 @@ export async function listLog(offset = 0, { authorId }: { authorId?: string } = 
     reportsClosed: r.reports_closed,
     note: r.note,
     detail: r.detail ?? {},
-    posto: r.clear_id ? await posto(r, r.clear_id, r.clear_status === 'published', false) : null,
+    posto: r.tip_id ? postoTip(r) : r.clear_id ? await posto(r, r.clear_id, r.clear_status === 'published', false) : null,
   })))
   return { voci, altre: righe.length > PER_PAGINA }
 }

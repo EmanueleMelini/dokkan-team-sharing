@@ -32,7 +32,10 @@ export const REASONS_BY_KIND: Record<ReportKind, readonly ReportReason[]> = {
   tip: ['wrong_info', 'spam', 'offensive', 'personal_info', 'other'],
 }
 
-/** I tipi che report_content accetta oggi: 'tip' arriva con 0025. */
+/**
+ * I tipi del form generico (reportContent). report_content accetta anche
+ * 'tip' (0025), ma le tip passano dalla loro azione, reportTip.
+ */
 export const REPORTABLE_KINDS: readonly ReportKind[] = ['clear', 'comment']
 
 /** Tutti i codici, l'unione delle liste: e' il check della tabella report. */

@@ -1,5 +1,7 @@
 import Image from 'next/image'
+import Link from 'next/link'
 import { assetUrl } from '@/lib/db'
+import { cardHref } from '@/lib/urls'
 import { Tipo } from '@/components/tipo'
 
 export type CartaProps = {
@@ -12,12 +14,18 @@ export type CartaProps = {
   rarity?: string
   thumbKey: string | null
   ruolo?: 'leader' | 'member' | 'friend'
+  /**
+   * Con l'id il nome porta alla pagina della carta, nella stessa scheda.
+   * Senza prefetch: una pagina evento ha 20 clear da 7 carte, e 140
+   * prefetch a pagina costerebbero CPU per niente.
+   */
+  cardId?: string
 }
 
 const RUOLO: Record<string, string> = { leader: 'Leader', friend: 'Friend' }
 
 /** Una carta in una squadra: miniatura, ruolo, nome, tipo. */
-export function Carta({ epithet, name, type, class: classe, thumbKey, ruolo }: CartaProps) {
+export function Carta({ epithet, name, type, class: classe, thumbKey, ruolo, cardId }: CartaProps) {
   const src = assetUrl(thumbKey)
   const etichetta = ruolo ? RUOLO[ruolo] : undefined
 
@@ -51,7 +59,11 @@ export function Carta({ epithet, name, type, class: classe, thumbKey, ruolo }: C
           li rende leggibili interi. */}
       <div className="min-w-0 pt-0.5">
         <div className="text-[13px] font-medium text-inchiostro leading-tight truncate" title={name}>
-          {name}
+          {cardId ? (
+            <Link href={cardHref(cardId)} prefetch={false} className="hover:underline decoration-oro-linea underline-offset-2">
+              {name}
+            </Link>
+          ) : name}
         </div>
         {epithet && (
           <div className="text-[11px] text-tenue leading-tight truncate" title={epithet}>

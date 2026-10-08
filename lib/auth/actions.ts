@@ -9,7 +9,7 @@ import { auth } from '@/lib/auth/auth'
 import { friendlyAccountError, handleMatches } from '@/lib/auth/account'
 import { PROVIDERS } from '@/lib/auth/env'
 import { safeNext } from '@/lib/auth/safe-next'
-import { requireFreshUser, requireUser } from '@/lib/dal'
+import { requireFreshUser, requireOnboardedUser, requireUser } from '@/lib/dal'
 import { collectUserFootprint, invalidateUser } from '@/lib/cache/invalidate'
 import { HINT_COOKIE } from '@/lib/viewer/hint'
 
@@ -146,4 +146,35 @@ export async function deleteAccountAction(_prev: AccountState, form: FormData): 
   await auth.api.signOut({ headers: await headers() })
   await togliIndizio()
   redirect('/events?account=deleted')
+}
+
+// ---------------------------------------------------------------------
+//  Settings: l'artwork delle carte, statico o animato (0022)
+// ---------------------------------------------------------------------
+
+export type ArtPreferenceState = { error?: string; saved?: 'still' | 'animated' }
+
+/**
+ * Il default dell'artwork per tutte le carte. Una preferenza e non un
+ * contenuto: niente sessione fresca, e la sospensione non la blocca. Le
+ * pagine delle carte sono in cache e uguali per tutti, quindi non c'e'
+ * niente da invalidare: il default arriva a ogni pagina da /api/me, e il
+ * form fa rileggere /api/me a questa scheda dopo il salvataggio.
+ */
+export async function setArtPreferenceAction(_prev: ArtPreferenceState, form: FormData): Promise<ArtPreferenceState> {
+  const user = await requireOnboardedUser('/settings')
+  const v = form.get('art')
+  if (v !== 'still' && v !== 'animated') return { error: 'Choose still or animated.' }
+  try {
+    await sql('select set_prefers_animated($1::uuid, $2)', [user.id, v === 'animated'])
+  } catch (e) {
+    if (e instanceof DatabaseError && e.constraint === 'user_not_found') {
+      return { error: 'Finish setting up your account first.' }
+    }
+    throw e
+  }
+  // /settings e' per utente e dinamica: questo tocca solo la sua copia
+  // nella cache del router, cosi' tornandoci si vede il valore nuovo.
+  revalidatePath('/settings')
+  return { saved: v }
 }

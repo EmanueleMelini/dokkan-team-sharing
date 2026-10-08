@@ -27,6 +27,12 @@ export type ViewerTierData = {
   scores: Record<string, number>
   /** i commenti di chi guarda nel tier: su quelli non c'e' Report */
   ownComments?: string[]
+  /** le tip (del tier e di tutto l'evento) che chi guarda ha segnato come utili */
+  tipVotes?: string[]
+  /** le sue tip: Edit e Delete al posto di voto e Report */
+  ownTips?: string[]
+  /** tip id -> punteggio vivo, come scores per i clear */
+  tipScores?: Record<string, number>
 }
 
 export type MeResponse = {

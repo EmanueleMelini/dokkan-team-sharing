@@ -15,16 +15,18 @@ export const instant = false
 
 const link = 'underline decoration-linea-forte underline-offset-2 hover:text-inchiostro'
 
+const NOMI = { clear: 'Clears', comment: 'Comments', tip: 'Tips' } as const
+
 export default async function NascostiPage({ searchParams }: PageProps<'/admin/hidden'>) {
   await requireAdmin()
   const sp = await searchParams
-  const kind = sp.kind === 'comment' ? 'comment' : sp.kind === undefined || sp.kind === 'clear' ? 'clear' : null
+  const kind = sp.kind === 'comment' || sp.kind === 'tip' ? sp.kind : sp.kind === undefined || sp.kind === 'clear' ? 'clear' : null
   const page = pagina(sp.page)
   if (!kind || page === null) notFound()
   const { righe, totale } = await listHidden(kind, page)
   const ultima = Math.max(1, Math.ceil(totale / PER_PAGINA))
   const href = (k: string, n = 1) => {
-    const p = new URLSearchParams({ ...(k === 'comment' ? { kind: k } : {}), ...(n > 1 ? { page: String(n) } : {}) })
+    const p = new URLSearchParams({ ...(k !== 'clear' ? { kind: k } : {}), ...(n > 1 ? { page: String(n) } : {}) })
     const s = p.toString()
     return s ? `/admin/hidden?${s}` : '/admin/hidden'
   }
@@ -32,22 +34,22 @@ export default async function NascostiPage({ searchParams }: PageProps<'/admin/h
   return (
     <section aria-labelledby="nascosti">
       <h2 id="nascosti" className="text-[13px] font-semibold text-inchiostro">
-        Hidden {kind === 'clear' ? 'clears' : 'comments'} <span className="numeri font-normal text-tenue">{totale}</span>
+        Hidden {NOMI[kind].toLowerCase()} <span className="numeri font-normal text-tenue">{totale}</span>
       </h2>
       <div className="mt-2 flex gap-2 text-[12px]" role="group" aria-label="Kind">
-        {(['clear', 'comment'] as const).map((k) => (
+        {(['clear', 'comment', 'tip'] as const).map((k) => (
           <Link key={k} href={href(k)} prefetch={false} aria-current={k === kind ? 'page' : undefined}
             className={`px-2 py-1 rounded-[var(--raggio)] border transition-colors ${
               k === kind ? 'border-inchiostro bg-inchiostro text-sfondo' : 'border-linea bg-superficie text-testo hover:border-linea-forte'
             }`}>
-            {k === 'clear' ? 'Clears' : 'Comments'}
+            {NOMI[k]}
           </Link>
         ))}
       </div>
 
       {righe.length === 0 ? (
         <p className="mt-3 border border-linea rounded-[var(--raggio)] bg-superficie px-4 py-6 text-[13px] text-tenue">
-          No hidden {kind === 'clear' ? 'clears' : 'comments'}.
+          No hidden {NOMI[kind].toLowerCase()}.
         </p>
       ) : (
         <ul className="mt-3 border border-linea rounded-[var(--raggio)] bg-superficie divide-y divide-linea">

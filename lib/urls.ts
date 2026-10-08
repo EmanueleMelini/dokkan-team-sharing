@@ -90,3 +90,6 @@ export const editClearHref = (eventId: string, clearId: string) => `/events/${ev
 
 /** Il punto di un clear nella pagina del suo tier. */
 export const clearAnchor = (clearId: string) => `#clear-${clearId}`
+
+/** La pagina di una carta (/cards/<id>): un URL solo per carta, niente query string. */
+export const cardHref = (cardId: string) => `/cards/${cardId}`

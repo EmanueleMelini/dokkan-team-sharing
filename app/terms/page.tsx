@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { PaginaLegale } from '@/components/pagina-legale'
-import { LEGALE } from '@/lib/legale'
+import { FONTE_TESTI, LEGALE } from '@/lib/legale'
 
 export const metadata: Metadata = {
   title: 'Terms of Service',
@@ -26,6 +26,13 @@ export default function Terms() {
         information only. Card and event data comes from the Dragon Ball Z Dokkan Battle Wiki on
         Fandom, licensed under CC BY-SA, and from the game&apos;s own data.
       </p>
+      <p>
+        Card names, skill texts, link skills and categories are reproduced from the{' '}
+        <a href={FONTE_TESTI.sito}>{FONTE_TESTI.nome}</a> under{' '}
+        <a href={FONTE_TESTI.licenzaUrl}>{FONTE_TESTI.licenza}</a>, cleaned up for reading (footnotes
+        moved under each skill), and each card page links the wiki page its texts come from. They
+        stay under the same license. The game texts themselves belong to the owners named above.
+      </p>
 
       <h2>Your account</h2>
       <ul>
@@ -38,34 +45,38 @@ export default function Terms() {
 
       <h2>What you post</h2>
       <p>
-        You keep the rights to the clears, notes and comments you post. You allow this site to
-        store and show them, and to format them for display, for as long as they are online. When
-        you delete them, or your account, they are removed.
+        You keep the rights to the clears, notes, comments and tips you post. You allow this site
+        to store and show them, and to format them for display, for as long as they are online.
+        When you delete them, or your account, they are removed.
       </p>
       <p>Please keep it useful and fair. Do not post:</p>
       <ul>
         <li>clears you did not achieve, or proof that is not yours;</li>
         <li>insults, harassment, hate speech or personal information about other people;</li>
         <li>spam, advertising, or links to malware, scams or explicit or illegal content;</li>
+        <li>
+          tips with links that hide where they go (shortened links are refused) or that lead
+          somewhere unrelated to the game;
+        </li>
         <li>anything that infringes someone else&apos;s rights.</li>
       </ul>
       <p>Content that breaks these rules can be removed, and accounts that keep doing it suspended.</p>
 
       <h2>Reports and moderation</h2>
       <p>
-        If a clear or a comment breaks these rules, use its Report button. Moderators read every
+        If a clear, a comment or a tip breaks these rules, use its Report button. Moderators read every
         report; nothing is hidden automatically, however many reports a post gets.
       </p>
       <ul>
         <li>
-          A moderator can hide a clear or a comment. Other players no longer see it. The author of
+          A moderator can hide a clear, a comment or a tip. Other players no longer see it. The author of
           a hidden clear finds it in Settings and can still change it or delete it.
         </li>
         <li>
           A moderator can suspend an account for a set time or indefinitely, with a reason that the
           account owner sees. While suspended you can still sign in, read the site, change your
           settings and delete your posts or your account, but you cannot post, revise, vote,
-          comment or report.
+          comment, share or edit tips, or report.
         </li>
         <li>
           If you think a decision was wrong, write to <a href={mail}>{LEGALE.contatto}</a>.

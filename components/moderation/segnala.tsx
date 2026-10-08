@@ -7,8 +7,10 @@ import type { ReportActionState } from '@/lib/moderation/report-form'
 import { DETAILS_MAX, REASONS_BY_KIND, REASON_LABELS, needsDetails, type ReportReason } from '@/lib/moderation/reasons'
 
 type Props = {
-  kind: 'clear' | 'comment'
+  kind: 'clear' | 'comment' | 'tip'
   target: string
+  /** l'azione che riceve il form: le tip hanno la loro (reportTip, lib/tips/actions.ts) */
+  azione?: (prev: ReportActionState, form: FormData) => Promise<ReportActionState>
 }
 
 const piccolo = 'px-2 py-1 text-[12px] rounded-[var(--raggio)] border transition-colors active:scale-[0.98] disabled:opacity-60'
@@ -19,11 +21,11 @@ const piccolo = 'px-2 py-1 text-[12px] rounded-[var(--raggio)] border transition
  * motivo e torna a Report se si annulla. Chi lo vede lo decidono le isole
  * sotto (SegnalaClear, SegnalaCommento), da /api/me.
  */
-export function Segnala({ kind, target }: Props) {
+export function Segnala({ kind, target, azione: invia = reportContent }: Props) {
   const [aperto, setAperto] = useState(false)
   const [motivo, setMotivo] = useState<ReportReason | null>(null)
   const [dettagli, setDettagli] = useState('')
-  const [stato, azione, inCorso] = useActionState<ReportActionState, FormData>(reportContent, {})
+  const [stato, azione, inCorso] = useActionState<ReportActionState, FormData>(invia, {})
   const apri = useRef<HTMLButtonElement>(null)
   const primo = useRef<HTMLInputElement>(null)
   const primoGiro = useRef(true)
@@ -35,7 +37,7 @@ export function Segnala({ kind, target }: Props) {
     else apri.current?.focus()
   }, [aperto])
 
-  const cosa = kind === 'clear' ? 'clear' : 'comment'
+  const cosa = kind
 
   // Inviata (o gia' inviata prima: per chi segnala e' lo stesso): solo il grazie
   if (stato.ok) {

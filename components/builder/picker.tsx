@@ -1,10 +1,11 @@
 'use client'
 
 import { useEffect, useId, useRef, useState } from 'react'
-import { MagnifyingGlass, X } from '@phosphor-icons/react/dist/ssr'
+import { ArrowSquareOut, MagnifyingGlass, X } from '@phosphor-icons/react/dist/ssr'
 import { PickerFiltri, type Categoria } from '@/components/builder/picker-filtri'
 import { opzioneId, PickerRisultati } from '@/components/builder/picker-risultati'
 import { FILTRI_VUOTI, useCarte, type CartaTrovata, type Filtri } from '@/components/builder/use-carte'
+import { cardHref } from '@/lib/urls'
 
 type Props = {
   /** cosa si sta riempiendo, per il titolo: "Rotation 1, slot 2" */
@@ -111,6 +112,23 @@ export function Picker({ titolo, categorie, onScegli, onChiudi }: Props) {
             onAltre={altre}
           />
         </div>
+        {/* Il link alla carta attiva sta fuori dalla listbox: un link dentro
+            un role=option romperebbe il pattern. Scheda nuova, perche' il
+            builder non salva la bozza. */}
+        {ricerca.carte[attiva] && (
+          <div className="border-t border-linea px-4 py-2">
+            <a
+              href={cardHref(String(ricerca.carte[attiva].id))}
+              target="_blank"
+              rel="noopener"
+              className="inline-flex max-w-full items-center gap-1 text-[12px] text-testo underline decoration-oro-linea underline-offset-2 hover:text-inchiostro"
+            >
+              <span className="truncate">Details of {ricerca.carte[attiva].name}</span>
+              <ArrowSquareOut size={12} weight="bold" aria-hidden className="shrink-0" />
+              <span className="sr-only">(opens in a new tab)</span>
+            </a>
+          </div>
+        )}
         <p aria-live="polite" className="sr-only">
           {ricerca.stato === 'pronto' ? `${ricerca.totale} ${ricerca.totale === 1 ? 'card' : 'cards'} found` : ''}
         </p>

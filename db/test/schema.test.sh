@@ -42,9 +42,40 @@ t "prova senza url" \
 t "lingua non esistente in region_locale" \
   "insert into region_locale (reg,locale,official) values ('global','xx',true)" \
   fail 'region_locale_locale_fkey'
+# 0025: ogni tip ha un evento (dal tier, se manca), e il tier e' di quell'evento
 t "tip senza bersaglio" \
-  "insert into tip (author_id,body) values ('11111111-1111-1111-1111-111111111111','x')" \
-  fail 'tip_has_target'
+  "insert into tip (author_id,body) values ('11111111-1111-1111-1111-111111111111','Without any target.')" \
+  fail '23502: .*"event_id"'
+t "tip con il tier di un altro evento" \
+  "insert into event (id,kind) values (5003,'zbattle');
+   insert into tip (author_id,event_id,stage_tier_id,body) values ('11111111-1111-1111-1111-111111111111',5003,$TIER3,'Tier of another event.')" \
+  fail 'tip_tier_in_event'
+t "tip con il solo tier: l'evento si deduce" \
+  "insert into tip (author_id,stage_tier_id,body) values ('11111111-1111-1111-1111-111111111111',$TIER3,'Only the tier given.');
+   delete from tip where body='Only the tier given.' and event_id=5001" \
+  ok
+t "tip sotto i 10 caratteri" \
+  "insert into tip (author_id,event_id,body) values ('11111111-1111-1111-1111-111111111111',5001,'Too short')" \
+  fail 'tip_body_len'
+t "tip oltre i 500 caratteri" \
+  "insert into tip (author_id,event_id,body) values ('11111111-1111-1111-1111-111111111111',5001,repeat('x',501))" \
+  fail 'tip_body_len'
+t "tip con un link javascript:" \
+  "insert into tip (author_id,event_id,body,link_url) values ('11111111-1111-1111-1111-111111111111',5001,'A link that runs code.','javascript:alert(1)')" \
+  fail 'tip_link_ok'
+t "tip con un provider senza link" \
+  "insert into tip (author_id,event_id,body,link_provider) values ('11111111-1111-1111-1111-111111111111',5001,'A provider alone here.','youtube')" \
+  fail 'tip_link_provider'
+t "tip con uno stato 'flagged'" \
+  "insert into tip (author_id,event_id,body,status) values ('11111111-1111-1111-1111-111111111111',5001,'Flagged is not a status.','flagged')" \
+  fail 'tip_status_check'
+t "la stessa tip due volte (maiuscole e spazi non contano)" \
+  "insert into tip (author_id,event_id,body) values ('22222222-2222-2222-2222-222222222222',5001,
+     '  ON PHASE 3 the boss seals supers:   without a tank in rotation 1 you skip the turn and lose. ')" \
+  fail 'tip_no_duplicate'
+t "voto -1 su una tip" \
+  "insert into tip_vote (tip_id,user_id,value) values ('ffffffff-0000-0000-0000-000000000001','33333333-3333-3333-3333-333333333333',-1)" \
+  fail 'tip_vote_value_check'
 t "finestra evento invertita" \
   "insert into event_run (event_id,reg,starts_at,ends_at) values (5001,'global', now()+interval '400 days', now()+interval '399 days')" \
   fail 'run_window'

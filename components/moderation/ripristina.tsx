@@ -1,16 +1,16 @@
 'use client'
 
 import { useActionState } from 'react'
-import { setClearStatus, setCommentStatus, type ModState } from '@/lib/moderation/actions'
+import { setClearStatus, setCommentStatus, setTipStatus, type ModState } from '@/lib/moderation/actions'
+
+const AZIONE = { clear: setClearStatus, comment: setCommentStatus, tip: setTipStatus } as const
 
 /**
- * Unhide di un clear o di un commento nascosto: un clic, perche' si
+ * Unhide di un clear, un commento o una tip nascosti: un clic, perche' si
  * rinasconde dalla coda o da qui. Torna con i voti che aveva.
  */
-export function Ripristina({ kind, id }: { kind: 'clear' | 'comment'; id: string }) {
-  const [stato, azione, inCorso] = useActionState<ModState, FormData>(
-    kind === 'clear' ? setClearStatus : setCommentStatus, {},
-  )
+export function Ripristina({ kind, id }: { kind: keyof typeof AZIONE; id: string }) {
+  const [stato, azione, inCorso] = useActionState<ModState, FormData>(AZIONE[kind], {})
   return (
     <form action={azione} className="flex flex-wrap items-center gap-2" aria-busy={inCorso}>
       <input type="hidden" name={kind} value={id} />

@@ -81,7 +81,7 @@ function formReport() {
   check('"other" con i dettagli: passa, senza spazi ai lati', altro.ok && altro.value.details === 'Rude')
   const rifiuti: [string, Record<string, string>, RegExp][] = [
     ['tipo sconosciuto', { kind: 'proof', target: t, reason: 'spam' }, /no longer available/],
-    ['tip (arriva con 0025)', { kind: 'tip', target: t, reason: 'spam' }, /no longer available/],
+    ['tip (ha la sua azione, reportTip)', { kind: 'tip', target: t, reason: 'spam' }, /no longer available/],
     ['bersaglio non uuid', { kind: 'clear', target: '1 or 1=1', reason: 'spam' }, /no longer available/],
     ['fake_proof su un commento', { kind: 'comment', target: t, reason: 'fake_proof' }, /reasons in the list/],
     ['nessun motivo', { kind: 'clear', target: t }, /reasons in the list/],

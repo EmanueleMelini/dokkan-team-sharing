@@ -6,7 +6,7 @@ import { sqlOne } from '@/lib/db'
 import { sessionIsFresh } from '@/lib/dal'
 import { clearCardIds } from '@/lib/clears'
 import { parseUuid } from '@/lib/clears/validate'
-import { afterClearWrite, afterUserChanged } from '@/lib/cache/invalidate'
+import { afterClearWrite, afterUserChanged, invalidateEvent } from '@/lib/cache/invalidate'
 import { requireAdmin } from '@/lib/moderation/guard'
 import { friendlyModerationError } from '@/lib/moderation/errors'
 import { NOTE_MAX, SUSPENSION_REASON_MAX } from '@/lib/moderation/reasons'
@@ -110,6 +110,30 @@ export async function setCommentStatus(_prev: ModState, form: FormData): Promise
   if (w) afterClearWrite('comment', { eventId: w.event_id })
   rinfrescaAdmin()
   return { ok: true, message: status === 'hidden' ? `Comment hidden.${chiusi(n)}` : 'Comment visible again.' }
+}
+
+/** Nasconde o rimette una tip (mod_set_tip_status, 0025). */
+export async function setTipStatus(_prev: ModState, form: FormData): Promise<ModState> {
+  const mod = await requireAdmin()
+  const tipId = parseUuid(form.get('tip'))
+  const status = parseStato(form.get('status'))
+  const note = parseNota(form.get('note'))
+  if (!tipId || !status) return { error: 'This tip could not be read. Reload the page.' }
+  if (note === undefined) return { error: `Keep the note under ${NOTE_MAX} characters.` }
+
+  let n: number
+  try {
+    const r = await sqlOne<{ n: number }>('select mod_set_tip_status($1::uuid, $2::uuid, $3, $4) as n',
+      [mod.id, tipId, status, note])
+    n = r?.n ?? 0
+  } catch (e) {
+    return dbError(e)
+  }
+  // la tip esiste ancora (nascosta non e' cancellata): l'evento dal database
+  const w = await sqlOne<{ event_id: string }>('select event_id::text from tip where id = $1::uuid', [tipId])
+  if (w) invalidateEvent(w.event_id, 'now')
+  rinfrescaAdmin()
+  return { ok: true, message: status === 'hidden' ? `Tip hidden.${chiusi(n)}` : 'Tip visible again.' }
 }
 
 /** Archivia le segnalazioni aperte su un bersaglio, senza toccare il contenuto. */

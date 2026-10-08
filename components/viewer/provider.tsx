@@ -35,6 +35,8 @@ const RootContext = createContext<Interno | null>(null)
 const TierContext = createContext<ViewerTierData | null>(null)
 /** segna come suo un commento appena scritto: /api/me non lo sa ancora */
 const SegnaCommentoContext = createContext<(id: string) => void>(() => {})
+/** lo stesso per una tip appena scritta: Edit e Delete subito, niente voto */
+const SegnaTipContext = createContext<(id: string) => void>(() => {})
 
 // L'indizio come store esterno: il server e l'idratazione vedono null
 // (sconosciuto), cosi' il primo render e' identico all'HTML statico.
@@ -121,6 +123,9 @@ export const useViewerTier = () => useContext(TierContext)
  */
 export const useSegnaCommentoMio = () => useContext(SegnaCommentoContext)
 
+/** Dopo una tip riuscita: come useSegnaCommentoMio, per ownTips. */
+export const useSegnaTipMia = () => useContext(SegnaTipContext)
+
 /**
  * Lo stato di chi guarda su un tier, per i clear della pagina. Il suo
  * effetto gira prima di quello della radice (React esegue prima gli
@@ -154,21 +159,32 @@ export function ViewerTier({ tierId, children }: { tierId: string; children: Rea
     }
   }, [hint, tierId, beginScoped, endScoped, receive, reload])
 
-  // i commenti scritti da questa pagina, per tier: si aggiungono a ownComments
-  const [nuovi, setNuovi] = useState<{ tier: string; ids: string[] }>({ tier: tierId, ids: [] })
+  // i commenti e le tip scritti da questa pagina, per tier: si aggiungono
+  // a ownComments e ownTips
+  const [nuovi, setNuovi] = useState<{ tier: string; ids: string[]; tips: string[] }>({ tier: tierId, ids: [], tips: [] })
   const segna = useCallback((id: string) => {
-    setNuovi((n) => (n.tier === tierId ? { tier: tierId, ids: [...n.ids, id] } : { tier: tierId, ids: [id] }))
+    setNuovi((n) => (n.tier === tierId ? { ...n, ids: [...n.ids, id] } : { tier: tierId, ids: [id], tips: [] }))
+  }, [tierId])
+  const segnaTip = useCallback((id: string) => {
+    setNuovi((n) => (n.tier === tierId ? { ...n, tips: [...n.tips, id] } : { tier: tierId, ids: [], tips: [id] }))
   }, [tierId])
 
   const data = useMemo(() => {
     const base = stato && stato.tier === tierId ? stato.data : null
     const extra = nuovi.tier === tierId ? nuovi.ids : []
-    if (!base || !extra.length) return base
-    return { ...base, ownComments: [...(base.ownComments ?? []), ...extra] }
+    const tips = nuovi.tier === tierId ? nuovi.tips : []
+    if (!base || (!extra.length && !tips.length)) return base
+    return {
+      ...base,
+      ownComments: [...(base.ownComments ?? []), ...extra],
+      ownTips: [...(base.ownTips ?? []), ...tips],
+    }
   }, [stato, nuovi, tierId])
   return (
     <TierContext.Provider value={data}>
-      <SegnaCommentoContext.Provider value={segna}>{children}</SegnaCommentoContext.Provider>
+      <SegnaCommentoContext.Provider value={segna}>
+        <SegnaTipContext.Provider value={segnaTip}>{children}</SegnaTipContext.Provider>
+      </SegnaCommentoContext.Provider>
     </TierContext.Provider>
   )
 }

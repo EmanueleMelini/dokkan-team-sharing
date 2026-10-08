@@ -53,6 +53,7 @@ export function Squadra({ carte, idBase }: { carte: CartaSquadra[]; idBase: stri
                     class={c.class}
                     thumbKey={c.thumb_key}
                     ruolo={c.role}
+                    cardId={c.card_id}
                   />
                   {c.build && <BuildRiga build={c.build} />}
                 </li>

@@ -44,9 +44,10 @@ export default async function UtentePage({ params }: PageProps<'/admin/users/[ha
         <p className="mt-1 text-[12px] text-tenue">
           {u.role} · joined <time dateTime={u.createdAt.toISOString()}>{soloGiorno(u.createdAt)}</time>
         </p>
-        <dl className="mt-4 grid grid-cols-2 sm:grid-cols-5 border border-linea rounded-[var(--raggio)] bg-superficie divide-x divide-y sm:divide-y-0 divide-linea">
+        <dl className="mt-4 grid grid-cols-2 sm:grid-cols-6 border border-linea rounded-[var(--raggio)] bg-superficie divide-x divide-y sm:divide-y-0 divide-linea">
           <Numero n={u.clears} label="Clears" sotto={u.clearsHidden ? `${u.clearsHidden} hidden` : undefined} />
           <Numero n={u.comments} label="Comments" sotto={u.commentsHidden ? `${u.commentsHidden} hidden` : undefined} />
+          <Numero n={u.tips} label="Tips" sotto={u.tipsHidden ? `${u.tipsHidden} hidden` : undefined} />
           <Numero n={u.openReports} label="Open reports" />
           <Numero n={u.allReports} label="Reports in total" />
           <Numero n={u.reportsSent} label="Reports sent" />

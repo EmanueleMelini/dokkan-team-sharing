@@ -174,6 +174,9 @@ function cleanBody(s) {
   // bastano comunque a toglierne uno dentro l'altro
   for (let k = 0; k < 2; k++) t = t.replace(/\{\{([^{}]*)\}\}/g, (_, inner) => templateText(inner))
   t = t
+    // il link alla pagina che spiega gli accumuli ("Raises ATK by 50% for
+    // 3 turns ([[Stack Attack|How does it work?]])"): sul sito e' rumore
+    .replace(/\s*\(?\s*\[\[[^\]|]*\|\s*How does it work\?\s*\]\]\s*\)?/gi, '')
     .replace(/\[\[\s*file:([^\]]*)\]\]/gi, (_, inner) => fileText(inner))
     .replace(/\[\[:?(?:category:)?([^\]|]+)\|([^\]]*)\]\]/gi, '$2')
     .replace(/\[\[:?(?:category:)?([^\]|]+)\]\]/gi, '$1')
@@ -339,3 +342,20 @@ export function baseTexts(w) {
   const t = (k) => cleanSkill(paramOf(P, k), refs).text
   return { leader_skill: t('LS description'), passive: t('PS description'), super_attack: t('SA description') }
 }
+
+// ---------------------------------------------------------------- nomi
+
+// La chiave con cui si riconosce un nome di link skill o di categoria
+// scritto in due modi. load-datamine rimette i nomi del gioco, e il wiki
+// li scrive a volte diversi: l'apostrofo curvo ("Universe’s"), uno spazio
+// in coda, "/" al posto di "-", il singolare ("Namekian" per
+// "Namekians"). Senza questa chiave ogni load-cards le trovava "nuove" e
+// creava un link in piu' che il datamine poi cancellava.
+export const lookupKey = (name) => String(name ?? '')
+  .normalize('NFKC')
+  .replace(/[‘’ʼ`´]/g, "'")
+  .replace(/[/–—-]+/g, ' ')
+  .replace(/\s+/g, ' ')
+  .trim()
+  .toLowerCase()
+  .replace(/s$/, '')
