@@ -13,8 +13,13 @@ import { fileURLToPath } from 'node:url'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 
+// Gli script di db/prod/ lanciano gli importer con DOKKAN_ENV_FILES=off:
+// contro la produzione vale solo l'URL passato da loro, e un valore di
+// .env.local (pensato per lo sviluppo) non deve poterci finire dentro.
+const ENV_FILES = process.env.DOKKAN_ENV_FILES !== 'off'
+
 // le variabili gia' nell'ambiente vincono: serve per CI e per i test
-for (const file of ['.env.local', '.env']) {
+for (const file of ENV_FILES ? ['.env.local', '.env'] : []) {
   const p = join(ROOT, file)
   if (!existsSync(p)) continue
   for (const line of readFileSync(p, 'utf8').split('\n')) {
@@ -27,6 +32,12 @@ for (const file of ['.env.local', '.env']) {
 
 export function connectionString() {
   if (process.env.DATABASE_URL) return process.env.DATABASE_URL
+  if (!ENV_FILES) {
+    // niente ripieghi su PGHOST/PGDATABASE: in produzione sarebbero un
+    // database diverso da quello che lo script ha stampato e confermato
+    console.error('\n  DOKKAN_ENV_FILES=off ma DATABASE_URL non c\'e\': mi fermo\n')
+    process.exit(1)
+  }
   const { PGUSER, PGHOST, PGPORT, PGDATABASE } = process.env
   if (!PGDATABASE) {
     console.error('\n  non so su quale database lavorare: manca DATABASE_URL')

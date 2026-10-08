@@ -14,6 +14,12 @@
 //   node db/import/fetch-assets.mjs --only icons   solo le icone
 //   node db/import/fetch-assets.mjs --only thumb --limit 50
 //   node db/import/fetch-assets.mjs --force        riscarica anche se c'e'
+//   node db/import/fetch-assets.mjs --offline      solo righe dai file sul disco
+//
+// --offline serve per la produzione (db/prod/): le immagini le serve
+// Cloudflare, il database deve solo avere le righe in asset e i
+// collegamenti. Nessun file si scarica, nessun nome si chiede al wiki;
+// cio' che non e' sul disco resta senza immagine e viene contato.
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
@@ -28,6 +34,7 @@ const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(HERE, '..', '..')
 const CACHE = join(HERE, '.cache', 'wiki-cards.json')
 const CACHE_EV = join(HERE, '.cache', 'wiki-events.json')
+const CACHE_ITEMS = join(HERE, '.cache', 'wiki-items-template.json')
 const ASSET_DIR = process.env.ASSET_DIR ?? join(ROOT, 'public', 'assets')
 const API = 'https://dbz-dokkanbattle.fandom.com/api.php'
 const UA = 'DokkanTeamSharing/0.1 (progetto personale, import una volta)'
@@ -38,6 +45,8 @@ const val = (f, d) => { const i = argv.indexOf(f); return i >= 0 ? argv[i + 1] :
 const ONLY = val('--only', 'all')
 const LIMIT = Number(val('--limit', Infinity))
 const FORCE = has('--force')
+const OFFLINE = has('--offline')
+if (OFFLINE && FORCE) { console.error('\n  --offline e --force insieme non hanno senso\n'); process.exit(1) }
 // --only thumb|art include la rispettiva variante animata;
 // --only anim prende solo le animate
 const want = (k) => ONLY === 'all' || ONLY === k
@@ -266,10 +275,19 @@ if (want('banners') && existsSync(CACHE_EV)) {
 // un grande switch nome -> immagini, e da li' si ricava un'icona per
 // ciascuno. Sono i drop mostrati sulle pagine evento (orb, pesi, medaglie),
 // NON i premi delle missioni: quelli il wiki non li ha.
-if (want('items')) {
+// Il template si tiene in cache: --offline lo rilegge da li'. Se la
+// cache manca si scarica una volta il solo testo (una richiesta), perche'
+// senza i nomi degli oggetti le missioni restano senza icone.
+async function itemsTemplate() {
+  if (OFFLINE && existsSync(CACHE_ITEMS)) return JSON.parse(readFileSync(CACHE_ITEMS, 'utf8')).content
   const b = await api({ action: 'query', prop: 'revisions', rvprop: 'content',
                         rvslots: 'main', titles: 'Template:ItemsEvent' })
-  const src = b.query?.pages?.[0]?.revisions?.[0]?.slots?.main?.content ?? ''
+  const content = b.query?.pages?.[0]?.revisions?.[0]?.slots?.main?.content ?? ''
+  if (content) writeFileSync(CACHE_ITEMS, JSON.stringify({ fetched_at: new Date().toISOString(), content }))
+  return content
+}
+if (want('items')) {
+  const src = await itemsTemplate()
   // ogni ramo dello switch: |<Nome>=...[[File:<icona>|...
   const branches = src.split(/\|(?=[A-Z][^=|{}]{2,30}=)/).slice(1)
   const seen = new Set()
@@ -373,7 +391,7 @@ const onDisk = (job) => {
   const want = job.keyBase.split('/').pop() + '.'
   return readdirSync(dir).some((f) => f.startsWith(want))
 }
-const needsWiki = FORCE ? capped : capped.filter((j) => !onDisk(j))
+const needsWiki = OFFLINE ? [] : FORCE ? capped : capped.filter((j) => !onDisk(j))
 const files = [...new Set(needsWiki.flatMap((j) => j.files))]
 console.log(`  ${capped.length - needsWiki.length} gia' sul disco, ${files.length} file da risolvere sul wiki`)
 const urls = files.length ? await resolve(files) : new Map()
@@ -427,6 +445,7 @@ async function run(job) {
       const adopted = await adoptFromDisk(job)
       if (adopted) { adoptedN++; results.push({ ...job, key: adopted }); return }
     }
+    if (OFFLINE) { failed++; return }   // non e' sul disco: qui non si scarica
     if (!base) { failed++; return }
     const { buf, ct, url: from } = await download(base, WIDTH[job.kind], Boolean(job.raw))
     const key = `${job.keyBase}.${EXT[ct] ?? 'bin'}`
@@ -461,7 +480,7 @@ await Promise.all(Array.from({ length: CONC }, async () => {
     if (n % 50 === 0) process.stdout.write(`\r    ${n}/${capped.length}  scaricati ${done}, dal disco ${adoptedN}, saltati ${skipped}, falliti ${failed}, ${(bytes / 1e6).toFixed(0)} MB`)
   }
 }))
-console.log(`\r    ${capped.length}/${capped.length}  scaricati ${done}, ripresi dal disco ${adoptedN}, saltati ${skipped}, falliti ${failed}, ${(bytes / 1e6).toFixed(1)} MB          `)
+console.log(`\r    ${capped.length}/${capped.length}  scaricati ${done}, ripresi dal disco ${adoptedN}, saltati ${skipped}, ${OFFLINE ? 'non sul disco' : 'falliti'} ${failed}, ${(bytes / 1e6).toFixed(1)} MB          `)
 
 // --------------------------------------------------- collegamenti
 

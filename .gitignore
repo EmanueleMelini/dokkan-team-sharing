@@ -52,3 +52,6 @@ next-env.d.ts
 
 # immagini scaricate (si riprendono con npm run db:assets)
 /public/assets
+
+# copie del database di produzione (npm run prod:backup)
+/backups

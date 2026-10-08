@@ -94,6 +94,9 @@ il wikitext è in cache. Al wiki parte una richiesta sola: `fetch-assets`
 rilegge a ogni giro il template degli oggetti premio (e chiede solo i file
 che sul disco non trova).
 
+In produzione la fila è la stessa con `fetch-assets --offline` spostato
+dopo `load-datamine` (`db/prod/pipeline.mjs`, spiegato in "Messa online").
+
 ### I test, e perché girano su un database a parte
 
 `npm run db:test` è un comando solo, che mette in fila tutto su
@@ -258,8 +261,12 @@ db/
     missions/               i suoi moduli: owner (di che evento), text, rewards, write
     load-equipment.mjs      le Skill Orb, le loro regole e le abilita' del Hidden Potential (db:equipment)
     equipment-limits.mjs    le regole delle esclusive dal gioco alle nostre carte (funzioni pure)
-    fetch-assets.mjs        scarica le immagini e le registra in asset
+    fetch-assets.mjs        scarica le immagini e le registra in asset (--offline: solo dal disco)
     .cache/                 il wikitext scaricato (non versionato)
+  prod/                     gli script contro la produzione (prod:setup, prod:update, prod:backup)
+    target.mjs              il bersaglio: PROD_DATABASE_URL, i rifiuti, il TLS, la conferma --yes
+    pipeline.mjs            l'ordine dell'import, uguale per setup e update
+    harden.mjs              toglie i privilegi su public ai ruoli della Data API di Supabase
 public/assets/              le immagini ospitate da noi (non versionate)
   migrate.mjs               runner: applica le pendenti, una transazione ciascuna
   reset.mjs                 ricostruisce il database di sviluppo da zero
@@ -273,6 +280,11 @@ lib/clears/                 le Server Action dei clear, i loro validatori e le f
 lib/clears.ts               le letture del builder e del clear: modifica, cambi, voti, commenti
 lib/cards.ts                la ricerca delle carte per il picker (anche GET /api/cards)
 lib/equipment.ts            la ricerca delle Skill Orb per le build (anche GET /api/equipment)
+lib/db.ts, lib/db-config.ts la pool (una per processo) e le sue impostazioni: dimensioni, TLS
+lib/cron.ts                 l'autenticazione delle rotte di Vercel Cron (app/api/cron/)
+vercel.json                 regione fra1 e il cron della pulizia giornaliera
+scripts/assets-deploy.mjs   public/assets su Cloudflare Pages, con _headers (assets:deploy)
+backups/                    le copie di prod:backup (non versionate)
 components/builder/         il builder dei clear: slot, picker delle carte, build, dettagli, prove
 components/clears/          la scheda di un clear: squadre, cambi, voti, commenti, Delete
 ```
@@ -1129,39 +1141,10 @@ poi better-auth vero su `dokkan_test` con un mittente che cattura i link.
 I bottoni Discord, Google e Twitch partono già in locale se le variabili ci
 sono, ma il giro completo va provato a mano con un account vero.
 
-**Per la produzione (da fare a mano).** `dokkan.example.com` qui sotto sta
-per il dominio vero, che ancora non c'è.
-
-1. **Dominio e variabili.** `BETTER_AUTH_URL=https://dokkan.example.com`,
-   un `BETTER_AUTH_SECRET` nuovo (non quello di sviluppo), i sei
-   `*_CLIENT_ID`/`*_CLIENT_SECRET`, `RESEND_API_KEY` e `EMAIL_FROM` (per
-   esempio `Dokkan Team Sharing <login@mail.dokkan.example.com>`). Senza
-   `RESEND_API_KEY` o `EMAIL_FROM` il server **non parte**, apposta.
-2. **Resend.** Aggiungi un dominio di invio (`mail.dokkan.example.com`),
-   metti nel DNS i record SPF e DKIM che mostra (DMARC consigliato), aspetta
-   "Verified", poi crea una API key con "Sending access" solo per quel
-   dominio. Il piano gratuito: 3000 email al mese, 100 al giorno.
-3. **Callback di produzione presso ogni provider**, accanto a quelli di
-   sviluppo (`http://localhost:3000/api/auth/callback/<provider>`):
-   - Discord (discord.com/developers, OAuth2 → Redirects):
-     `https://dokkan.example.com/api/auth/callback/discord`
-   - Google (console.cloud.google.com, Clients → Authorized redirect URIs):
-     `https://dokkan.example.com/api/auth/callback/google`
-   - Twitch (dev.twitch.tv/console, OAuth Redirect URLs):
-     `https://dokkan.example.com/api/auth/callback/twitch`
-4. **Google "In production".** Nella OAuth consent screen (Google Auth
-   Platform → Audience) porta il Publishing status da Testing a **In
-   production**: in Testing entrano solo 100 utenti di prova e le loro
-   autorizzazioni scadono dopo 7 giorni. Gli scope sono solo `openid email
-   profile`, quindi non serve la verifica dell'app (quella del brand è
-   facoltativa e chiede homepage, privacy policy e dominio verificato).
-5. **Dietro un proxy.** Il limite per IP legge l'IP dagli header
-   (`x-forwarded-for` per difetto). Quando l'host è noto, imposta in
-   `lib/auth/config.ts` `advanced.ipAddress.ipAddressHeaders` (e
-   `trustedProxies`) sull'header che il proxy scrive davvero: altrimenti un
-   client può inventarsi l'header, o tutti finiscono in un solo secchio.
-6. **Una privacy policy**, che Google chiede per la verifica del brand e
-   che comunque serve: salviamo email, handle, IP e user agent delle sessioni.
+**Per la produzione** i passi (callback presso i provider, Google "In
+production", Resend, le variabili su Vercel) sono in "Messa online", in
+fondo. Senza `RESEND_API_KEY` o `EMAIL_FROM` il server di produzione **non
+parte**, apposta.
 
 **Settings: scollegare e cancellare (migrazione 0019).**
 
@@ -1382,6 +1365,397 @@ scritta solo nella descrizione.
 
 Le verifiche sono in `db/test/orbs.test.mts` (e `orbs-search.ts`).
 
+## La produzione: Vercel, Supabase, Cloudflare
+
+Deciso: tutto sui piani gratuiti, senza carta da nessuna parte. Superare
+una quota ferma un servizio invece di addebitarlo, e il codice è scritto
+per non arrivarci.
+
+- **App** su Vercel Hobby (`https://dokkants.emanuelemelini.dev`, CNAME su
+  Cloudflare in "DNS only"), funzioni in `fra1` (`vercel.json`), accanto al
+  database.
+- **Database** su Supabase Free a Francoforte. A runtime `DATABASE_URL` è il
+  pooler Supavisor in **transaction mode** (porta 6543); migrazioni e
+  restore passano dalla connessione diretta o di sessione. Il codice non usa
+  niente di legato alla sessione (SET, LISTEN, lock di sessione): i lock
+  sono `pg_advisory_xact_lock`, dentro la transazione.
+- **Immagini** su Cloudflare Pages (`https://dokkants-assets.emanuelemelini.dev`),
+  caricate con `wrangler pages deploy public/assets`. `ASSET_BASE_URL` punta
+  lì; il database non cambia.
+- **Email** da Resend (`login@dokkants.emanuelemelini.dev`), con i record
+  sul sottodominio `send.dokkants…` e `resend._domainkey.dokkants…`: non
+  toccano l'Email Routing dell'apex.
+
+**Cosa fa il codice per starci dentro.**
+
+- `next.config.ts`: immagini **non ottimizzate**. Sono già webp piccoli, e
+  l'ottimizzazione di Hobby ha 5000 trasformazioni al mese: con migliaia di
+  carte finirebbero in pochi giorni (402 sulle immagini nuove). `<Image>`
+  usa l'URL di `assetUrl()` così com'è. Nello stesso file gli header di
+  sicurezza per tutte le rotte; HSTS solo in produzione. La CSP si limita a
+  `frame-ancestors`, `base-uri` e `object-src`: una completa senza nonce non
+  aggiungerebbe molto e rischierebbe i redirect OAuth.
+- `lib/db-config.ts`: la pool in produzione ha al massimo 5 connessioni,
+  chiude quelle inattive dopo 5 s e non aspetta una connessione più di
+  10 s. **TLS verificato**: `DATABASE_CA_CERT` contiene il PEM del
+  certificato radice di Supabase (Database Settings → SSL Configuration;
+  vanno bene anche gli a capo scritti `\n`). Con la CA impostata i
+  parametri `sslmode`/`sslrootcert` dell'URL si tolgono: pg-connection-string
+  li farebbe vincere sull'opzione `ssl`, e un `?sslmode=require` copiato
+  dalla dashboard spegnerebbe la verifica in silenzio. In produzione un
+  database non locale senza CA è un errore all'avvio, non un TLS a metà.
+- Pulizia giornaliera: su Vercel non c'è un processo che vive un giorno,
+  quindi la fa **Vercel Cron** (`vercel.json`, ogni giorno alle 4 UTC, con
+  un'ora di tolleranza su Hobby) chiamando `GET /api/cron/purge` con
+  `Authorization: Bearer $CRON_SECRET`. Senza `CRON_SECRET` (almeno 16
+  caratteri) la rotta risponde sempre 401. In locale resta il timer di
+  `lib/auth/startup.ts`.
+- Il limite per IP di better-auth legge l'IP da `x-vercel-forwarded-for`,
+  scritto da Vercel: un header mandato dal client non lo sposta.
+  `AUTH_IP_HEADERS` lo cambia (per esempio dietro un altro proxy).
+- `robots.ts` e `sitemap.ts`: indicizzati gli eventi; fuori API, accesso,
+  Settings e pagine di invio. La sitemap ha `/events` e gli ultimi
+  200 eventi, letti a ogni richiesta (il build non tocca il database).
+  `robots.txt` è statico e prende l'URL da `BETTER_AUTH_URL` **al build**.
+- `.vercelignore` lascia fuori `public/assets` (1,2 GB) e le cache
+  dell'import: il build non ne ha bisogno.
+
+Le variabili su Vercel, una per una, e tutti i passi della prima messa
+online sono nella sezione seguente. Le prove: `npm run db:test` (passi
+"configurazione di produzione" e "script di produzione").
+
+## Messa online
+
+La prima volta, in quest'ordine: ogni passo usa qualcosa del precedente.
+Tutto si fa dal tuo Mac; nessuno script crea account o pubblica da solo.
+Gli script contro la produzione chiedono sempre `--yes`: senza, stampano
+il bersaglio (host, database, utente, mai la password) e si fermano.
+
+**Prima di cominciare.** Committa il lavoro e porta il branch su `main`:
+Vercel pubblica in produzione da lì. Le cache dell'import
+(`db/import/.cache`) e le immagini (`public/assets`) devono essere sul
+disco: `npm run db:fetch` e `npm run db:assets` se mancano.
+
+### a) Git: il repository non ha ancora un remote
+
+**Opzione A, consigliata: GitHub privato + integrazione Git di Vercel.**
+Ogni push su `main` diventa un deploy di produzione, con lo storico e il
+rollback a un clic.
+
+1. Su github.com crea un repository **privato** vuoto (niente README né
+   .gitignore), per esempio `DokkanTeamSharing`.
+2. Dal progetto:
+   ```bash
+   git remote add origin git@github.com:EmanueleMelini/DokkanTeamSharing.git
+   git push -u origin main
+   ```
+   `public/assets`, `.env*`, le cache e `backups/` sono in `.gitignore`:
+   controlla con `git status` che non ci sia niente di segreto prima del
+   primo push.
+3. Su Vercel (piano Hobby, account personale: un team Hobby non si collega
+   ai repository di un'organizzazione GitHub) **Add New → Project → Import
+   Git Repository**, e dai all'app GitHub di Vercel accesso **solo** a quel
+   repository. Il progetto lo finisci al passo (f): al primo import il build
+   fallisce perché mancano le variabili, ed è normale.
+4. In **Settings → Git → Ignored Build Step** scegli "Only build
+   production". Senza, ogni branch fa un deploy di anteprima: consuma la
+   quota di build e, con le variabili di produzione, parlerebbe con il
+   database vero.
+
+**Opzione B: deploy dalla CLI di Vercel, senza remote.** Va bene per
+provare; non c'è storico dei deploy legato ai commit.
+
+```bash
+npx vercel login
+npx vercel link            # crea o collega il progetto (cartella .vercel/, ignorata)
+npx vercel --prod          # build su Vercel e pubblicazione
+```
+
+La CLI carica la cartella del progetto: `.vercelignore` lascia fuori
+`public/assets` e le cache, altrimenti si fermerebbe al limite di 100 MB e
+15.000 file. Ogni nuova versione è un altro `npx vercel --prod`.
+
+### b) Supabase: il database
+
+1. Su supabase.com crea un'organizzazione (piano Free) e un progetto:
+   nome `dokkants`, regione **Central EU (Frankfurt)**, `eu-central-1`.
+   La password del database generala lunga e salvala nel password manager.
+   Se il modulo chiede quali connessioni userai, scegli **solo la
+   connection string**: la Data API non ci serve (sotto il perché).
+2. **Spegni la Data API** se è accesa (Project Settings → Data API). Supabase
+   espone lo schema `public` via REST ai ruoli `anon` e `authenticated`, e
+   la chiave anon è pubblica per definizione: senza RLS chiunque leggerebbe
+   `auth_session` e le email. Il sito non la usa. `prod:setup` toglie
+   comunque ogni privilegio su `public` a quei ruoli (`db/prod/harden.mjs`).
+   Il Security Advisor continuerà a segnalare "RLS disabled": è atteso, le
+   tabelle non sono raggiungibili da lì.
+3. In **Project Settings → Database → SSL Configuration** scarica il
+   certificato (`prod-ca-2021.crt`) e attiva "Enforce SSL". Tienilo **fuori
+   dal repository**, per esempio in `~/.config/dokkants/prod-ca-2021.crt`.
+4. Dal bottone **Connect** in alto prendi due stringhe (la password al posto
+   di `[YOUR-PASSWORD]`; se contiene caratteri come `@` `/` `:` va
+   percent-encoded):
+   - **Transaction pooler**, porta **6543**
+     (`postgresql://postgres.<ref>:<password>@aws-…-eu-central-1.pooler.supabase.com:6543/postgres`):
+     è il `DATABASE_URL` dell'app su Vercel. Le funzioni serverless aprono
+     e chiudono connessioni di continuo, e il pooler le regge.
+   - **Session pooler**, porta **5432**, stesso host: è il
+     `PROD_DATABASE_URL` degli script sul tuo Mac (migrazioni, import,
+     backup). Le migrazioni e `pg_dump` vogliono una sessione vera, e gli
+     script rifiutano la porta 6543. La connessione **diretta**
+     (`db.<ref>.supabase.co`) sul piano Free è solo IPv6: va bene al suo
+     posto solo se la tua rete ha IPv6.
+5. Prepara un file con le variabili, fuori dal repository e leggibile solo
+   da te, così la password non finisce nella history della shell:
+   ```bash
+   mkdir -p ~/.config/dokkants && chmod 700 ~/.config/dokkants
+   cat > ~/.config/dokkants/prod.env <<'X'
+   PROD_DATABASE_URL='postgresql://postgres.<ref>:<password>@aws-…-eu-central-1.pooler.supabase.com:5432/postgres'
+   PROD_DATABASE_CA_CERT="$HOME/.config/dokkants/prod-ca-2021.crt"
+   X
+   chmod 600 ~/.config/dokkants/prod.env
+   ```
+   e in ogni terminale dove lanci gli script `prod:*`:
+   `set -a; . ~/.config/dokkants/prod.env; set +a`.
+
+Con `PROD_DATABASE_CA_CERT` gli script si collegano con
+`sslmode=verify-full` su quella CA (e tolgono un eventuale `sslmode=require`
+copiato dalla dashboard). Senza CA un database remoto si rifiuta: niente
+TLS non verificato verso la produzione.
+
+### c) Il database: `prod:setup`
+
+```bash
+set -a; . ~/.config/dokkants/prod.env; set +a
+npm run prod:setup              # stampa bersaglio e passi, non tocca niente
+npm run prod:setup -- --yes     # migrazioni, harden, import completo
+```
+
+Fa: `db/migrate.mjs` (le 21 migrazioni), `harden.mjs`, poi l'import dalle
+cache locali nell'ordine di `db/prod/pipeline.mjs`: carte, carte dal
+gioco, eventi, datamine, **righe delle immagini** (`fetch-assets
+--offline`: le ricava dai file in `public/assets`, non scarica niente),
+eventi dal gioco, finestre, missioni, equipaggiamento. Niente fixture,
+niente demo, nessun reset, nessun utente. Le immagini stanno prima degli
+eventi del gioco e delle missioni perché le copertine preferiscono le carte
+con miniatura e le icone dei premi si agganciano per nome: così il primo
+giro dà lo stesso risultato del secondo.
+
+Gli script rifiutano `localhost`, `127.0.0.1`, `::1` e ogni database che
+finisce in `_dev` o `_test` (`--allow-local` serve solo alla simulazione
+qui sotto), e non leggono mai `DATABASE_URL` né `.env.local`: lanciano gli
+importer con `DOKKAN_ENV_FILES=off` (vedi `db/env.mjs`) e senza le
+variabili `PG*`. Si può rilanciare: le migrazioni applicano solo le
+pendenti e gli importer sono idempotenti. È anche il comando per le
+**migrazioni nuove**: `prod:update` non cambia lo schema.
+
+La simulazione, fatta l'8 ottobre 2026 su un database locale
+`dokkan_prodsim` poi cancellato: `prod:setup` in **9 secondi**, con conteggi e
+contenuto dei dati di gioco identici a `dokkan_dev`: 2697 carte, 792
+eventi, 8372 stage e 9892 difficoltà, 1747 finestre, 7720 missioni con
+13.322 premi, 8857 sfere con 8857 regole, 6246 righe in `asset` (riprese
+tutte dal disco; 45 immagini mancano anche in sviluppo); 0 utenti, 0
+sessioni, 0 clear, 0 squadre. Due `prod:update` di fila non hanno cambiato
+una riga, e `prod:backup` ha scritto 1,5 MB compressi, ripristinati poi su
+un database vuoto con gli stessi conteggi.
+
+### d) Le immagini: Cloudflare Pages
+
+1. `npx wrangler login` (una volta: apre il browser sull'account
+   Cloudflare che ha la zona `emanuelemelini.dev`).
+2. Crea il progetto, di tipo Direct Upload:
+   `npx wrangler@4.148.0 pages project create dokkants-assets --production-branch main`
+   (o dalla dashboard: Workers & Pages → Create → Pages → Upload assets,
+   nome `dokkants-assets`).
+3. `npm run assets:deploy` conta i file e controlla i limiti; `npm run
+   assets:deploy -- --yes` pubblica. Lo script scrive prima
+   `public/assets/_headers` (`Cache-Control: public, max-age=31536000,
+   immutable` e `nosniff` per tutto), poi lancia
+   `npx wrangler@4.148.0 pages deploy public/assets --project-name dokkants-assets --branch main`.
+   Wrangler carica solo i file nuovi o cambiati, quindi i deploy dopo il
+   primo sono rapidi.
+4. Nel progetto Pages, **Custom domains → Set up a custom domain →
+   `dokkants-assets.emanuelemelini.dev`**. La zona è sullo stesso account,
+   quindi Cloudflare crea da solo il CNAME, **proxied** (qui l'arancione è
+   giusto: è Cloudflare stesso a servire i file). Aspetta "Active".
+
+I limiti del piano Free, per deploy: **20.000 file** e **25 MiB per file**;
+500 deploy al mese; banda e richieste dei file statici senza limite.
+Oggi: **6246 file** (1,31 GB), il più grande
+`cards/1026900/art-animated.webp` da **10,0 MiB**. Lo script si ferma prima
+di wrangler se uno dei due limiti verrebbe superato, e dice quale file.
+Il prezzo di `immutable`: un'immagine riscaricata sotto la stessa chiave
+(con `db:assets --force`) arriva a chi l'aveva già vista solo quando la sua
+cache scade. Le chiavi però non cambiano di significato, quindi succede
+quasi mai.
+
+### e) L'email: Resend
+
+1. Su resend.com (piano Free) **Domains → Add Domain →
+   `dokkants.emanuelemelini.dev`**, regione `eu-west-1` (Irlanda).
+2. Resend mostra tre record (o li scrive lui con "Sign in to Cloudflare").
+   Nel DNS di Cloudflare, zona `emanuelemelini.dev`, i nomi sono relativi
+   alla zona:
+   | Tipo | Nome | Valore |
+   | --- | --- | --- |
+   | MX | `send.dokkants` | `feedback-smtp.eu-west-1.amazonses.com`, priorità 10 |
+   | TXT | `send.dokkants` | `v=spf1 include:amazonses.com ~all` |
+   | TXT | `resend._domainkey.dokkants` | la chiave DKIM che mostra Resend |
+
+   Copia i valori dalla pagina di Resend, non da qui. Tutti **DNS only**
+   (MX e TXT non si possono comunque proxare). Facoltativo ma consigliato
+   un DMARC per il sottodominio: TXT `_dmarc.dokkants` con
+   `v=DMARC1; p=none;`.
+3. Aspetta "Verified", poi **API Keys → Create** con permesso **Sending
+   access** limitato a quel dominio: è `RESEND_API_KEY`.
+
+**Perché non tocca l'Email Routing dell'apex.** Email Routing (quello che
+riceve `privacy@emanuelemelini.dev`) vive sui record **dell'apex**: gli MX
+`route*.mx.cloudflare.net` e il TXT SPF di `emanuelemelini.dev`, che la
+dashboard blocca. I record di Resend stanno su nomi diversi
+(`send.dokkants…`, il dominio di ritorno per i bounce, e
+`resend._domainkey.dokkants…`), e su `dokkants` stesso non c'è nessun MX:
+si spedisce da lì, non si riceve. Niente si sovrappone, e l'SPF dell'apex
+resta quello di Cloudflare.
+
+### f) Vercel: il progetto e le variabili
+
+1. Il progetto importato al passo (a): framework Next.js, comandi di
+   default. La regione delle funzioni è già in `vercel.json` (`fra1`,
+   accanto a Supabase): controlla in Settings → Functions che dica
+   Frankfurt.
+2. **Settings → Environment Variables**, ambiente **Production** (sono
+   disponibili anche al build):
+
+   | Variabile | Cosa metterci |
+   | --- | --- |
+   | `DATABASE_URL` | la stringa del **Transaction pooler** (porta 6543) |
+   | `DATABASE_CA_CERT` | il contenuto di `prod-ca-2021.crt`, PEM intero (vanno bene anche gli a capo scritti `\n`) |
+   | `BETTER_AUTH_URL` | `https://dokkants.emanuelemelini.dev` (serve anche al build: `robots.txt` è statico) |
+   | `BETTER_AUTH_SECRET` | **nuovo**, non quello di sviluppo: `openssl rand -base64 32` |
+   | `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET` | l'app Discord di sempre |
+   | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | il client Google **di produzione** |
+   | `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET` | l'applicazione Twitch **di produzione** |
+   | `RESEND_API_KEY` | la chiave del passo (e) |
+   | `EMAIL_FROM` | `Dokkan Team Sharing <login@dokkants.emanuelemelini.dev>` |
+   | `ASSET_BASE_URL` | `https://dokkants-assets.emanuelemelini.dev` (senza `/` finale) |
+   | `CRON_SECRET` | `openssl rand -hex 32` (almeno 16 caratteri, o la rotta risponde sempre 401) |
+   | `AUTH_IP_HEADERS` | **non impostarla**: su Vercel il limite per IP legge già `x-vercel-forwarded-for` |
+
+   Senza `RESEND_API_KEY` o `EMAIL_FROM` il server non parte; senza
+   `DATABASE_CA_CERT` la pool rifiuta il database remoto. Un provider senza
+   le sue due variabili semplicemente non compare tra i bottoni.
+3. **Sposta i segreti di produzione da `.env.local`.** Le coppie Google e
+   Twitch `# PROD` commentate lì vanno incollate su Vercel e poi
+   **cancellate** dal file: `.env.local` deve contenere solo lo sviluppo, e
+   un segreto di produzione su disco è un segreto in più da proteggere.
+4. **Settings → Domains → Add `dokkants.emanuelemelini.dev`.** Vercel mostra
+   il CNAME da usare (un valore tipo `….vercel-dns-0xx.com`). Su
+   Cloudflare: record **CNAME** `dokkants` → quel valore, **DNS only**
+   (nuvola grigia): Vercel sconsiglia un proxy davanti, e il certificato lo
+   emette lui. Aspetta che il dominio risulti valido.
+5. **Deployments → Redeploy** (o un push su `main`, o `npx vercel --prod`):
+   ora il build ha le variabili.
+
+### g) Le console OAuth
+
+I callback di produzione stanno **accanto** a quelli di sviluppo
+(`http://localhost:3000/api/auth/callback/<provider>`), non al loro posto.
+
+- **Discord** (discord.com/developers, la stessa app → OAuth2 → Redirects):
+  aggiungi `https://dokkants.emanuelemelini.dev/api/auth/callback/discord`.
+- **Google** (console.cloud.google.com, Google Auth Platform):
+  - **Clients → Create client**, tipo Web application, nome "produzione":
+    Authorized JavaScript origins `https://dokkants.emanuelemelini.dev`,
+    Authorized redirect URIs
+    `https://dokkants.emanuelemelini.dev/api/auth/callback/google`.
+  - **Branding**: app home page `https://dokkants.emanuelemelini.dev`,
+    privacy policy `https://dokkants.emanuelemelini.dev/privacy`, terms of
+    service `https://dokkants.emanuelemelini.dev/terms`, authorized domain
+    `emanuelemelini.dev`.
+  - **Audience → Publish app**, da Testing a **In production**: in Testing
+    entrano solo 100 utenti di prova e le autorizzazioni scadono dopo 7
+    giorni. Gli scope sono solo `openid email profile`, quindi non serve
+    la verifica dell'app (quella del brand è facoltativa: chiede il dominio
+    verificato in Search Console, e senza il logo non compare).
+- **Twitch** (dev.twitch.tv/console → Register Your Application, una
+  nuova per la produzione): categoria Website Integration, client
+  Confidential, OAuth Redirect URL
+  `https://dokkants.emanuelemelini.dev/api/auth/callback/twitch`.
+
+### h) Il primo deploy: cosa controllare
+
+- [ ] `https://dokkants.emanuelemelini.dev` porta a `/events`, e una
+      pagina evento si apre con stage, finestre e missioni.
+- [ ] Le immagini arrivano da `dokkants-assets.emanuelemelini.dev`
+      (DevTools → Network, o il "Copy image address" di una carta), e
+      `curl -sI https://dokkants-assets.emanuelemelini.dev/icons/rarity/UR.webp`
+      risponde 200 con `cache-control: public, max-age=31536000, immutable`.
+- [ ] `curl -sI https://dokkants.emanuelemelini.dev/events` ha
+      `strict-transport-security`, `x-frame-options: DENY` e niente
+      `x-powered-by`.
+- [ ] Si entra con **Discord**, con **Google** e con **Twitch** (un
+      account per provider, o un account con i tre collegati da Settings).
+- [ ] Il **magic link** arriva (Resend → Emails mostra "Delivered"), si
+      apre e porta a `/welcome` per scegliere l'handle.
+- [ ] `/robots.txt` indica la sitemap di `dokkants.emanuelemelini.dev`, e
+      `/sitemap.xml` elenca gli eventi.
+- [ ] **Il cron**: Settings → Cron Jobs mostra `/api/cron/purge` alle 4
+      UTC; "Run" lo lancia subito, e nei log della funzione la risposta è
+      200 con `{"purged":n}`. Da fuori, `curl -i
+      https://dokkants.emanuelemelini.dev/api/cron/purge` deve dare 401.
+- [ ] Supabase → Table Editor: `app_user` ha solo gli account delle prove.
+
+### i) La routine
+
+**Ogni settimana** (il datamine si aggiorna di settimana in settimana):
+
+```bash
+npm run db:fetch -- --fresh     # wiki + datamine nuovo (--fresh va a fetch-datamine)
+npm run db:import               # prima sullo sviluppo: si guarda che torni
+npm run db:assets               # scarica le immagini nuove in public/assets
+npm run assets:deploy -- --yes  # le pubblica, PRIMA che il database le citi
+set -a; . ~/.config/dokkants/prod.env; set +a
+npm run prod:backup -- --yes    # la copia prima di scrivere
+npm run prod:update -- --yes    # solo l'import, dalle cache appena scaricate
+```
+
+`prod:update` controlla prima che lo schema sia aggiornato (se ci sono
+migrazioni nuove, chiede `prod:setup`) e poi rifà la stessa fila di
+`prod:setup`, migrazioni escluse. Un secondo giro non cambia niente.
+
+**I backup.** Supabase Free non ne fa. `prod:backup` usa `pg_dump` dello
+schema `public` (con le estensioni) in `backups/<ora UTC>.sql.gz` e tiene
+le ultime 8 copie. Il `pg_dump` deve essere almeno della versione del
+server: lo script prende quello di Postgres.app della stessa versione se
+c'è, altrimenti uno più nuovo, e si ferma se non ne trova (Postgres.app
+installa più versioni affiancate; `PG_DUMP=/percorso/pg_dump` ne indica
+uno). Supabase crea i progetti nuovi su una versione più recente della 15
+di questo Mac: controlla in Settings → Infrastructure. Per ripristinare su
+un database vuoto (un progetto Supabase nuovo, o uno locale):
+
+```bash
+gunzip -c backups/<copia>.sql.gz \
+  | sed -e '/^CREATE SCHEMA public;$/d' -e '/^COMMENT ON EXTENSION /d' \
+  | psql -X -q -v ON_ERROR_STOP=1 "<url di sessione del database vuoto>"
+```
+
+Le due righe tolte sono le sole che falliscono su un database che ha già
+lo schema `public` e le estensioni di qualcun altro. Provato in locale: il
+ripristino dà gli stessi conteggi, funzioni, trigger e indici.
+
+**Quando una quota finisce.** Nessun servizio ha una carta: si ferma, non
+addebita.
+
+| Servizio | Quota Free | Cosa succede | Dove guardare |
+| --- | --- | --- | --- |
+| Vercel Hobby | 1M invocazioni, 4 ore di CPU attiva, 100 GB di traffico al mese | la funzione si ferma (fino a 30 giorni) e il sito dà errore | Dashboard → Usage |
+| Supabase Free | 500 MB di database (oggi ~56 MB), 5 GB di egress | oltre lo spazio il database passa in sola lettura; dopo 7 giorni senza attività il progetto va in pausa (il cron quotidiano lo tiene sveglio) | Organization → Usage, e le email di Supabase |
+| Cloudflare Pages | 500 deploy al mese, 20.000 file | il deploy viene rifiutato; i file già pubblicati restano | Workers & Pages → il progetto |
+| Resend Free | 100 email al giorno, 3000 al mese | le email in più falliscono: il magic link non arriva, i provider OAuth continuano a funzionare | Resend → Usage ed Emails |
+
+Il segnale da tenere d'occhio nella prima settimana è la CPU attiva di
+Vercel: ogni pagina è renderizzata dal server, bot compresi.
 ## Cosa manca, in ordine
 
 1. **Il calendario, da tenere vivo.** Rifare il datamine con `--fresh`

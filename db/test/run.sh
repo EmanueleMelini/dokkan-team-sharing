@@ -2,6 +2,7 @@
 # npm run db:test: tutte le verifiche, in fila, su un database di test.
 #
 #   reset -> schema -> API di scrittura -> account -> id delle carte dal wiki ->
+#   configurazione di produzione (pool, TLS, cron, IP) ->
 #   import dei dati veri (carte del wiki, poi quelle solo nel gioco) -> query
 #   delle pagine (lib/queries.ts vero) -> parametri dell'URL (lib/parametri.ts)
 #   -> builder dei clear (0016, lib/clears*, lib/cards.ts, /api/cards)
@@ -57,10 +58,18 @@ passo "account" verifica node_ts db/test/auth.test.mts
 # Funzioni pure, niente database: come load-cards e fetch-assets ricavano
 # l'id di una carta dalla pagina del wiki (db/import/wiki-card.mjs).
 passo "id delle carte dal wiki" verifica node db/test/wiki-card.test.mjs
-# Le cache locali, nessuna rete. fetch-assets resta fuori: anche con le
-# immagini sul disco interroga il wiki (il template degli oggetti a ogni
-# giro completo, e ogni file che non trova), quindi non e' un passo
-# offline. Le verifiche delle query non dipendono dalle chiavi immagine.
+# La configurazione di produzione (lib/db-config.ts, lib/cron.ts, l'header
+# dell'IP in lib/auth/env.ts): funzioni pure, poi la rotta /api/cron/purge
+# vera. Crea solo l'utente cronpurge_test e lo toglie.
+passo "configurazione di produzione" verifica node_ts db/test/prod-config.test.mts
+# Gli script di db/prod/: i rifiuti del bersaglio, l'ambiente dei figli
+# senza .env.local, la conferma con --yes e prod:backup vero su questo
+# database (in una cartella temporanea). Legge soltanto.
+passo "script di produzione" verifica node_ts db/test/prod-scripts.test.mts
+# Le cache locali, nessuna rete. fetch-assets resta fuori: senza
+# --offline interroga il wiki, e con --offline dipenderebbe da cosa c'e'
+# in public/assets su questa macchina. Le verifiche delle query non
+# dipendono dalle chiavi immagine.
 passo "import carte (cache)" prepara node db/import/load-cards.mjs
 # Le unita' uscite su Global che il wiki non ha ancora: dopo load-cards
 # (il wiki vince) e prima di load-datamine, che le arricchisce.

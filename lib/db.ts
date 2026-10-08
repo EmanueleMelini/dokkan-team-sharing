@@ -1,30 +1,18 @@
 import { Pool } from 'pg'
+import { readPoolSettings } from '@/lib/db-config'
 
 // Una sola pool per processo. In sviluppo Next ricarica i moduli a ogni
 // modifica, e senza questo si accumulerebbero pool finché Postgres non
 // rifiuta le connessioni.
 const globalForDb = globalThis as unknown as { dokkanPool?: Pool }
 
-function connectionString(): string {
-  const url = process.env.DATABASE_URL
-  if (!url) {
-    throw new Error(
-      'DATABASE_URL non impostata. In sviluppo sta in .env.local; ' +
-        'il database si avvia con `npm run db:start` se usi il cluster del progetto.',
-    )
-  }
-  return url
-}
+// Dimensioni, tempi e TLS stanno in lib/db-config.ts, provati dai test.
+export const db: Pool = globalForDb.dokkanPool ?? new Pool(readPoolSettings())
 
-export const db: Pool =
-  globalForDb.dokkanPool ??
-  new Pool({
-    connectionString: connectionString(),
-    max: 10,
-    idleTimeoutMillis: 30_000,
-  })
-
-if (process.env.NODE_ENV !== 'production') globalForDb.dokkanPool = db
+// Anche in produzione: il bundler puo' copiare questo modulo in piu'
+// chunk del server (pagine, Route Handler, instrumentation), e ogni copia
+// aprirebbe la sua pool, moltiplicando le connessioni sul pooler.
+globalForDb.dokkanPool = db
 
 // Un client inattivo che perde la connessione (il database riavviato, o
 // ricreato da db:reset) emette 'error' sulla pool. Senza un listener

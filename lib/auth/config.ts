@@ -139,6 +139,10 @@ export function createAuth({ env, sendMagicLink, plugins = [] }: Options) {
     advanced: {
       cookiePrefix: 'dts',
       database: { generateId: 'uuid' },
+      // Da quale header si legge l'IP per il limite per IP: in produzione
+      // quello che scrive la piattaforma (lib/auth/env.ts), non uno che il
+      // client puo' mandare da se'.
+      ...(env.ipAddressHeaders ? { ipAddress: { ipAddressHeaders: env.ipAddressHeaders } } : {}),
     },
 
     // Collegare un provider aggiunge un modo di entrare che sopravvive alla

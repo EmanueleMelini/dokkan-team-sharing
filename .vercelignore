@@ -1,0 +1,12 @@
+# Cio' che non serve al build su Vercel. Le immagini (1.2 GB, 6000+ file)
+# stanno su Cloudflare Pages e il sito le chiede a ASSET_BASE_URL; l'upload
+# della CLI di Vercel si ferma comunque a 100 MB e 15000 file.
+/public/assets
+/db/import/.cache
+/db/.pgdata
+/db/.pgdata.log
+*.log
+.env*
+/.next
+/.idea
+/backups

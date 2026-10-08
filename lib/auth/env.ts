@@ -20,6 +20,33 @@ export type AuthEnv = {
   providers: Partial<Record<ProviderId, { clientId: string; clientSecret: string }>>
   resendApiKey: string | null
   emailFrom: string
+  /**
+   * Gli header da cui better-auth legge l'IP del client (limite per IP e
+   * sessioni). Null: il default di better-auth (x-forwarded-for), che va
+   * bene in sviluppo dove il client e' la macchina stessa.
+   */
+  ipAddressHeaders: string[] | null
+}
+
+// Su Vercel l'header affidabile e' quello che scrive Vercel: x-forwarded-for
+// e x-real-ip vengono sovrascritti dal suo edge (un valore mandato dal
+// client non passa), ma x-vercel-forwarded-for resta giusto anche se un
+// giorno ci fosse un altro proxy davanti. Con un header falsificabile
+// ogni richiesta potrebbe dichiarare un IP nuovo e il limite non varrebbe.
+const VERCEL_IP_HEADERS = ['x-vercel-forwarded-for']
+
+/** AUTH_IP_HEADERS ("a, b"), o il default della piattaforma. */
+export function readIpAddressHeaders(env: Env): string[] | null {
+  const raw = presente(env.AUTH_IP_HEADERS)
+  if (raw) {
+    const nomi = raw.split(',').map((h) => h.trim().toLowerCase()).filter(Boolean)
+    const sbagliato = nomi.find((h) => !/^[a-z0-9-]+$/.test(h))
+    if (!nomi.length || sbagliato !== undefined) {
+      throw new Error('AUTH_IP_HEADERS: serve una lista di nomi di header separati da virgole.')
+    }
+    return nomi
+  }
+  return presente(env.VERCEL) ? VERCEL_IP_HEADERS : null
 }
 
 const presente = (v: string | undefined) => (v && v.trim() ? v.trim() : null)
@@ -58,6 +85,7 @@ export function readAuthEnv(env: Env = process.env): AuthEnv {
     providers,
     resendApiKey: presente(env.RESEND_API_KEY),
     emailFrom: presente(env.EMAIL_FROM) ?? 'Dokkan Team Sharing <login@localhost>',
+    ipAddressHeaders: readIpAddressHeaders(env),
   }
 }
 
