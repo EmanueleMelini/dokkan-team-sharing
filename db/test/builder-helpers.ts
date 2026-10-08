@@ -60,7 +60,7 @@ export async function utente(prefisso: string, handle: string, onboarded = true)
   return r.id
 }
 
-export type Slot = { rot: number; pos: number; card_id: unknown; role: string }
+export type Slot = { rot: number; pos: number; card_id: unknown; role: string; build?: unknown }
 export type Lineup = { label?: unknown; note?: unknown; slots: Slot[] }
 export type Payload = Record<string, unknown> & { lineups: Lineup[]; proofs: { kind: string; url: string }[] }
 

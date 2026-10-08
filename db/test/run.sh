@@ -5,9 +5,12 @@
 #   import dei dati veri (carte del wiki, poi quelle solo nel gioco) -> query
 #   delle pagine (lib/queries.ts vero) -> parametri dell'URL (lib/parametri.ts)
 #   -> builder dei clear (0016, lib/clears*, lib/cards.ts, /api/cards)
+#   -> build degli slot (0018, Skill Orb, /api/equipment)
+#   -> settings dell'account (0019: scollegare, cancellare l'account)
 #   -> carte solo nel gioco (load-game-cards) -> finestre degli eventi dal
 #   gioco (load-windows) -> eventi creati dal gioco (load-game-events) ->
-#   classificazione (story, SBR, archivi) -> missioni dal gioco (load-missions)
+#   stage delle riedizioni -> classificazione (story, SBR, archivi) ->
+#   missioni dal gioco (load-missions)
 #
 # Gira su dokkan_test, o su TEST_DATABASE_URL se c'e' (il nome deve finire
 # per _test): il database di sviluppo non si tocca. Prima db:test lo
@@ -66,6 +69,8 @@ passo "import datamine (cache)" prepara node db/import/load-datamine.mjs
 passo "import eventi dal gioco (cache)" prepara node db/import/load-game-events.mjs
 passo "import finestre (cache)" prepara node db/import/load-windows.mjs
 passo "import missioni (cache)" prepara node db/import/load-missions.mjs
+# Le Skill Orb e le abilita' del Hidden Potential per le build (0018).
+passo "import equipaggiamento (cache)" prepara node db/import/load-equipment.mjs
 passo "query delle pagine" verifica node_ts db/test/queries.test.mts
 passo "parametri dell'URL" verifica node_ts db/test/parametri.test.mts
 # Il builder dei clear (0016): invio e revisione in una transazione, gli
@@ -78,6 +83,15 @@ passo "builder dei clear (lib, azioni, /api/cards)" verifica node_ts db/test/cle
 # Lo stato del builder nel browser: funzioni pure, il payload deve passare
 # lo stesso controllo della Server Action.
 passo "builder dei clear (stato del form)" verifica node_ts db/test/builder-stato.test.mts
+# Le build degli slot (0018): validazione SQL, build congelate con la
+# versione, la revisione che non tocca le vecchie, letture, validatori,
+# stato del form e /api/equipment. Crea solo utenti buildtest+ e li toglie.
+passo "build degli slot" verifica node_ts db/test/builds.test.mts
+# Settings (0019): scollegare un provider solo se resta un modo di
+# entrare, e cancellare l'account con tutto quello che ha scritto (ogni
+# FK verso app_user e i clear a cascata, le segnalazioni col bersaglio),
+# senza toccare gli altri. Crea solo utenti settingstest+ e li toglie.
+passo "settings dell'account" verifica node_ts db/test/account-settings.test.mts
 # Rilancia load-game-cards e load-datamine, e prova il passaggio al wiki
 # con una pagina finta su 1034200 (poi rimette la carta com'era).
 passo "carte dal gioco" verifica node_ts db/test/game-cards.test.mts
@@ -87,6 +101,11 @@ passo "finestre dal gioco" verifica node_ts db/test/windows.test.mts
 # Dopo le finestre: rilancia load-game-events, load-events e load-windows
 # e controlla che un secondo giro non cambi niente.
 passo "eventi dal gioco" verifica node_ts db/test/game-events.test.mts
+# Gli stage che le riedizioni aggiungono (0017): Looming Menace e il suo
+# stage 4, le Extreme Z-Area, gli archivi senza doppioni. Rilancia
+# load-game-events, load-events e load-windows; ritocca solo dentro
+# transazioni che annulla.
+passo "stage delle riedizioni" verifica node_ts db/test/rerun-stages.test.mts
 # Il tipo dei remake della storia, le pagine della Super Battle Road e gli
 # archivi delle edizioni (legami per quest): rilancia load-events e
 # load-windows, e ritocca una run e un clear (rimettendoli a posto).

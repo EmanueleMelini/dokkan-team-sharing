@@ -2,7 +2,23 @@ import 'server-only'
 import { assetUrl } from '@/lib/db'
 import type { ClearForEdit } from '@/lib/clears'
 import { SHAPE } from '@/lib/clears/validate'
-import { squadraVuota, type BuilderStato, type SquadraStato } from '@/lib/clears/builder-stato'
+import type { SlotBuild } from '@/lib/clears/build'
+import { buildVuota, squadraVuota, type BuildStato, type BuilderStato, type SquadraStato } from '@/lib/clears/builder-stato'
+
+/** La build congelata di uno slot nei campi del form, sfere per posizione. */
+function buildDaClear(b: SlotBuild | null): BuildStato {
+  const out = buildVuota()
+  if (!b) return out
+  out.routes = b.hp_routes == null ? '' : String(b.hp_routes)
+  out.path = b.hp_path ?? ''
+  out.note = b.note ?? ''
+  for (const e of b.equipment) {
+    if (e.slot >= 1 && e.slot <= 3) {
+      out.sfere[e.slot - 1] = { id: Number(e.id), name: e.name ?? `Skill Orb ${e.id}`, tier: e.tier }
+    }
+  }
+  return out
+}
 
 /**
  * Il builder già pieno con un clear da modificare. Le miniature diventano
@@ -18,6 +34,7 @@ export function statoDaClear(c: ClearForEdit): BuilderStato {
       if (i < 0) continue
       q.slots[i] = {
         role: k.role,
+        build: buildDaClear(k.build),
         carta: {
           id: Number(k.card_id), name: k.name ?? `Card ${k.card_id}`, epithet: k.epithet,
           type: k.type, class: k.class, thumb: assetUrl(k.thumb_key),

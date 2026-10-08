@@ -48,6 +48,10 @@ const TABLES = [
   'points', 'potential_items', 'sd_packs', 'special_items', 'support_films', 'support_items',
   'support_memories', 'support_memory_enhancement_items', 'training_fields', 'training_items',
   'treasure_items', 'wallpaper_items',
+  // per le build del builder (load-equipment): i nomi delle abilita' del
+  // Hidden Potential, che il builder suggerisce come percorso. Le Skill
+  // Orb (l'equipaggiamento) stanno gia' in equipment_skill_items.
+  'potential_skills',
 ]
 
 mkdirSync(DIR, { recursive: true })

@@ -32,6 +32,12 @@ const BY_CONSTRAINT: Record<string, string> = {
   builder_vote_value: 'That vote could not be read. Reload the page.',
   builder_own_vote: 'You cannot vote on your own clear.',
   builder_comment: 'Comments must have text and stay under 1000 characters.',
+  // le build degli slot (0018)
+  builder_build: 'A card build could not be read. Reload the page.',
+  builder_build_routes: 'Hidden Potential routes go from 0 to 4.',
+  builder_build_path: 'Keep the Hidden Potential path under 40 characters.',
+  builder_build_note: 'Keep each build note under 200 characters.',
+  builder_build_equipment: 'A card holds at most 3 Skill Orbs, and each one must exist. Pick them again.',
 }
 
 /**

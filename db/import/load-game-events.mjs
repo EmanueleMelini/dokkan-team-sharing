@@ -18,7 +18,11 @@
 //      eventi nuovi e per le riedizioni, che si attaccano all'evento che
 //      c'e' gia' (wiki o gioco). Cosi' load-windows, che va lanciato DOPO,
 //      da' a tutti le loro finestre;
-//   4. riempie event.cover_card_id (migrazione 0011): il boss principale,
+//   4. aggiunge agli eventi legati a piu' di un pezzo del gioco (aree, o
+//      quest legate una per una) gli stage che una riedizione ha in piu'
+//      (game-events/rerun-stages.mjs, migrazione 0017): Looming Menace
+//      prende il suo "Extreme Stage" dall'area 616;
+//   5. riempie event.cover_card_id (migrazione 0011): il boss principale,
 //      se la carta e' nella tabella card. Anche per gli eventi del wiki con
 //      un legame, perche' costa uguale.
 //
@@ -34,6 +38,9 @@ import { classify } from './game-events/classify.mjs'
 import { buildEvent, coverOf } from './game-events/build.mjs'
 import { writeEvents, writeRefs, writeStages, writeWikiCovers } from './game-events/write.mjs'
 import { wikiRefs } from './game-events/wiki-refs.mjs'
+import { planRerunStages, rerunUnits } from './game-events/rerun-stages.mjs'
+import { writeRerunStages } from './game-events/write-rerun.mjs'
+import { questRefs } from './quest-refs.mjs'
 
 const DRY = process.argv.includes('--dry-run')
 const VERBOSE = process.argv.includes('--verbose')
@@ -47,11 +54,43 @@ const client = new pg.Client({ connectionString: connectionString() })
 await client.connect()
 const { rows: [mig] } = await client.query(`
   select exists (select 1 from information_schema.columns
-                 where table_name = 'event_game_ref' and column_name = 'source') as ok`)
+                 where table_name = 'event_game_ref' and column_name = 'source')
+     and exists (select 1 from information_schema.columns
+                 where table_name = 'stage' and column_name = 'game_quest_id') as ok`)
 if (!mig.ok) {
-  console.error('\n  manca la migrazione 0011 (event_game_ref.source, event.cover_card_id):')
+  console.error('\n  manca la migrazione 0011 (event_game_ref.source) o la 0017 (stage.game_quest_id):')
   console.error('  applicala con  node db/migrate.mjs\n')
   await client.end(); process.exit(1)
+}
+
+// Gli stage delle riedizioni. I pezzi del gioco di ogni evento sono quelli
+// che dopo questo giro staranno in event_game_ref: i legami del wiki (come
+// li scrivera' load-windows), quelli del gioco appena scritti, e le quest
+// degli archivi e della Super Battle Road, con le regole di load-windows
+// (quest-refs.mjs). Gli stage propri sono gia' scritti: per gli eventi del
+// gioco li ha appena aggiornati writeStages.
+async function rerunStagesStep(db, d, wikiEvents, dm, refs, gameRefs) {
+  const wikiKeys = new Set(refs.map((r) => `${r.game_kind}:${r.game_id}`))
+  const areaRefs = [...refs, ...gameRefs.filter((r) => !wikiKeys.has(`${r.game_kind}:${r.game_id}`))]
+  const qr = questRefs(wikiEvents, dm, areaRefs.filter((r) => r.game_kind === 'area'))
+  const { rows } = await db.query(`
+    select s.event_id, s.seq, x.name from stage s
+    left join stage_text x on x.stage_id = s.id and x.locale = 'en'
+    where s.game_quest_id is null order by s.event_id, s.seq`)
+  const own = new Map()
+  for (const r of rows) {
+    const id = Number(r.event_id)
+    if (!own.has(id)) own.set(id, [])
+    own.get(id).push({ seq: r.seq, name: r.name })
+  }
+  const plan = planRerunStages(own, rerunUnits(d, [...areaRefs, ...qr.refs]))
+  console.log(`  stage che le riedizioni aggiungono: ${plan.length}` +
+              ` su ${new Set(plan.map((p) => p.event_id)).size} eventi`)
+  for (const p of plan) {
+    console.log(`    evento ${String(p.event_id).padStart(10)} <- area ${String(p.area).padStart(4)} quest ${p.quest}:` +
+                ` ${p.name} (${p.tiers.map((t) => t.difficulty).join(', ')})`)
+  }
+  return writeRerunStages(db, plan)
 }
 
 try {
@@ -59,7 +98,7 @@ try {
   // I legami del wiki, calcolati come li scrivera' load-windows (non letti:
   // su un database appena ricreato non ci sono ancora), e gli eventi del
   // wiki rimasti senza, che si possono ritrovare per nome.
-  const { events: wikiEvents, refs } = await wikiRefs(client)
+  const { events: wikiEvents, refs, dm } = await wikiRefs(client)
   const linked = new Set(refs.map((r) => r.event_id))
   const wiki = wikiEvents.filter((e) => !linked.has(e.id)).map((e) => ({ id: e.id, name: e.name }))
   // id -> ha una miniatura: la copertina preferisce le carte con immagine
@@ -112,6 +151,7 @@ try {
   const rf = await writeRefs(client, gameRefs)
   const sg = await writeStages(client, ev.evs)
   const wc = await writeWikiCovers(client, covers)
+  const rs = await rerunStagesStep(client, d, wikiEvents, dm, refs, gameRefs)
   // Eventi del gioco che questo giro non produce piu' (per esempio perche'
   // load-windows ha legato la loro area a una pagina del wiki). Senza niente
   // degli utenti sopra se ne vanno; con un clear o un tip restano, e si
@@ -131,6 +171,10 @@ try {
               (rf.held ? `, gia' del wiki ${rf.held}` : ''))
   console.log(`    stage         ${sg.stages}: nuovi ${sg.stageNew}, tolti ${sg.stageGone}, nomi scritti o cambiati ${sg.named}`)
   console.log(`    difficolta'   ${sg.tiers}: nuove ${sg.tierNew}, cambiate ${sg.tierChanged}, tolte ${sg.tierGone}; note scritte o cambiate ${sg.notes}`)
+  console.log(`    stage delle riedizioni ${rs.stages} su ${rs.events} eventi: nuovi ${rs.stageNew}, tolti ${rs.stageGone},` +
+              ` nomi scritti o cambiati ${rs.named}; difficolta' ${rs.tiers}: nuove ${rs.tierNew},` +
+              ` cambiate ${rs.tierChanged}, tolte ${rs.tierGone}; note ${rs.notes}`)
+  if (sg.moved) console.log(`    stage delle riedizioni spostati in coda ${sg.moved}`)
   console.log(`    copertine del wiki cambiate ${wc}`)
   if (orphans.length) {
     console.log(`    eventi del gioco non piu' prodotti: tolti ${orphans.filter((o) => !o.used).length}` +

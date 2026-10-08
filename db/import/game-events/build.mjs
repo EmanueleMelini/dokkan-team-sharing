@@ -89,11 +89,16 @@ function areaStages(d, ev) {
       if (!tiers.length) continue
       let name = oneLine(q.name) || `Stage ${stages.length + 1}`
       if (stages.some((s) => s.name === name)) name += ` (${suffixOf(oneLine(d.area.get(areaId).name))})`
-      stages.push({ seq: stages.length + 1, name, tiers })
+      stages.push({ seq: stages.length + 1, name, tiers, quest: int(q.id) })
     }
   }
   return stages
 }
+
+// Gli stage di un'area sola, con l'id della quest da cui vengono: per le
+// riedizioni, che aggiungono stage a un evento che c'e' gia'
+// (game-events/rerun-stages.mjs).
+export const areaStagesOf = (d, areaId) => areaStages(d, { game_id: areaId, members: [] })
 
 // La copertina si vede solo se la carta ha un'immagine: le carte prese dal
 // gioco non ne hanno, e un boss del genere toglieva la copertina a eventi

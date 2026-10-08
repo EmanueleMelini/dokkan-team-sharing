@@ -18,10 +18,11 @@ type Props = {
   idBase: string
   dispatch: (a: Azione) => void
   onApri: (l: number, i: number, dove: string) => void
+  onBuild: (l: number, i: number, dove: string) => void
 }
 
 /** Una squadra del clear: la partenza (l = 0) o un cambio a metà evento. */
-export function SquadraEditor({ squadra, l, idBase, dispatch, onApri }: Props) {
+export function SquadraEditor({ squadra, l, idBase, dispatch, onApri, onBuild }: Props) {
   const nome = l === 0 ? 'Starting team' : `Change ${l}`
   const titoloId = `${idBase}-titolo`
   return (
@@ -84,6 +85,7 @@ export function SquadraEditor({ squadra, l, idBase, dispatch, onApri }: Props) {
                         onApri={() => onApri(l, i, dove)}
                         onSvuota={() => dispatch({ t: 'svuota', l, i })}
                         onRuolo={(role) => dispatch({ t: 'ruolo', l, i, role })}
+                        onBuild={() => onBuild(l, i, dove)}
                       />
                     </li>
                   )

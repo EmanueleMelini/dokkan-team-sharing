@@ -77,8 +77,12 @@ export async function linkedProviderIds(): Promise<string[]> {
   return accounts.map((a) => a.providerId)
 }
 
-/** L'email dell'account, per mostrarla in Settings (solo all'interessato). */
-export async function accountEmail(): Promise<string> {
+/**
+ * L'email dell'account, per mostrarla in Settings (solo all'interessato),
+ * e se e' verificata: solo allora il link per email conta come un modo
+ * di entrare (le regole di scollegamento, 0019).
+ */
+export async function accountEmail(): Promise<{ email: string; verified: boolean }> {
   const s = await getSession()
-  return s?.user.email ?? ''
+  return { email: s?.user.email ?? '', verified: s?.user.emailVerified === true }
 }

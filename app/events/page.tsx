@@ -8,6 +8,7 @@ import { assetUrl } from '@/lib/db'
 import { giornoBreve } from '@/lib/date'
 import { pagina as leggiPagina, regione, testoRicerca, uno } from '@/lib/parametri'
 import { EVENTI_PER_PAGINA, listEvents, type EventKind, type EventRow, type Status } from '@/lib/queries'
+import { currentUser } from '@/lib/dal'
 import { AttesaLink } from '@/components/attesa-link'
 import { ConteggioClear } from '@/components/conteggio-clear'
 import { Paginazione } from '@/components/paginazione'
@@ -87,6 +88,9 @@ export default async function Eventi(props: PageProps<'/events'>) {
   const status = stato?.valore ?? null
   const search = testoRicerca(sp)
   const pagina = leggiPagina(sp)
+  // L'avviso resta nell'URL (anche nel ?next= di Sign in): chi rientra non
+  // deve rileggerlo. La sessione si legge solo quando serve.
+  const cancellato = uno(sp.account) === 'deleted' && !(await currentUser())
 
   const eventi = await listEvents({
     reg, kind, status, search, offset: (pagina - 1) * EVENTI_PER_PAGINA,
@@ -115,6 +119,13 @@ export default async function Eventi(props: PageProps<'/events'>) {
       <p className="mt-1.5 text-sm text-testo max-w-[65ch]">
         Pick an event to see its stages and the teams that cleared them.
       </p>
+      {/* Dopo la cancellazione dell'account (Settings): solo un avviso, i
+          filtri non lo ripropagano. */}
+      {cancellato && (
+        <p role="status" className="mt-4 max-w-lg text-[12px] text-inchiostro bg-oro-tenue border border-oro-linea rounded-[var(--raggio)] px-3 py-2">
+          Your account and everything you posted have been deleted.
+        </p>
+      )}
 
       <div className="mt-7 space-y-3">
         <RigaFiltri id="filtro-versione" etichetta="Version">

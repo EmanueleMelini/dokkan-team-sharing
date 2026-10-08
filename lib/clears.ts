@@ -1,7 +1,8 @@
 import 'server-only'
 import { sql, sqlOne } from '@/lib/db'
 import type { Region } from '@/lib/queries'
-import type { BuilderPayload, BuilderProof, ProofKind, SlotRole } from '@/lib/clears/validate'
+import { buildJson, type SlotBuild } from '@/lib/clears/build'
+import type { BuilderBuild, BuilderPayload, BuilderProof, ProofKind, SlotRole } from '@/lib/clears/validate'
 
 // Le letture dei clear che servono al builder e alle pagine di un clear:
 // la modifica, gli assetti successivi, il voto di chi guarda, i commenti.
@@ -19,6 +20,8 @@ export type LineupCard = {
   class: string
   rarity: string
   thumb_key: string | null
+  /** la build congelata dello slot (0018), o null */
+  build: SlotBuild | null
 }
 
 export type VersionLineup = {
@@ -36,7 +39,10 @@ const cardsJson = (alias: string, from: 'clear_lineup_card' | 'clear_card' = 'cl
            'rotation_index', k.rotation_index, 'pos', k.pos, 'role', k.role,
            'card_id', k.card_id::text, 'name', ct.name, 'epithet', ct.epithet,
            'type', cd.type::text, 'class', cd.class::text, 'rarity', cd.rarity::text,
-           'thumb_key', cd.thumb_key)
+           'thumb_key', cd.thumb_key,
+           'build', ${from === 'clear_lineup_card'
+             ? buildJson('k.version_id', 'k.seq', 'k.rotation_index', 'k.pos')
+             : buildJson('k.version_id', '1', 'k.rotation_index', 'k.pos')})
          order by k.rotation_index, k.pos)
   from ${from} k
   join card cd on cd.id = k.card_id
@@ -114,6 +120,17 @@ export async function getVersionCounts(versionIds: string[]): Promise<Map<string
   return new Map(rows.map((r) => [r.version_id, r]))
 }
 
+/**
+ * Una build congelata nella forma del payload: le sfere tornano un array
+ * per posizione ([null, 812] = solo lo slot 2), senza null in coda.
+ */
+export function buildDaVersione(b: SlotBuild): BuilderBuild {
+  const equipment: (number | null)[] = [null, null, null]
+  for (const e of b.equipment) if (e.slot >= 1 && e.slot <= 3) equipment[e.slot - 1] = Number(e.id)
+  while (equipment.length && equipment[equipment.length - 1] === null) equipment.pop()
+  return { hp_routes: b.hp_routes, hp_path: b.hp_path, note: b.note, equipment }
+}
+
 export type ClearForEdit = {
   id: string
   event_id: string
@@ -173,6 +190,7 @@ export async function getClearForEdit(clearId: string, userId: string): Promise<
         note: l.note,
         slots: l.cards.map((k) => ({
           rot: k.rotation_index as 1 | 2 | 3, pos: k.pos, card_id: Number(k.card_id), role: k.role,
+          ...(k.build ? { build: buildDaVersione(k.build) } : {}),
         })),
       })),
       no_items, deathless, turns, note,

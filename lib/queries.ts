@@ -1,4 +1,5 @@
 import { sql, sqlOne } from '@/lib/db'
+import { buildJson, type SlotBuild } from '@/lib/clears/build'
 
 export type Region = 'global' | 'japan'
 export type Status = 'active' | 'upcoming' | 'past'
@@ -262,6 +263,9 @@ export type ClearCard = {
   class: string
   rarity: string
   thumb_key: string | null
+  // La build dello slot (0018), null se non c'e'. I clear di prima del
+  // 0016 non hanno assetti congelati e quindi nemmeno build.
+  build: SlotBuild | null
 }
 
 export type ClearProof = {
@@ -319,7 +323,8 @@ export async function listClears(
                        'role', cl.role, 'card_id', cl.card_id::text,
                        'name', ct.name, 'epithet', ct.epithet,
                        'type', cd.type::text, 'class', cd.class::text,
-                       'rarity', cd.rarity::text, 'thumb_key', cd.thumb_key)
+                       'rarity', cd.rarity::text, 'thumb_key', cd.thumb_key,
+                       'build', ${buildJson('cl.version_id', '1', 'cl.rotation_index', 'cl.pos')})
                      order by cl.rotation_index, cl.pos)
               from clear_card cl
               join card cd on cd.id = cl.card_id

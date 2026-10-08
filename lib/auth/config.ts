@@ -42,6 +42,13 @@ export function createAuth({ env, sendMagicLink, plugins = [] }: Options) {
     secret: env.secret,
     database: db,
     telemetry: { enabled: false },
+    // Scollegare e cancellare passano solo dalle Server Action di Settings
+    // (unlink_provider e delete_account, 0019), che impongono le regole
+    // sotto lock. La rotta di better-auth per lo scollegamento conta solo
+    // i provider, non il magic link; /delete-user e' gia' spenta per
+    // difetto, la si elenca per non riaccenderla per sbaglio. Vale solo
+    // per le richieste HTTP: auth.api resta usabile dal server.
+    disabledPaths: ['/unlink-account', '/delete-user'],
     // Gli errori del callback OAuth tornano alla pagina di accesso, che li
     // traduce, invece che alla pagina d'errore grezza di better-auth.
     onAPIError: { errorURL: new URL('/login', env.baseURL).toString() },

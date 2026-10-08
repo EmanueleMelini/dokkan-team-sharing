@@ -2,7 +2,7 @@
 
 import { Plus, X } from '@phosphor-icons/react/dist/ssr'
 import { Miniatura } from '@/components/builder/miniatura'
-import type { SlotStato } from '@/lib/clears/builder-stato'
+import { buildPiena, type BuildStato, type SlotStato } from '@/lib/clears/builder-stato'
 import type { SlotRole } from '@/lib/clears/validate'
 
 type Props = {
@@ -12,13 +12,26 @@ type Props = {
   onApri: () => void
   onSvuota: () => void
   onRuolo: (r: SlotRole) => void
+  onBuild: () => void
+}
+
+/** La build in poche parole, sotto la carta: "4/4 routes, 2 orbs, note". */
+export function riassuntoBuild(b: BuildStato): string {
+  const parti: string[] = []
+  if (b.routes !== '') parti.push(`${b.routes}/4 routes`)
+  if (b.path.trim()) parti.push(b.path.trim())
+  const n = b.sfere.filter(Boolean).length
+  if (n) parti.push(`${n} ${n === 1 ? 'orb' : 'orbs'}`)
+  if (b.note.trim()) parti.push('note')
+  return parti.join(', ')
 }
 
 const ruoloBtn = 'px-1.5 py-0.5 text-[11px] font-medium rounded-[var(--raggio)] border transition-colors'
 
 /** Uno dei sette slot: la carta (o il posto vuoto), il ruolo, togli. */
-export function Slot({ slot, dove, onApri, onSvuota, onRuolo }: Props) {
-  const { carta, role } = slot
+export function Slot({ slot, dove, onApri, onSvuota, onRuolo, onBuild }: Props) {
+  const { carta, role, build } = slot
+  const piena = buildPiena(build)
   const ruolo = (r: 'leader' | 'friend', testo: string) => (
     <button
       type="button"
@@ -56,9 +69,17 @@ export function Slot({ slot, dove, onApri, onSvuota, onRuolo }: Props) {
         )}
       </button>
       {carta && (
-        <div className="mt-1.5 flex items-center gap-1">
+        <div className="mt-1.5 flex flex-wrap items-center gap-1">
           {ruolo('leader', 'Leader')}
           {ruolo('friend', 'Friend')}
+          <button
+            type="button"
+            aria-haspopup="dialog"
+            onClick={onBuild}
+            className={`${ruoloBtn} ${piena ? 'bg-superficie-2 text-inchiostro border-linea-forte' : 'bg-superficie text-testo border-campo hover:text-inchiostro'}`}
+          >
+            Build<span className="sr-only">{piena ? `, set: ${riassuntoBuild(build)}` : ' (optional)'}, {dove}</span>
+          </button>
           <button
             type="button"
             onClick={onSvuota}
@@ -68,6 +89,11 @@ export function Slot({ slot, dove, onApri, onSvuota, onRuolo }: Props) {
             <span className="sr-only">Remove the card from {dove}</span>
           </button>
         </div>
+      )}
+      {carta && piena && (
+        <p aria-hidden className="mt-1 px-0.5 text-[11px] leading-tight text-tenue truncate" title={riassuntoBuild(build)}>
+          {riassuntoBuild(build)}
+        </p>
       )}
     </div>
   )

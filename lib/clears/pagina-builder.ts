@@ -1,6 +1,7 @@
 import 'server-only'
 import { listCategories, type CategoryOption } from '@/lib/cards'
 import { listStartedRuns } from '@/lib/clears'
+import { listPotentialSkills } from '@/lib/equipment'
 import { quando } from '@/lib/date'
 import { nomeTier } from '@/lib/livelli'
 import { getEvent, getStages, type EventDetail, type Region } from '@/lib/queries'
@@ -16,11 +17,14 @@ export type DatiBuilder = {
   /** la ricorrenza mostrata nella pagina dell'evento, se è tra quelle iniziate */
   runPredefinita: string | null
   categorie: CategoryOption[]
+  /** le abilita' del Hidden Potential (0018), suggerite nelle build */
+  abilita: string[]
 }
 
 export async function datiBuilder(eventId: string, reg: Region, tierId: string): Promise<DatiBuilder | null> {
-  const [evento, stages, runs, categorie] = await Promise.all([
+  const [evento, stages, runs, categorie, abilita] = await Promise.all([
     getEvent(eventId, reg), getStages(eventId, reg), listStartedRuns(eventId, reg), listCategories(),
+    listPotentialSkills(),
   ])
   if (!evento) return null
   const tier = stages.find((s) => s.tier_id === tierId)
@@ -35,5 +39,5 @@ export async function datiBuilder(eventId: string, reg: Region, tierId: string):
     return { id: r.id, label }
   })
   const predefinita = runs.find((r) => r.id === evento.run_id)?.id ?? runs[0]?.id ?? null
-  return { evento, nomeTier: nomeTier(tier, eza), runs: scelte, runPredefinita: predefinita, categorie }
+  return { evento, nomeTier: nomeTier(tier, eza), runs: scelte, runPredefinita: predefinita, categorie, abilita }
 }

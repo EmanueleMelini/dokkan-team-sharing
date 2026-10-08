@@ -36,6 +36,7 @@ export default async function InviaClear(props: PageProps<'/events/[id]/submit'>
           tierId={tier}
           runs={dati.runs}
           categorie={dati.categorie}
+          abilita={dati.abilita}
           iniziale={statoVuoto(dati.runPredefinita)}
           annulla={indietro}
         />

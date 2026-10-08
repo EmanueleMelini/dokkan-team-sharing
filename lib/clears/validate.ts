@@ -7,7 +7,22 @@
 // cambiano insieme.
 
 export type SlotRole = 'leader' | 'member' | 'friend'
-export type BuilderSlot = { rot: 1 | 2 | 3; pos: number; card_id: number; role: SlotRole }
+/**
+ * La build opzionale di uno slot (0018). hp_routes: i percorsi del Hidden
+ * Potential completati, 0-4 (4 = arcobaleno). equipment: le Skill Orb,
+ * la posizione e' lo slot ([null, 812] = solo lo slot 2).
+ */
+export type BuilderBuild = {
+  hp_routes: number | null
+  hp_path: string | null
+  note: string | null
+  equipment: (number | null)[]
+}
+export type BuilderSlot = {
+  rot: 1 | 2 | 3; pos: number; card_id: number; role: SlotRole
+  /** assente se lo slot non ha una build */
+  build?: BuilderBuild
+}
 export type BuilderLineup = { label: string | null; note: string | null; slots: BuilderSlot[] }
 export type ProofKind = 'screenshot' | 'video'
 export type BuilderProof = { kind: ProofKind; url: string }
@@ -33,6 +48,10 @@ export const LIMITS = {
   changeNote: 300,
   comment: 1000,
   turns: 99,
+  hpRoutes: 4,
+  buildPath: 40,
+  buildNote: 200,
+  equipment: 3,
 } as const
 
 // Le sette posizioni della forma 2+2+3, nell'ordine in cui le mostra il sito.
@@ -50,6 +69,46 @@ function optText(v: unknown): string | null | undefined {
   if (typeof v !== 'string') return undefined // undefined = non e' un testo
   const t = v.trim()
   return t === '' ? null : t
+}
+
+/** Vero se la build non dice niente: vale come nessuna build. */
+export function buildVuota(b: BuilderBuild): boolean {
+  return b.hp_routes === null && !b.hp_path && !b.note && b.equipment.every((e) => e === null)
+}
+
+/** La build di uno slot: null se manca o e' vuota. */
+export function parseBuild(raw: unknown, where: string): Parsed<BuilderBuild | null> {
+  if (raw === undefined || raw === null) return { ok: true, value: null }
+  if (!isObj(raw)) return fail(`A build in ${where} is not valid.`)
+  let routes: number | null = null
+  if (raw.hp_routes !== undefined && raw.hp_routes !== null && raw.hp_routes !== '') {
+    const r = typeof raw.hp_routes === 'string' ? Number(raw.hp_routes) : raw.hp_routes
+    if (!Number.isInteger(r) || (r as number) < 0 || (r as number) > LIMITS.hpRoutes) {
+      return fail(`Hidden Potential routes go from 0 to ${LIMITS.hpRoutes} in ${where}.`)
+    }
+    routes = r as number
+  }
+  const path = optText(raw.hp_path)
+  const note = optText(raw.note)
+  if (path === undefined || note === undefined) return fail(`A build in ${where} is not valid.`)
+  if (path && path.length > LIMITS.buildPath) {
+    return fail(`Keep the Hidden Potential path under ${LIMITS.buildPath} characters in ${where}.`)
+  }
+  if (note && note.length > LIMITS.buildNote) {
+    return fail(`Keep each build note under ${LIMITS.buildNote} characters in ${where}.`)
+  }
+  let equipment: (number | null)[] = []
+  if (raw.equipment !== undefined && raw.equipment !== null) {
+    if (!Array.isArray(raw.equipment) || raw.equipment.length > LIMITS.equipment) {
+      return fail(`A card holds at most ${LIMITS.equipment} Skill Orbs in ${where}.`)
+    }
+    if (!raw.equipment.every((e) => e === null || (Number.isSafeInteger(e) && (e as number) > 0))) {
+      return fail(`A Skill Orb in ${where} is not valid. Pick it again.`)
+    }
+    equipment = raw.equipment as (number | null)[]
+  }
+  const b: BuilderBuild = { hp_routes: routes, hp_path: path, note, equipment }
+  return { ok: true, value: buildVuota(b) ? null : b }
 }
 
 function parseSlots(raw: unknown, n: number): Parsed<BuilderSlot[]> {
@@ -76,7 +135,12 @@ function parseSlots(raw: unknown, n: number): Parsed<BuilderSlot[]> {
     if (role === 'leader') leaders++
     else if (role === 'friend') friends++
     else if (role !== 'member') return fail(`A slot in ${where} has an unknown role.`)
-    slots.push({ rot: rot as 1 | 2 | 3, pos: pos as number, card_id: card as number, role })
+    const build = parseBuild(s.build, where)
+    if (!build.ok) return build
+    slots.push({
+      rot: rot as 1 | 2 | 3, pos: pos as number, card_id: card as number, role,
+      ...(build.value ? { build: build.value } : {}),
+    })
   }
   if (leaders !== 1 || friends !== 1) {
     return fail(`Mark exactly one leader and one friend in ${where}.`)

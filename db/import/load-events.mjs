@@ -29,6 +29,7 @@ import { fileURLToPath } from 'node:url'
 import pg from 'pg'
 import { connectionString, describeTarget } from '../env.mjs'
 import { heldByGame } from './game-events/wiki-guard.mjs'
+import { makeRoom } from './game-events/write-rerun.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const CACHE = join(HERE, '.cache', 'wiki-events.json')
@@ -440,8 +441,12 @@ try {
   console.log(`  ricorrenze (prima uscita, fine non nota): ${runs.length}` +
               `   nuove ${runNew}, spostate ${runMoved}, tolte ${runOld.length - runOld.filter(used).length}`)
 
-  // Gli stage, per (evento, seq): quelli che ci sono gia' restano come sono
+  // Gli stage, per (evento, seq): quelli che ci sono gia' restano come sono.
+  // Gli stage che load-game-events aggiunge dalle riedizioni (game_quest_id,
+  // migrazione 0017) non sono del wiki: non si tolgono, e se il wiki ora
+  // vuole il loro seq si spostano in coda (makeRoom) invece di diventare suoi.
   const st = load.flatMap((x) => x.stages.map((s) => ({ ev: x.event.id, ...s })))
+  await makeRoom(client, st)
   const { rowCount: stageNew } = await client.query(`
     insert into stage (event_id, seq)
     select * from unnest($1::bigint[], $2::smallint[])
@@ -493,7 +498,8 @@ try {
            exists (select 1 from clear c where c.stage_tier_id = t.id)
              or exists (select 1 from tip p where p.stage_tier_id = t.id) as used
     from stage_tier t join stage s on s.id = t.stage_id
-    where t.event_id = any($1::bigint[]) and not (t.id = any($2::bigint[]))`,
+    where t.event_id = any($1::bigint[]) and not (t.id = any($2::bigint[]))
+      and s.game_quest_id is null`,
     [ids, tr.map((x) => x.id)])
   await client.query('delete from stage_tier where id = any($1::bigint[])',
     [tierOld.filter((x) => !used(x)).map((x) => x.id)])
@@ -504,6 +510,7 @@ try {
   const { rowCount: stageGone } = await client.query(`
     delete from stage s
     where s.event_id = any($1::bigint[]) and not (s.id = any($2::bigint[]))
+      and s.game_quest_id is null
       and not exists (select 1 from stage_tier t where t.stage_id = s.id)`,
     [ids, st.map((s) => s.id)])
 

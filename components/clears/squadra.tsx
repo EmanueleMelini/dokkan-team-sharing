@@ -1,4 +1,6 @@
 import { Carta } from '@/components/carta'
+import { BuildRiga } from '@/components/clears/build-riga'
+import type { SlotBuild } from '@/lib/clears/build'
 
 // La forma della squadra è quella del gioco: due unità che ruotano, altre
 // due che ruotano, tre che restano fuori dalla rotazione.
@@ -19,6 +21,8 @@ export type CartaSquadra = {
   type: string
   class: string | null
   thumb_key: string | null
+  /** la build dello slot (0018), se l'autore l'ha scritta */
+  build?: SlotBuild | null
 }
 
 /** Le sette carte di una squadra nei tre gruppi della rotazione. */
@@ -50,6 +54,7 @@ export function Squadra({ carte, idBase }: { carte: CartaSquadra[]; idBase: stri
                     thumbKey={c.thumb_key}
                     ruolo={c.role}
                   />
+                  {c.build && <BuildRiga build={c.build} />}
                 </li>
               ))}
             </ul>

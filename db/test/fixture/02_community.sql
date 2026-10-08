@@ -40,9 +40,10 @@ insert into lineup_slot (lineup_id,rotation_index,pos,card_id,role) values
 insert into equipment (id,tier) values (9001,3);
 insert into equipment_text (equipment_id,locale,name,effect) values
  (9001,'en','Warrior''s Shield','DEF +15%'), (9001,'ja','戦士の盾','DEF +15%');
-insert into slot_build (lineup_id,rotation_index,pos,hp_stars,hp_path,note) values
- ('b1b1b1b1-0000-0000-0000-000000000001',1,1,5,'rainbow, ramo difesa','Senza rainbow non regge la terza fase.'),
- ('b1b1b1b1-0000-0000-0000-000000000001',2,2,4,'ramo attacco',null);
+-- hp_routes: percorsi del Hidden Potential completati, 4 = arcobaleno (0018)
+insert into slot_build (lineup_id,rotation_index,pos,hp_routes,hp_path,note) values
+ ('b1b1b1b1-0000-0000-0000-000000000001',1,1,4,'rainbow, ramo difesa','Senza rainbow non regge la terza fase.'),
+ ('b1b1b1b1-0000-0000-0000-000000000001',2,2,3,'ramo attacco',null);
 insert into slot_equipment (lineup_id,rotation_index,pos,slot_no,equipment_id) values
  ('b1b1b1b1-0000-0000-0000-000000000001',1,1,1,9001);
 

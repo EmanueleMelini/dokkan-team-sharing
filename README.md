@@ -66,7 +66,7 @@ run), e `fetch-assets` per ultimo. `db:import` e `db:refresh` li mettono in
 fila:
 
 ```
-load-cards → load-game-cards → load-events → load-datamine → load-game-events → load-windows → load-missions → fetch-assets
+load-cards → load-game-cards → load-events → load-datamine → load-game-events → load-windows → load-missions → load-equipment → fetch-assets
 ```
 
 Il ciclo completo dura **cinque secondi**: le immagini sono già sul disco e
@@ -217,6 +217,9 @@ db/
     0001_schema.sql         tabelle, view, indici, trigger dei punteggi
     0002_write_api.sql      proof_host, trigger di congelamento, funzioni
     0016_clear_builder.sql  invio e revisione dal sito in una transazione, assetti congelati
+    0017_rerun_stages.sql   stage.game_quest_id: gli stage che una riedizione aggiunge
+    0018_slot_builds.sql    le build degli slot (Hidden Potential, Skill Orb), congelate con la versione
+    0019_account_settings.sql  Settings: unlink_provider, delete_account, le segnalazioni col bersaglio
   seed/                     demo-clears.mjs: tre clear dimostrativi su un evento vero (db:demo)
   queries/reference.sql     le query di lettura principali, documentate
   test/                     le verifiche: run.sh le mette in fila (npm run db:test)
@@ -228,10 +231,11 @@ db/
     game-cards.mjs          la sua scelta: quali righe del datamine sono carte che mancano davvero
     load-events.mjs         idem per eventi, stage e difficoltà
     load-game-events.mjs    gli eventi che il wiki non ha, dal datamine del gioco
-    game-events/            i suoi moduli: classify, build, write, i legami del wiki
+    game-events/            i suoi moduli: classify, build, write, i legami del wiki, gli stage delle riedizioni
     quest-refs.mjs          i legami per quest (Super Battle Road, archivi), per load-windows
     load-missions.mjs       le missioni Global e i loro premi, dal datamine (db:missions)
     missions/               i suoi moduli: owner (di che evento), text, rewards, write
+    load-equipment.mjs      le Skill Orb e le abilita' del Hidden Potential, per le build (db:equipment)
     fetch-assets.mjs        scarica le immagini e le registra in asset
     .cache/                 il wikitext scaricato (non versionato)
 public/assets/              le immagini ospitate da noi (non versionate)
@@ -246,7 +250,8 @@ lib/dal.ts                  chi e' l'utente: requireUser / requireOnboardedUser
 lib/clears/                 le Server Action dei clear, i loro validatori e le frasi d'errore
 lib/clears.ts               le letture del builder e del clear: modifica, cambi, voti, commenti
 lib/cards.ts                la ricerca delle carte per il picker (anche GET /api/cards)
-components/builder/         il builder dei clear: slot, picker delle carte, dettagli, prove
+lib/equipment.ts            la ricerca delle Skill Orb per le build (anche GET /api/equipment)
+components/builder/         il builder dei clear: slot, picker delle carte, build, dettagli, prove
 components/clears/          la scheda di un clear: squadre, cambi, voti, commenti, Delete
 ```
 
@@ -754,6 +759,8 @@ EZA che `game-map` non ha legato a una pagina del wiki
   sulle due "All Open" del wiki (per nome), 285 su 561817. 1747 è la
   replica di 1708, uscita prima del taglio e senza pagina: l'evento nasce
   da 1708 e 1747 gli si attacca.
+- **Gli stage in più** di una riedizione finiscono sull'evento di prima:
+  vedi "Gli stage che una riedizione aggiunge", qui sotto.
 - **Evento nuovo anche con lo stesso nome**: i remix `: RE [...]`, le
   edizioni con boss diversi (Dokkan Ultimate Speed Battle 1757), i remake
   DbStory (come 901-917, che hanno già un evento ciascuno).
@@ -761,6 +768,56 @@ EZA che `game-map` non ha legato a una pagina del wiki
   singolo) e un evento solo, 1000001717, con sei stage.
 - **Le Super EZA** sono eventi a sé; il legame ricorda la Normal da cui
   pendono (`event_game_ref.related_game_id`), così il sito potrà collegarle.
+
+**Gli stage che una riedizione aggiunge** (migrazione 0017,
+`game-events/rerun-stages.mjs` e `write-rerun.mjs`). Legare la riedizione
+all'evento non bastava: 552139 Looming Menace ha 3 stage dal wiki, la sua
+riedizione 616 ne ha 4, e le missioni dicono "Clear Stage 4". Lo stesso per
+le Extreme Z-Area riproposte (613-619), che aggiungono un "Extreme Stage".
+Per ogni evento legato a più di un pezzo del gioco (aree, o quest legate una
+per una: gli archivi), `load-game-events`, dopo aver scritto gli stage
+propri, confronta le quest di ogni pezzo con gli stage che l'evento ha, per
+area crescente:
+
+1. **per nome**, dopo la normalizzazione di `game-map` o senza la variante
+   fra parentesi del wiki;
+2. **per ordine**: le quest rimaste vanno, in fila, sugli stage che nessuna
+   quest di quel pezzo ha preso per nome. Copre i nomi che il wiki scrive
+   diversi e gli stage senza nome; nel dubbio una quest "c'è già". Così
+   52097, che dal wiki ha già lo stage 4 `[VS. Extreme AGL]`, dall'area 613
+   prende solo il "Super Extreme Stage";
+3. le quest che restano sono **stage nuovi, in coda**, col nome del gioco e
+   le difficoltà come per gli eventi del gioco (`build.mjs`: `id % 10`,
+   STA, exp, zeni, nota sul boss).
+
+Dal secondo pezzo in poi gli stage appena aggiunti contano come propri, per
+nome e per ordine: due riedizioni con lo stesso "Extreme Stage", o
+l'archivio 1737 che ripete l'area dell'edizione 771 come "Movie Edition
+Stage 8", non aggiungono niente due volte. Il confronto si fa sempre con gli
+stage propri (non con quelli aggiunti nei giri prima), quindi il piano non
+dipende da cosa c'è già nel database. Le famiglie (Million Arena) e l'area
+di un evento del gioco restano fuori: i loro stage li ha già `buildEvent`.
+Una pagina della Super Battle Road è legata a un pezzo solo, e i piani che
+il wiki non ha scritto (81 - 90 ne ha 5 su 10) non entrano.
+
+`stage.game_quest_id` è la quest da cui viene lo stage: chiave per rifarlo
+(evento, quest: stesso id per lo stage e per le sue difficoltà, a cui
+puntano i clear) e segno di chi l'ha scritto. `load-events` e `writeStages`
+non lo tolgono come "stage che la mia fonte non dà più"; se la loro fonte
+vuole il suo seq (il wiki che scrive uno stage 4), lo spostano in coda con
+il suo id invece di prendersene nome e difficoltà (`makeRoom`). Il legame
+col wiki (`wiki-refs.mjs`) guarda solo gli stage propri, o le chiavi
+cambierebbero fra un giro e l'altro. Uno stage che il piano non dà più se ne
+va, tranne se ha clear o tip.
+
+Su `dokkan_dev`: 20 stage su 14 eventi. Sette Extreme Z-Area (552139 e
+339306, 431231, 631974, 702246, 708590 col loro "Extreme Stage", 52097 col
+"Super Extreme Stage"), le tre camere del 2026 (1221-1223, lo stage
+"Category Only"), Grand Opening su Team Bardock (698372), Movie Boss Rush su
+712687, sette saghe su 728324 dall'area 1703, e il secondo stage della
+Gendarmerie (1747 su 1000001708). Il test (`db/test/rerun-stages.test.mts`)
+li prova su 552139, 339306, 52097, 712687 e 1000001708, e controlla che un
+secondo giro, anche dopo `load-events` e `load-windows`, non cambi niente.
 
 **Gli id** non possono toccare i pageid del wiki (oggi fino a ~730.000):
 `1000000000 + id dell'area`, `2000000000 + id dello stage EZA`.
@@ -988,7 +1045,8 @@ aggiornamenti si leggono gli avvisi di sicurezza prima di cambiare numero.
 - `lib/auth/`: `env.ts` è l'unico file che legge le variabili dell'accesso;
   `config.ts` costruisce better-auth (senza Next, così i test la usano);
   `auth.ts` è l'istanza dell'app; `email.ts` il mittente del link;
-  `actions.ts` le Server Action (uscita, /welcome).
+  `actions.ts` le Server Action (uscita, /welcome, Settings); `account.ts`
+  le regole di Settings in funzioni pure (pagina, azione e test).
 - `lib/dal.ts`: `currentUser()`, `requireUser()`, `requireOnboardedUser()`.
   **Ogni pagina protetta e ogni Server Action passa da qui**, e l'id
   dell'utente viene sempre dalla sessione, mai da argomenti, FormData o
@@ -997,7 +1055,8 @@ aggiornamenti si leggono gli avvisi di sicurezza prima di cambiare numero.
 - `app/api/auth/[...all]/route.ts`: le rotte di better-auth (callback OAuth,
   verifica del link, sessione, uscita).
 - Le pagine: `/login`, `/welcome` (prima entrata: handle e regione),
-  `/settings` (metodi di accesso collegati, uscita). Nell'header, dentro un
+  `/settings` (metodi di accesso collegati, scollegare, uscita, cancellare
+  l'account). Nell'header, dentro un
   `<Suspense>`, "Sign in" oppure l'utente.
 
 **Le regole, e perché.**
@@ -1082,8 +1141,43 @@ per il dominio vero, che ancora non c'è.
 6. **Una privacy policy**, che Google chiede per la verifica del brand e
    che comunque serve: salviamo email, handle, IP e user agent delle sessioni.
 
-Non ancora fatto: scollegare un provider e cancellare l'account da
-Settings. Le Server Action di scrittura (invio, voto, commenti) sono in
+**Settings: scollegare e cancellare (migrazione 0019).**
+
+- *Scollegare un provider* si può solo se resta almeno un modo di entrare.
+  Il link per email conta come modo **solo con l'email verificata**: è
+  l'unico caso in cui il link arriva a chi possiede l'account. Oggi ogni
+  account nasce verificato (vedi sopra), quindi in pratica si può
+  scollegare anche l'ultimo provider e restare col link; la regola però
+  non si appoggia a quell'invariante. La impone `unlink_provider(utente,
+  provider)` con la riga dell'utente bloccata (`for update`): due richieste
+  in parallelo non tolgono entrambe l'ultimo provider. La rotta
+  `/unlink-account` di better-auth è spenta (`disabledPaths` in
+  `config.ts`, con `/delete-user`): conta solo i provider, e sarebbe una
+  seconda strada con regole diverse. In pagina la conferma sta nella
+  riga e dice con cosa si entrerà dopo; il provider che non si può
+  togliere mostra "Your only way to sign in".
+- *Cancellare l'account*: la "Danger zone" chiede di scrivere il proprio
+  handle (maiuscole e spazi ai lati liberi). `delete_account(utente,
+  handle)` lo ricontrolla contro l'handle di **quell'** utente, quindi
+  anche un id sbagliato non cancella un altro. Poi fa tutto la cascata:
+  ogni FK verso `app_user`, `clear` e le versioni è `on delete cascade`
+  (sessioni, accessi, squadre, assetti, clear con versioni, prove, carte e
+  build, voti e commenti anche sui clear degli altri, con i punteggi
+  ricalcolati dai trigger). L'unico buco era `report`, il cui `target_id`
+  è polimorfico e senza FK: ora un trigger toglie la segnalazione quando
+  sparisce il suo clear, la sua tip o la sua prova (vale anche per
+  `delete_clear`). Dopo, `signOut` toglie il cookie e si torna a
+  `/events?account=deleted`, con un avviso che chi è dentro non vede.
+- Il limite è nella natura: si cancella una volta, e si scollegano al più
+  tre provider. Entrambe le azioni partono da `requireUser`.
+- Il test è il passo "settings dell'account"
+  (`db/test/account-settings.test.mts`): regole pure, FK tutte a cascata,
+  `unlink_provider` (anche in parallelo), le rotte di better-auth spente,
+  e un utente con clear, build, prove, squadre, voti, commenti, tip e
+  segnalazioni che si cancella senza lasciare righe e senza toccare
+  l'altro utente.
+
+Le Server Action di scrittura (invio, voto, commenti) sono in
 `lib/clears/actions.ts`, su `requireOnboardedUser` (sotto).
 
 ## Il builder dei clear (migrazione 0016)
@@ -1161,6 +1255,52 @@ Le verifiche sono `db/test/submit.test.mts` (gli ingressi SQL) e
 
 Lo stato del form lo prova `db/test/builder-stato.test.mts`.
 
+## Le build degli slot (migrazione 0018)
+
+Ogni slot di ogni assetto può avere una build, tutta opzionale: quanti
+percorsi del Hidden Potential sono completati, il percorso o le abilità
+scelte, fino a tre Skill Orb e una nota.
+
+- **Cosa dà il gioco.** La tavola del Hidden Potential ha quattro percorsi
+  (`potential_squares.route` 0-3) e il gioco stesso ne parla così
+  ("unlocking two Hidden Potential routes"): il livello è quindi
+  `hp_routes` 0-4, dove 4 è l'arcobaleno. Le stelle 0-5 del 0001 il gioco
+  non le ha, e `slot_build.hp_stars` è diventata `hp_routes`. Le caselle a
+  scelta (Combo Attack, Critical Hit, Evasion...) cambiano da carta a
+  carta: il percorso resta un testo di 40 caratteri, e il builder suggerisce
+  i sette nomi di `potential_skills`. L'equipaggiamento sono le **Skill Orb**
+  (`equipment_skill_items`, 8857 con nome inglese e grado bronzo, argento,
+  oro): `load-equipment` le scrive in `equipment` (tier 1-3) ed
+  `equipment_text`, e non ne cancella mai una, perché una build congelata
+  ci punta. Chi può montare quale sfera (esclusive per carta, categoria,
+  tipo) sta in `equipment_skill_limitations`: non lo importiamo ancora, e
+  il database non lo controlla.
+- **Il payload.** Ogni slot può avere
+  `"build": {"hp_routes": 0-4, "hp_path": "...", "note": "...", "equipment": [id|null x 3]}`;
+  la posizione nell'array è lo slot della sfera. Una build vuota vale come
+  nessuna build e non si salva. I rifiuti hanno un nome come quelli del
+  0016 (`builder_build`, `_routes`, `_path`, `_note`, `_equipment`).
+- **Come è scritta.** `builder_check_payload`, `builder_write_team` e
+  `builder_freeze_lineups` del 0016 sono rinominate in `*_0016`; le nuove
+  le chiamano e poi fanno la parte delle build. `submit_clear_from_builder`
+  e `revise_clear_from_builder` restano le stesse, con le stesse firme.
+- **Congelate con la versione.** `clear_lineup_build` e
+  `clear_lineup_equipment` hanno lo stesso patto di `clear_lineup`: scritte
+  nella transazione della versione, mai modificate, cancellate solo in
+  cascata. Una revisione riscrive il team e lascia le versioni vecchie con
+  le loro build. Anche lo snapshot del #1 le porta (`take_lineup_snapshot`
+  rifatta: ora le sfere dicono lo slot).
+- **Nelle pagine.** Nel builder ogni carta ha un bottone Build che apre un
+  `<dialog>` (a schermo pieno sotto i 640px): percorsi, percorso, tre
+  sfere cercate su `GET /api/equipment?q=&tier=&offset=` (tutte le parole,
+  nel nome o nella descrizione, perché le esclusive hanno lo stesso nome)
+  e la nota. Un cambio di squadra parte con le build della squadra sopra;
+  in modifica il form parte dalle build della versione corrente. Nei clear
+  la build è una riga piccola sotto la carta, solo se c'è.
+
+Le verifiche sono in `db/test/builds.test.mts` (e i suoi moduli
+`builds-revise.ts`, `builds-pure.ts`): 83 controlli.
+
 ## Cosa manca, in ordine
 
 1. **Il calendario, da tenere vivo.** Rifare il datamine con `--fresh`
@@ -1194,8 +1334,9 @@ Lo stato del form lo prova `db/test/builder-stato.test.mts`.
    le campagne su più eventi. Japan non ha missioni: il datamine è Global.
    Solo 45 oggetti su 1677 hanno un'icona; le altre aspettano il CDN del
    wiki o le immagini del gioco.
-5. **Gli account, da finire.** Da Settings scollegare un provider e
-   cancellare l'account.
+5. **Gli account, da rifinire.** Scollegare e cancellare non chiedono un
+   accesso recente: chi ha in mano una sessione aperta può cancellare
+   l'account scrivendo l'handle, che è pubblico.
 6. **L'invio, da rifinire.** Le pagine ci sono (sotto). Mancano la storia
    delle versioni nella pagina (`getClearVersions` è pronta), un modo di
    riusare le proprie squadre invece di ricomporle, e la ricerca delle

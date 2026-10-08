@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { useActionState, useReducer, useState } from 'react'
 import { Plus } from '@phosphor-icons/react/dist/ssr'
+import { BuildEditor, type BuildAperta } from '@/components/builder/build-editor'
 import { Dettagli, type RunScelta } from '@/components/builder/dettagli'
 import { Picker } from '@/components/builder/picker'
 import type { Categoria } from '@/components/builder/picker-filtri'
@@ -20,6 +21,8 @@ type Props = {
   clearId?: string
   runs: RunScelta[]
   categorie: Categoria[]
+  /** le abilita' del Hidden Potential, per suggerire il percorso di una build */
+  abilita: string[]
   iniziale: BuilderStato
   /** dove porta "Cancel": la pagina dell'evento */
   annulla: string
@@ -33,9 +36,10 @@ type Aperto = { l: number; i: number; dove: string } | null
  * il database, che resta l'autorità. Qui si controlla prima solo per
  * rispondere subito, senza un giro sul server.
  */
-export function Builder({ modo, eventId, tierId, clearId, runs, categorie, iniziale, annulla }: Props) {
+export function Builder({ modo, eventId, tierId, clearId, runs, categorie, abilita, iniziale, annulla }: Props) {
   const [stato, dispatch] = useReducer(reducer, iniziale)
   const [aperto, setAperto] = useState<Aperto>(null)
+  const [build, setBuild] = useState<BuildAperta | null>(null)
   const [esito, azione, inCorso] = useActionState<ClearActionState, FormData>(async (prev, form) => {
     const p = parsePayloadField(form.get('payload'))
     if (!p.ok) return { error: p.error }
@@ -61,7 +65,7 @@ export function Builder({ modo, eventId, tierId, clearId, runs, categorie, inizi
         <div>
           <h2 id="b-squadre" className="text-[15px] font-semibold text-inchiostro">Team</h2>
           <p className="mt-0.5 text-[12px] text-tenue">
-            Pick the 7 units in rotation order, then mark the leader and the friend. The friend can be the same card as the leader.
+            Pick the 7 units in rotation order, then mark the leader and the friend. The friend can be another copy of the leader card, in its own slot.
           </p>
         </div>
         {stato.squadre.map((q, l) => (
@@ -72,6 +76,7 @@ export function Builder({ modo, eventId, tierId, clearId, runs, categorie, inizi
             idBase={`b-l${l}`}
             dispatch={dispatch}
             onApri={(ll, i, dove) => setAperto({ l: ll, i, dove })}
+            onBuild={(ll, i, dove) => setBuild({ l: ll, i, dove, carta: stato.squadre[ll].slots[i].carta?.name ?? '' })}
           />
         ))}
         {stato.squadre.length < LIMITS.lineups && (
@@ -139,6 +144,13 @@ export function Builder({ modo, eventId, tierId, clearId, runs, categorie, inizi
         </div>
       </div>
 
+      <BuildEditor
+        aperta={build}
+        build={build ? stato.squadre[build.l]?.slots[build.i]?.build ?? null : null}
+        abilita={abilita}
+        dispatch={dispatch}
+        onChiudi={() => setBuild(null)}
+      />
       <Picker
         titolo={aperto?.dove ?? null}
         categorie={categorie}

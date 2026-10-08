@@ -274,10 +274,13 @@ try {
   await sezione('la difficolta\' dal codice della mappa, contro il wiki', async () => {
     // sugoroku_maps.id % 10 -> la difficolta': su questi eventi del wiki
     // (tutti i codici, 0-5) coincide stage per stage con quella che load-events
-    // ha letto dalla pagina. Gli stage si appaiano per posizione.
+    // ha letto dalla pagina. Gli stage si appaiano per posizione; quelli che
+    // una riedizione ha aggiunto (game_quest_id, 52097 dall'area 613) non
+    // sono del wiki e restano fuori.
     for (const [ev, area] of [[477, 411], [18261, 135], [52097, 602], [75370, 527], [709319, 760], [712688, 770]] as const) {
       const wiki = await righe(`select s.seq, string_agg(t.difficulty::text, ',' order by t.difficulty::text) as d
-        from stage s join stage_tier t on t.stage_id = s.id where s.event_id = $1 group by s.seq order by s.seq`, [ev])
+        from stage s join stage_tier t on t.stage_id = s.id where s.event_id = $1 and s.game_quest_id is null
+        group by s.seq order by s.seq`, [ev])
       const qs = questsOf(area)
       const game = qs.map((q) => [...new Set(mapsOf(num(q.id)).map((m) => DIFF[num(m.id) % 10]))].sort().join(','))
       check(`evento ${ev} (area ${area})`, wiki.length > 0 && wiki.length === game.length && wiki.every((w, i) => w.d === game[i]),

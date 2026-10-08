@@ -40,7 +40,9 @@ export async function wikiRefs(client, pages = loadWikiPages(), dm = loadMapTabl
            coalesce(array_agg(stx.name order by s.seq) filter (where stx.name is not null), '{}') as stages
     from event e
     join event_text et on et.event_id = e.id and et.locale = 'en'
-    left join stage s on s.event_id = e.id
+    -- solo gli stage del wiki: quelli aggiunti dalle riedizioni
+    -- (game_quest_id) cambierebbero le chiavi del legame fra un giro e l'altro
+    left join stage s on s.event_id = e.id and s.game_quest_id is null
     left join stage_text stx on stx.stage_id = s.id and stx.locale = 'en'
     where e.imported_from = 'wiki' and e.wiki_title is not null
     group by e.id, et.name`)

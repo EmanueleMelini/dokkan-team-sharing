@@ -7,12 +7,16 @@
 //   stage, stage_tier   solo degli eventi del gioco; uno stage o una
 //                       difficolta' che il gioco non da' piu' si toglie, a
 //                       meno che un clear o un tip ci puntino (come in
-//                       load-events)
+//                       load-events). Gli stage delle riedizioni
+//                       (game_quest_id, migrazione 0017) sono di
+//                       write-rerun.mjs: qui non si toccano
 //   cover_card_id       di tutti gli eventi con un legame al gioco: e' una
 //                       colonna nuova che nessun altro scrive
 //
 // Ogni update scrive solo se il valore cambia: un secondo giro uguale non
 // cambia niente, e i contatori lo dicono.
+import { makeRoom } from './write-rerun.mjs'
+
 const LOCALE = 'en'
 const used = (r) => r.used
 
@@ -76,6 +80,7 @@ export async function writeRefs(db, refs) {
 export async function writeStages(db, evs) {
   const ids = evs.map((e) => e.id)
   const st = evs.flatMap((e) => e.stages.map((s) => ({ ev: e.id, ...s })))
+  const moved = await makeRoom(db, st)
   const { rowCount: stageNew } = await db.query(`
     insert into stage (event_id, seq) select * from unnest($1::bigint[], $2::smallint[])
     on conflict (event_id, seq) do nothing`, [st.map((s) => s.ev), st.map((s) => s.seq)])
@@ -120,13 +125,14 @@ export async function writeStages(db, evs) {
            exists (select 1 from clear c where c.stage_tier_id = t.id)
              or exists (select 1 from tip p where p.stage_tier_id = t.id) as used
     from stage_tier t join stage s on s.id = t.stage_id
-    where t.event_id = any($1::bigint[]) and not (t.id = any($2::bigint[]))`, [ids, tr.map((t) => t.id)])
+    where t.event_id = any($1::bigint[]) and not (t.id = any($2::bigint[]))
+      and s.game_quest_id is null`, [ids, tr.map((t) => t.id)])
   await db.query('delete from stage_tier where id = any($1::bigint[])', [old.filter((x) => !used(x)).map((x) => x.id)])
   for (const x of old.filter(used)) console.log(`  tengo evento ${x.event_id} stage ${x.seq} ${x.difficulty}: il gioco non lo da' piu' ma ci sono clear o tip`)
   const { rowCount: stageGone } = await db.query(`
     delete from stage s where s.event_id = any($1::bigint[]) and not (s.id = any($2::bigint[]))
-      and not exists (select 1 from stage_tier t where t.stage_id = s.id)`, [ids, st.map((s) => s.id)])
-  return { stages: st.length, stageNew, stageGone, named, tiers: tr.length,
+      and s.game_quest_id is null and not exists (select 1 from stage_tier t where t.stage_id = s.id)`, [ids, st.map((s) => s.id)])
+  return { stages: st.length, stageNew, stageGone, named, moved, tiers: tr.length,
            tierNew: tierRows.filter((r) => r.inserted).length, tierChanged: tierRows.filter((r) => !r.inserted).length,
            tierGone: old.length - old.filter(used).length, notes }
 }

@@ -2,7 +2,10 @@
 // React né database: lo usa il componente client e lo prepara il server
 // (con i nomi e le miniature delle carte già scelte, per la modifica).
 
-import { LIMITS, SHAPE, type BuilderPayload, type ProofKind, type SlotRole } from '@/lib/clears/validate'
+import {
+  LIMITS, SHAPE, buildVuota as buildPayloadVuota,
+  type BuilderBuild, type BuilderPayload, type ProofKind, type SlotRole,
+} from '@/lib/clears/validate'
 
 export type CartaScelta = {
   id: number
@@ -17,7 +20,16 @@ export type CartaScelta = {
 /** Una ricorrenza dell'evento nel selettore, con la data già scritta. */
 export type RunScelta = { id: string; label: string }
 
-export type SlotStato = { carta: CartaScelta | null; role: SlotRole }
+/** Una Skill Orb scelta nell'editor della build. */
+export type SferaScelta = { id: number; name: string; tier: number }
+
+/**
+ * La build di uno slot come la tiene il form: testi come nei campi, e
+ * sempre tre posti per le sfere (null = vuoto). Tutta opzionale.
+ */
+export type BuildStato = { routes: string; path: string; note: string; sfere: (SferaScelta | null)[] }
+
+export type SlotStato = { carta: CartaScelta | null; role: SlotRole; build: BuildStato }
 export type SquadraStato = { label: string; note: string; slots: SlotStato[] }
 export type ProvaStato = { kind: ProofKind; url: string }
 
@@ -39,6 +51,9 @@ export type Azione =
   | { t: 'carta'; l: number; i: number; carta: CartaScelta }
   | { t: 'svuota'; l: number; i: number }
   | { t: 'ruolo'; l: number; i: number; role: SlotRole }
+  | { t: 'build'; l: number; i: number; campo: 'routes' | 'path' | 'note'; valore: string }
+  | { t: 'sfera'; l: number; i: number; k: number; sfera: SferaScelta | null }
+  | { t: 'togli_build'; l: number; i: number }
   | { t: 'squadra'; l: number; campo: 'label' | 'note'; valore: string }
   | { t: 'aggiungi_cambio' }
   | { t: 'togli_cambio'; l: number }
@@ -47,8 +62,15 @@ export type Azione =
   | { t: 'prova'; i: number; kind?: ProofKind; url?: string }
   | { t: 'togli_prova'; i: number }
 
+export const buildVuota = (): BuildStato => ({ routes: '', path: '', note: '', sfere: [null, null, null] })
+
+/** Vero se la build ha almeno un campo pieno: lo slot lo mostra. */
+export const buildPiena = (b: BuildStato): boolean =>
+  b.routes !== '' || b.path.trim() !== '' || b.note.trim() !== '' || b.sfere.some((x) => x !== null)
+
 export const squadraVuota = (): SquadraStato => ({
-  label: '', note: '', slots: SHAPE.map(() => ({ carta: null, role: 'member' as SlotRole })),
+  label: '', note: '',
+  slots: SHAPE.map(() => ({ carta: null, role: 'member' as SlotRole, build: buildVuota() })),
 })
 
 export function statoVuoto(run: string): BuilderStato {
@@ -88,9 +110,18 @@ export function reducer(s: BuilderStato, a: Azione): BuilderStato {
         return haLeader ? prima : conRuolo(prima, a.i, 'leader')
       })
     case 'svuota':
-      return cambiaSquadra(s, a.l, (q) => cambiaSlot(q, a.i, () => ({ carta: null, role: 'member' })))
+      return cambiaSquadra(s, a.l, (q) => cambiaSlot(q, a.i, () => ({ carta: null, role: 'member', build: buildVuota() })))
     case 'ruolo':
       return cambiaSquadra(s, a.l, (q) => conRuolo(q, a.i, a.role))
+    case 'build':
+      return cambiaSquadra(s, a.l, (q) => cambiaSlot(q, a.i, (x) => ({ ...x, build: { ...x.build, [a.campo]: a.valore } })))
+    case 'sfera':
+      if (a.k < 0 || a.k >= LIMITS.equipment) return s
+      return cambiaSquadra(s, a.l, (q) => cambiaSlot(q, a.i, (x) => ({
+        ...x, build: { ...x.build, sfere: x.build.sfere.map((y, k) => (k === a.k ? a.sfera : y)) },
+      })))
+    case 'togli_build':
+      return cambiaSquadra(s, a.l, (q) => cambiaSlot(q, a.i, (x) => ({ ...x, build: buildVuota() })))
     case 'squadra':
       return cambiaSquadra(s, a.l, (q) => ({ ...q, [a.campo]: a.valore }))
     case 'aggiungi_cambio': {
@@ -98,7 +129,9 @@ export function reducer(s: BuilderStato, a: Azione): BuilderStato {
       // Il cambio parte dalla squadra precedente: di solito si toccano
       // una o due carte, non sette.
       const prima = s.squadre[s.squadre.length - 1]
-      return { ...s, squadre: [...s.squadre, { label: '', note: '', slots: prima.slots.map((x) => ({ ...x })) }] }
+      // Anche le build: nel cambio restano le stesse carte, buildate uguali.
+      const slots = prima.slots.map((x) => ({ ...x, build: { ...x.build, sfere: [...x.build.sfere] } }))
+      return { ...s, squadre: [...s.squadre, { label: '', note: '', slots }] }
     }
     case 'togli_cambio':
       return a.l === 0 ? s : { ...s, squadre: s.squadre.filter((_, k) => k !== a.l) }
@@ -126,9 +159,13 @@ export function payloadDa(s: BuilderStato): BuilderPayload {
     lineups: s.squadre.map((q, n) => ({
       label: n === 0 ? null : q.label.trim() || null,
       note: q.note.trim() || null,
-      slots: q.slots.map((x, k) => ({
-        rot: SHAPE[k][0], pos: SHAPE[k][1], card_id: x.carta?.id ?? 0, role: x.role,
-      })),
+      slots: q.slots.map((x, k) => {
+        const build = buildDaStato(x.build)
+        return {
+          rot: SHAPE[k][0], pos: SHAPE[k][1], card_id: x.carta?.id ?? 0, role: x.role,
+          ...(build ? { build } : {}),
+        }
+      }),
     })),
     no_items: s.noItems,
     deathless: s.deathless,
@@ -138,4 +175,22 @@ export function payloadDa(s: BuilderStato): BuilderPayload {
     // Le righe lasciate vuote non sono prove: si ignorano
     proofs: s.proofs.filter((p) => p.url.trim() !== '').map((p) => ({ kind: p.kind, url: p.url.trim() })),
   }
+}
+
+/**
+ * La build di uno slot per il payload, o null se e' vuota. Le sfere
+ * restano per posizione, senza i null in coda: [null, 812] = slot 2. Un
+ * numero di percorsi non valido passa com'e': lo rifiuta parseBuild, con
+ * la frase giusta.
+ */
+export function buildDaStato(b: BuildStato): BuilderBuild | null {
+  const equipment = b.sfere.map((x) => x?.id ?? null)
+  while (equipment.length && equipment[equipment.length - 1] === null) equipment.pop()
+  const out: BuilderBuild = {
+    hp_routes: b.routes === '' ? null : Number(b.routes),
+    hp_path: b.path.trim() || null,
+    note: b.note.trim() || null,
+    equipment,
+  }
+  return buildPayloadVuota(out) ? null : out
 }

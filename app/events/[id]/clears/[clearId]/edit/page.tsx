@@ -42,6 +42,7 @@ export default async function ModificaClear(props: PageProps<'/events/[id]/clear
         clearId={clear.id}
         runs={runs}
         categorie={dati.categorie}
+        abilita={dati.abilita}
         iniziale={statoDaClear(clear)}
         annulla={indietro}
       />
