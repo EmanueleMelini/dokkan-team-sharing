@@ -16,7 +16,10 @@ import { snapshotInfo } from './datamine.mjs'
 import { assignCardIds, awakensInto, datamineCards, field, idsByTitle, scalar } from './wiki-card.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
-const CACHE = join(HERE, '.cache', 'wiki-cards.json')
+// WIKI_CARDS_CACHE solo per i test: game-cards.test.mts gli passa una
+// pagina finta per provare che il wiki prende la riga di una carta del
+// datamine sullo stesso id, senza toccare la cache vera.
+const CACHE = process.env.WIKI_CARDS_CACHE ?? join(HERE, '.cache', 'wiki-cards.json')
 const DRY = process.argv.includes('--dry-run')
 const LOCALE = 'en'   // il wiki e' in inglese
 

@@ -62,8 +62,9 @@ try {
   const { events: wikiEvents, refs } = await wikiRefs(client)
   const linked = new Set(refs.map((r) => r.event_id))
   const wiki = wikiEvents.filter((e) => !linked.has(e.id)).map((e) => ({ id: e.id, name: e.name }))
-  const { rows: cardRows } = await client.query('select id::text from card')
-  const ours = new Set(cardRows.map((r) => Number(r.id)))
+  // id -> ha una miniatura: la copertina preferisce le carte con immagine
+  const { rows: cardRows } = await client.query('select id::text, thumb_key is not null as img from card')
+  const ours = new Map(cardRows.map((r) => [Number(r.id), r.img]))
 
   // ---------------------------------------------------------- analisi
   const { events, attach, skipped } = classify(d, refs, wiki)

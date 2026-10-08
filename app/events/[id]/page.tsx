@@ -14,14 +14,13 @@ import {
 } from '@/lib/queries'
 import { AttesaLink } from '@/components/attesa-link'
 import { Clear } from '@/components/clear'
+import { InviaClear } from '@/components/clears/invia-cta'
+import { currentUser } from '@/lib/dal'
+import { extraClear } from '@/lib/clears/vista'
+import { DIFFICOLTA, nomeTier } from '@/lib/livelli'
 import { Missioni } from '@/components/missioni'
 import { ConteggioClear } from '@/components/conteggio-clear'
 import { Paginazione } from '@/components/paginazione'
-
-const DIFFICOLTA: Record<string, string> = {
-  normal: 'Normal', hard: 'Hard', z_hard: 'Z-Hard', super: 'Super', super2: 'Super 2',
-  super3: 'Super 3', ultra: 'Ultra', dokkan: 'Dokkan', eza_level: 'Level',
-}
 
 const TIPO_EVENTO: Record<string, string> = {
   challenge: 'Challenge', zbattle: 'Extreme Z-Battle', limited: 'Limited', story: 'Story',
@@ -87,7 +86,9 @@ export default async function Evento(props: PageProps<'/events/[id]'>) {
   const reg = regione(sp)
   const pagina = leggiPagina(sp)
 
-  const [e, stages, legami] = await Promise.all([evento(id, reg), getStages(id, reg), getEzaLinks(id)])
+  const [e, stages, legami, utente] = await Promise.all([
+    evento(id, reg), getStages(id, reg), getEzaLinks(id), currentUser(),
+  ])
   if (!e) notFound()
 
   const richiesto = uno(sp.tier)
@@ -101,6 +102,9 @@ export default async function Evento(props: PageProps<'/events/[id]'>) {
   // filtri di listClears (tier, regione, pubblicati): resta giusto anche su
   // una pagina oltre l'ultima, dove listClears non restituisce righe.
   const totaleClear = scelto?.clears ?? 0
+  const modo = !utente ? 'anon' : utente.onboarded ? 'ready' : 'setup'
+  const qsInvia = new URLSearchParams({ ...(reg === 'japan' ? { region: reg } : {}), tier: scelto?.tier_id ?? '' })
+  const invia = `/events/${e.id}/submit?${qsInvia}`
   const ultimaPagina = Math.max(1, Math.ceil(totaleClear / CLEAR_PER_PAGINA))
 
   const eza = stages.length > 0 && stages.every((s) => s.difficulty === 'eza_level')
@@ -121,11 +125,11 @@ export default async function Evento(props: PageProps<'/events/[id]'>) {
     ...(reg === 'japan' ? { region: reg } : {}), tier, ...(n > 1 ? { page: String(n) } : {}),
   })}`
   const stato = statoEvento(e)
-  const nomeScelto = scelto
-    ? eza
-      ? `Level ${scelto.seq}`
-      : `${scelto.name ?? `Stage ${scelto.seq}`}, ${DIFFICOLTA[scelto.difficulty] ?? scelto.difficulty}`
-    : ''
+  // Per commentare si torna a questa pagina, non al builder
+  const qui = scelto ? encodeURIComponent(`${href(scelto.tier_id, pagina)}#clear`) : ''
+  const accesso = modo === 'setup' ? `/welcome?next=${qui}` : `/login?next=${qui}`
+  const extra = await extraClear(clears, utente, accesso)
+  const nomeScelto = scelto ? nomeTier(scelto, eza) : ''
 
   // Gli stage arrivano un tier per riga: per gli eventi normali li
   // raggruppo per stage, perché le difficoltà sono varianti dello stesso.
@@ -338,14 +342,17 @@ export default async function Evento(props: PageProps<'/events/[id]'>) {
 
             {scelto && (
               <div className="pb-4 border-b border-linea">
-                <h2 id="titolo-clear" className="text-[15px] font-semibold text-inchiostro">
-                  {eza ? nomeScelto : (
-                    <>
-                      <span>{scelto.name ?? `Stage ${scelto.seq}`}</span>
-                      , {DIFFICOLTA[scelto.difficulty] ?? scelto.difficulty}
-                    </>
-                  )}
-                </h2>
+                <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
+                  <h2 id="titolo-clear" className="text-[15px] font-semibold text-inchiostro">
+                    {eza ? nomeScelto : (
+                      <>
+                        <span>{scelto.name ?? `Stage ${scelto.seq}`}</span>
+                        , {DIFFICOLTA[scelto.difficulty] ?? scelto.difficulty}
+                      </>
+                    )}
+                  </h2>
+                  <InviaClear modo={modo} invia={invia} />
+                </div>
                 <dl className="mt-1.5 flex flex-wrap gap-x-5 gap-y-1 text-[12px] text-tenue">
                   {scelto.sta_cost != null && (
                     <div className="flex gap-1">
@@ -372,8 +379,8 @@ export default async function Evento(props: PageProps<'/events/[id]'>) {
                   No clears for this {eza ? 'level' : 'stage'} yet
                 </p>
                 <p className="mt-1.5 text-[13px] text-testo max-w-[46ch] mx-auto leading-relaxed">
-                  If you’ve cleared it, your team is exactly what the next player needs. Clear
-                  submissions open together with accounts.
+                  If you’ve cleared it, your team is exactly what the next player needs.
+                  Be the first to share it.
                 </p>
               </div>
             ) : clears.length === 0 ? (
@@ -407,7 +414,7 @@ export default async function Evento(props: PageProps<'/events/[id]'>) {
                 <ol className="mt-3 space-y-3">
                   {clears.map((c) => (
                     <li key={c.id}>
-                      <Clear clear={c} />
+                      <Clear clear={c} eventId={e.id} {...extra.get(c.id)!} />
                     </li>
                   ))}
                 </ol>

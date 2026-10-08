@@ -2,11 +2,12 @@
 # npm run db:test: tutte le verifiche, in fila, su un database di test.
 #
 #   reset -> schema -> API di scrittura -> account -> id delle carte dal wiki ->
-#   import dei dati veri -> query
+#   import dei dati veri (carte del wiki, poi quelle solo nel gioco) -> query
 #   delle pagine (lib/queries.ts vero) -> parametri dell'URL (lib/parametri.ts)
-#   -> finestre degli eventi dal gioco (load-windows) -> eventi creati dal
-#   gioco (load-game-events) -> classificazione (story, SBR, archivi) ->
-#   missioni dal gioco (load-missions)
+#   -> builder dei clear (0016, lib/clears*, lib/cards.ts, /api/cards)
+#   -> carte solo nel gioco (load-game-cards) -> finestre degli eventi dal
+#   gioco (load-windows) -> eventi creati dal gioco (load-game-events) ->
+#   classificazione (story, SBR, archivi) -> missioni dal gioco (load-missions)
 #
 # Gira su dokkan_test, o su TEST_DATABASE_URL se c'e' (il nome deve finire
 # per _test): il database di sviluppo non si tocca. Prima db:test lo
@@ -57,6 +58,9 @@ passo "id delle carte dal wiki" verifica node db/test/wiki-card.test.mjs
 # giro completo, e ogni file che non trova), quindi non e' un passo
 # offline. Le verifiche delle query non dipendono dalle chiavi immagine.
 passo "import carte (cache)" prepara node db/import/load-cards.mjs
+# Le unita' uscite su Global che il wiki non ha ancora: dopo load-cards
+# (il wiki vince) e prima di load-datamine, che le arricchisce.
+passo "import carte dal gioco (cache)" prepara node db/import/load-game-cards.mjs
 passo "import eventi (cache)" prepara node db/import/load-events.mjs
 passo "import datamine (cache)" prepara node db/import/load-datamine.mjs
 passo "import eventi dal gioco (cache)" prepara node db/import/load-game-events.mjs
@@ -64,6 +68,19 @@ passo "import finestre (cache)" prepara node db/import/load-windows.mjs
 passo "import missioni (cache)" prepara node db/import/load-missions.mjs
 passo "query delle pagine" verifica node_ts db/test/queries.test.mts
 passo "parametri dell'URL" verifica node_ts db/test/parametri.test.mts
+# Il builder dei clear (0016): invio e revisione in una transazione, gli
+# assetti congelati, chi puo' cosa, il limite per ora, voti e commenti.
+# Dopo gli import (servono carte e ricorrenze vere) e dopo le query delle
+# pagine, che contano i clear della fixture: crea solo utenti
+# submittest+/clearslib+ e li toglie, con tutto quello che hanno scritto.
+passo "builder dei clear (SQL)" verifica node_ts db/test/submit.test.mts
+passo "builder dei clear (lib, azioni, /api/cards)" verifica node_ts db/test/clears-lib.test.mts
+# Lo stato del builder nel browser: funzioni pure, il payload deve passare
+# lo stesso controllo della Server Action.
+passo "builder dei clear (stato del form)" verifica node_ts db/test/builder-stato.test.mts
+# Rilancia load-game-cards e load-datamine, e prova il passaggio al wiki
+# con una pagina finta su 1034200 (poi rimette la carta com'era).
+passo "carte dal gioco" verifica node_ts db/test/game-cards.test.mts
 # Per ultima: rilancia load-windows e set-event-window, e ritocca qualche
 # run per provarli (rimettendole come le ha trovate).
 passo "finestre dal gioco" verifica node_ts db/test/windows.test.mts

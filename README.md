@@ -58,14 +58,15 @@ npm run dev          # http://localhost:3000
 ```
 
 **L'ordine conta**: `load-cards` (wiki) deve girare prima di
-`load-datamine` (che corregge), `load-game-events` (gli eventi che il wiki
+`load-game-cards` (le carte che il wiki non ha ancora, dal gioco) e
+`load-datamine` (che corregge e arricchisce tutte e due), `load-game-events` (gli eventi che il wiki
 non ha, dal gioco) prima di `load-windows` (che dà le finestre anche a
 loro), `load-missions` dopo `load-windows` (attacca ogni missione a una
 run), e `fetch-assets` per ultimo. `db:import` e `db:refresh` li mettono in
 fila:
 
 ```
-load-cards → load-events → load-datamine → load-game-events → load-windows → load-missions → fetch-assets
+load-cards → load-game-cards → load-events → load-datamine → load-game-events → load-windows → load-missions → fetch-assets
 ```
 
 Il ciclo completo dura **cinque secondi**: le immagini sono già sul disco e
@@ -215,6 +216,7 @@ db/
   migrations/               NNNN_*.sql, applicate in ordine, mai modificate
     0001_schema.sql         tabelle, view, indici, trigger dei punteggi
     0002_write_api.sql      proof_host, trigger di congelamento, funzioni
+    0016_clear_builder.sql  invio e revisione dal sito in una transazione, assetti congelati
   seed/                     demo-clears.mjs: tre clear dimostrativi su un evento vero (db:demo)
   queries/reference.sql     le query di lettura principali, documentate
   test/                     le verifiche: run.sh le mette in fila (npm run db:test)
@@ -222,6 +224,8 @@ db/
     fetch-wiki.mjs          scarica il wikitext delle carte, in cache
     fetch-events.mjs        scarica il wikitext degli eventi, in cache
     load-cards.mjs          interpreta le carte e le scrive, idempotente
+    load-game-cards.mjs     le carte uscite su Global senza pagina wiki, dal datamine (db:game-cards)
+    game-cards.mjs          la sua scelta: quali righe del datamine sono carte che mancano davvero
     load-events.mjs         idem per eventi, stage e difficoltà
     load-game-events.mjs    gli eventi che il wiki non ha, dal datamine del gioco
     game-events/            i suoi moduli: classify, build, write, i legami del wiki
@@ -239,6 +243,11 @@ test/smoke.sh               prova di fumo sul sito che gira (npm run test:smoke)
 test/auth-smoke.sh          il giro del magic link sul sito che gira (npm run test:auth-smoke)
 lib/auth/                   better-auth: configurazione, mittente del link, Server Action
 lib/dal.ts                  chi e' l'utente: requireUser / requireOnboardedUser
+lib/clears/                 le Server Action dei clear, i loro validatori e le frasi d'errore
+lib/clears.ts               le letture del builder e del clear: modifica, cambi, voti, commenti
+lib/cards.ts                la ricerca delle carte per il picker (anche GET /api/cards)
+components/builder/         il builder dei clear: slot, picker delle carte, dettagli, prove
+components/clears/          la scheda di un clear: squadre, cambi, voti, commenti, Delete
 ```
 
 ### Sulle migrazioni
@@ -276,6 +285,33 @@ con finestre temporali) e il **calendario**.
 **Si uniscono sull'id del gioco**, verificato: i 2651 id ricavati dal wiki
 esistono tutti nel datamine, 2651 su 2651. Per questo `load-datamine` non
 sostituisce le carte, le *corregge*, e `load-cards` deve girare prima.
+
+**Le carte che il wiki non ha ancora** (migrazione 0015, `load-game-cards`).
+Il wiki ha smesso di creare pagine carta a fine luglio 2026, il gioco no: 46
+unità uscite su Global esistevano solo nel datamine. Ora entrano con il nome
+inglese del gioco, tipo, classe e rarità con la stessa decodifica di
+`load-datamine`, la data di uscita Global e `imported_from = 'datamine'`;
+l'**epiteto resta NULL** (il gioco non ce l'ha, e inventarlo sarebbe un dato
+falso), niente statistiche né testi delle skill, niente immagini. La scelta è
+fatta di regole, non di una lista, così le uscite future entrano da sole:
+id a 7 cifre col prefisso 1/2/3, `open_at` già passato e non 2038, una
+passiva o un link (senza è un oggetto), un'unità sola fra base e
+Z-awakened (l'id della base, come il wiki; la classe della base viene dalla
+Z-awakened, giusta 1373 volte su 1376 sulle carte del wiki). Restano fuori
+le unità già coperte dal wiki, le righe alla data minima del lancio
+(2015-10-30: Android #14/#15 e tre copie spente) e le **copie**: stesso set
+della leader skill, stesso nome, tipo e rarità di un'altra unità (le
+ristampe come 1032520 = 1012360, e i secondi id delle pagine dei cloni di
+Goku Black). Il solo set condiviso non basta: le cinque Metal Cooler ne
+hanno uno solo e sono carte distinte. Il giorno che il wiki pubblica la
+pagina, `load-cards` fa upsert sullo stesso id e riempie l'epiteto; da lì
+`load-game-cards` la vede coperta e non la tocca più.
+
+Le **catene di risveglio** del gioco vanno fra le forme Z-awakened
+(1034131 → 1034141), mentre le nostre carte hanno l'id della base: lette
+così com'erano non se ne collegava nessuna. `load-datamine` ora riporta ogni
+capo alla sua unità; contro le catene del wiki tornano 1071 su 1073, e ne
+aggiunge 192 dove il wiki non ne indicava (23 sulle carte nuove).
 
 Un errore che vale la pena raccontare: avevo letto `element` 20-24 come
 "carte nemico da filtrare". Il controllo incrociato contro i dati del wiki
@@ -1047,8 +1083,83 @@ per il dominio vero, che ancora non c'è.
    che comunque serve: salviamo email, handle, IP e user agent delle sessioni.
 
 Non ancora fatto: scollegare un provider e cancellare l'account da
-Settings, e collegare le Server Action di scrittura (invio, voto, commenti)
-a `requireOnboardedUser`.
+Settings. Le Server Action di scrittura (invio, voto, commenti) sono in
+`lib/clears/actions.ts`, su `requireOnboardedUser` (sotto).
+
+## Il builder dei clear (migrazione 0016)
+
+Il sito non scrive team, assetti e slot uno per uno: manda il modulo intero
+come jsonb a `submit_clear_from_builder(autore, run, tier, payload)`, che
+in **una** transazione valida, crea il team (con il nome del leader), i suoi
+assetti e gli slot, e poi chiama `submit_clear` del 0002. Le regole di
+quello (assetto completo, ricorrenza iniziata, prove) restano scritte una
+volta sola. `revise_clear_from_builder(autore, clear, motivo, payload)` fa
+lo stesso con `revise_clear`, e torna l'id della versione nuova.
+
+- **Il payload.** Da 1 a 4 assetti: il #1 è la squadra di partenza, gli
+  altri sono i cambi a metà evento, con un nome (obbligatorio, 40
+  caratteri) e una nota (500). Ognuno ha 7 unità nella forma 2+2+3, un
+  leader e un friend (anche la stessa carta), carte che esistono. Poi
+  `no_items`, `deathless`, `turns` (1-99 o null), `note` (2000), `lang`,
+  `proofs` (0-3, screenshot o video, solo https; gli accorciatori li
+  rifiuta `proof_provider`).
+- **Ogni rifiuto ha un nome.** Il database mette `builder_*` nel campo
+  CONSTRAINT dell'errore; `lib/clears/errors.ts` lo traduce in inglese.
+  La suite controlla che ogni nome della migrazione abbia la sua frase.
+- **I cambi sono congelati con la versione.** `lineup_snapshot` e
+  `clear_card` vedono solo l'assetto #1 (e continuano a servire le pagine
+  e i filtri per carta). `clear_lineup` e `clear_lineup_card` tengono
+  tutti gli assetti di ogni versione: si scrivono solo nella transazione
+  che crea la versione, non si modificano, e si cancellano solo in cascata
+  con lei. I clear nati prima del 0016 non hanno righe lì: per loro c'è
+  solo l'assetto di partenza (`getClearForEdit` lo rilegge da `clear_card`).
+- **La revisione** riscrive al posto il team se lo usa solo quel clear,
+  altrimenti ne crea uno nuovo. Le prove sono quelle del payload (il
+  modulo parte da quelle della versione corrente); una prova che resta si
+  porta dietro l'ultimo controllo del link. Voti e commenti restano sulla
+  versione vecchia, come sempre.
+- **Il freno.** Al massimo 10 invii, 20 revisioni e 30 commenti l'ora per
+  utente, contati in `clear_write_log`: un registro che cancellare i
+  clear non svuota. Un invio rifiutato non conta (la transazione cade).
+- **Voti e commenti dal sito** passano da `vote_clear_version` e
+  `comment_clear_version`, che accettano solo la versione **corrente** di
+  un clear pubblicato: se il clear è stato rivisto mentre la pagina era
+  aperta, il voto non finisce su un assetto mai visto. Il proprio clear
+  non si vota (regola di `vote_clear`); un voto per utente e versione, che
+  si cambia rivotando e si ritira con 0. Il proprio clear si commenta: è il
+  modo di rispondere. `vote_clear` e `add_clear_comment` del 0002 restano
+  come sono.
+- **Chi è l'autore** lo decide sempre la sessione: le Server Action di
+  `lib/clears/actions.ts` (`submitClear`, `reviseClear`, `deleteClear`,
+  `voteClear`, `addComment`) partono da `requireOnboardedUser()`, validano
+  il form con le funzioni pure di `lib/clears/validate.ts` e non leggono
+  mai un id utente dall'input. Il database rifà comunque tutto, e
+  controlla che `p_author` esista e abbia finito /welcome.
+- **Il picker** legge `GET /api/cards?q=&type=&class=&rarity=&category=&offset=`:
+  solo carte uscite su Global, 40 per pagina, parametri sbagliati danno 400.
+
+Le verifiche sono `db/test/submit.test.mts` (gli ingressi SQL) e
+`db/test/clears-lib.test.mts` (validatori, letture, la rotta).
+
+### Le pagine
+
+- **Pagina evento.** Nel pannello del livello scelto c'è "Submit a clear"
+  (chi non è entrato vede "Sign in to submit a clear", con `?next=` al
+  builder dello stesso livello). Ogni clear mostra i cambi di squadra sotto
+  la partenza, i voti (su e giù, il voto di chi guarda, `useOptimistic`),
+  i commenti della versione corrente in un `<details>` chiuso, e per
+  l'autore Edit e Delete (con conferma). I dati in più li legge
+  `lib/clears/vista.ts`, poche query per pagina.
+- **`/events/[id]/submit?tier=`** e **`/events/[id]/clears/[clearId]/edit`**:
+  lo stesso builder (`components/builder/`). Lo stato è un `useReducer`
+  puro in `lib/clears/builder-stato.ts` e parte come un solo campo JSON;
+  prima dell'invio passa `parseBuilderPayload`, lo stesso controllo
+  dell'azione. Il picker è un `<dialog>` modale (a schermo pieno sotto i
+  640px) su `/api/cards`, con frecce, Enter ed Escape. In modifica la
+  ricorrenza non si cambia: `revise_clear_from_builder` non la prende.
+  La modifica di un clear altrui risponde 404.
+
+Lo stato del form lo prova `db/test/builder-stato.test.mts`.
 
 ## Cosa manca, in ordine
 
@@ -1083,14 +1194,13 @@ a `requireOnboardedUser`.
    le campagne su più eventi. Japan non ha missioni: il datamine è Global.
    Solo 45 oggetti su 1677 hanno un'icona; le altre aspettano il CDN del
    wiki o le immagini del gioco.
-5. **Gli account, da collegare alle scritture.** L'accesso c'è (sopra);
-   mancano le Server Action di invio, voto e commento su
-   `requireOnboardedUser`, e da Settings scollegare un provider e
+5. **Gli account, da finire.** Da Settings scollegare un provider e
    cancellare l'account.
-6. **La prima fetta verticale:** una pagina evento che elenca i suoi clear,
-   più il form di invio dietro il login.
-7. **Il team builder.** Il grosso del lavoro di interfaccia, e il collo di
-   bottiglia dell'invio. Ora ha dati veri e immagini su cui girare.
+6. **L'invio, da rifinire.** Le pagine ci sono (sotto). Mancano la storia
+   delle versioni nella pagina (`getClearVersions` è pronta), un modo di
+   riusare le proprie squadre invece di ricomporle, e la ricerca delle
+   carte per chi gioca la versione giapponese (il picker mostra solo le
+   uscite Global; il builder accetta qualsiasi carta).
 
 ## Nota su Next.js
 

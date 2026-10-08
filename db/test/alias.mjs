@@ -17,6 +17,10 @@ const ROOT = new URL('../../', import.meta.url)
 if (isMainThread) register(import.meta.url)
 
 export async function resolve(specifier, context, next) {
+  // 'server-only' fuori da Next lancia sempre (non c'e' la condizione
+  // react-server): nei test i moduli di lib/ girano gia' sul server, quindi
+  // vale un modulo vuoto.
+  if (specifier === 'server-only') return { url: 'data:text/javascript,', shortCircuit: true }
   if (!specifier.startsWith('@/')) return next(specifier, context)
   const rel = specifier.slice(2)
   const file = /\.(ts|mts|tsx|js|mjs)$/.test(rel) ? rel : `${rel}.ts`

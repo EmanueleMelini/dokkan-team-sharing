@@ -3,7 +3,9 @@ import { assetUrl } from '@/lib/db'
 import { Tipo } from '@/components/tipo'
 
 export type CartaProps = {
-  epithet: string
+  // NULL per le carte che il wiki non ha ancora (0015): la riga resta
+  // vuota invece di inventare un epiteto
+  epithet: string | null
   name: string
   type: string
   class?: string | null
@@ -51,9 +53,11 @@ export function Carta({ epithet, name, type, class: classe, thumbKey, ruolo }: C
         <div className="text-[13px] font-medium text-inchiostro leading-tight truncate" title={name}>
           {name}
         </div>
-        <div className="text-[11px] text-tenue leading-tight truncate" title={epithet}>
-          {epithet}
-        </div>
+        {epithet && (
+          <div className="text-[11px] text-tenue leading-tight truncate" title={epithet}>
+            {epithet}
+          </div>
+        )}
         <Tipo tipo={type} classe={classe} />
       </div>
     </div>

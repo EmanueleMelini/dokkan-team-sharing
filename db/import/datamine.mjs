@@ -88,3 +88,33 @@ export const gameStart = (s) => new Date(Math.floor(utc(s).getTime() / MIN) * MI
 // La fine diventa un limite ESCLUSIVO al minuto: 07:59:59 -> 08:00, e le
 // 08:00:00..08:00:07 (secondi usati come ordinamento) -> 08:00.
 export const gameEnd = (s) => new Date(Math.floor((utc(s).getTime() + 1000) / MIN) * MIN)
+
+// ------------------------------------------- decodifica delle carte
+
+// Qui e non in load-datamine perche' load-game-cards deve leggere tipo,
+// classe e rarita' con LO STESSO codice: due decodifiche diverse
+// darebbero alla stessa carta una classe a seconda di chi l'ha scritta.
+//
+// Verificato incrociando 2632 carte con i dati del wiki:
+//   element 0-4    tipo giusto, classe NON ancora definita (forme base)
+//   element 10-14  Super   AGL TEQ INT STR PHY   (99-100% di accordo)
+//   element 20-24  Extreme AGL TEQ INT STR PHY   (99-100% di accordo)
+// Le 20-24 sono le unita' Extreme, non carte nemico.
+export const TYPES = ['AGL', 'TEQ', 'INT', 'STR', 'PHY']
+export const decodeElement = (raw) => {
+  const e = int(raw)
+  if (e === null) return null
+  const band = Math.floor(e / 10), idx = e % 10
+  if (idx > 4) return null
+  if (band === 1) return { type: TYPES[idx], cls: 'Super' }
+  if (band === 2) return { type: TYPES[idx], cls: 'Extreme' }
+  return { type: TYPES[idx], cls: null }      // forma base, classe ignota
+}
+
+// Verificato al 100% su tutte le rarita'
+export const RARITY = ['N', 'R', 'SR', 'SSR', 'UR', 'LR']
+export const decodeRarity = (raw) => RARITY[int(raw)] ?? null
+
+// Le unita' giocabili hanno id a 7 cifre; quelle piu' lunghe (50003011,
+// 501023491) sono boss e varianti interne.
+export const isPlayable = (c) => String(c.id).length === 7

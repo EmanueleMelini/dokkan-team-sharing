@@ -95,9 +95,20 @@ function areaStages(d, ev) {
   return stages
 }
 
+// La copertina si vede solo se la carta ha un'immagine: le carte prese dal
+// gioco non ne hanno, e un boss del genere toglieva la copertina a eventi
+// che prima l'avevano. Quindi si cerca prima fra le carte con immagine
+// (ours e' una Map id -> ha l'immagine), poi fra tutte. Con un Set, che non
+// sa delle immagini, resta la ricerca di prima.
+const conImmagine = (ours) => ({ has: (c) => ours.get?.(c) === true })
+
 // la copertina: il boss della difficolta' piu' alta dell'ultimo stage, o
 // di quello prima se l'ultimo non ha una carta che conosciamo
 function areaCover(d, stages, ours) {
+  return areaCoverIn(d, stages, conImmagine(ours)) ?? areaCoverIn(d, stages, ours)
+}
+
+function areaCoverIn(d, stages, ours) {
   for (const s of [...stages].reverse()) {
     const t = s.tiers.reduce((a, b) => (DIFF.indexOf(b.difficulty) > DIFF.indexOf(a.difficulty) ? b : a))
     for (const e of t.boss) { const c = cardFor(d, e.card_id, ours); if (c) return c }
@@ -152,6 +163,10 @@ function ezaStages(d, id) {
 }
 
 function ezaCover(d, id, stages, ours) {
+  return ezaCoverIn(d, id, stages, conImmagine(ours)) ?? ezaCoverIn(d, id, stages, ours)
+}
+
+function ezaCoverIn(d, id, stages, ours) {
   const res = cardFor(d, d.zView.get(id)?.enemy_resource_id, ours)
   if (res) return res
   for (const c of stages[0]?.cards ?? []) { const x = cardFor(d, c, ours); if (x) return x }

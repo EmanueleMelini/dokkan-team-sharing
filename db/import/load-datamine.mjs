@@ -32,6 +32,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import pg from 'pg'
 import { connectionString, describeTarget } from '../env.mjs'
+import { decodeElement, decodeRarity, isPlayable } from './datamine.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const DIR = join(HERE, '.cache', 'datamine')
@@ -81,29 +82,8 @@ const int = (v) => { const n = Number(v); return Number.isFinite(n) ? Math.round
 
 // ------------------------------------------------- decodifica del gioco
 
-// Verificato incrociando 2632 carte con i dati del wiki:
-//   element 0-4    tipo giusto, classe NON ancora definita (forme base)
-//   element 10-14  Super   AGL TEQ INT STR PHY   (99-100% di accordo)
-//   element 20-24  Extreme AGL TEQ INT STR PHY   (99-100% di accordo)
-// Le 20-24 sono le unita' Extreme, non carte nemico: era il mio errore.
-const TYPES = ['AGL', 'TEQ', 'INT', 'STR', 'PHY']
-const decodeElement = (raw) => {
-  const e = int(raw)
-  if (e === null) return null
-  const band = Math.floor(e / 10), idx = e % 10
-  if (idx > 4) return null
-  if (band === 1) return { type: TYPES[idx], cls: 'Super' }
-  if (band === 2) return { type: TYPES[idx], cls: 'Extreme' }
-  return { type: TYPES[idx], cls: null }      // forma base, classe ignota
-}
-
-// Verificato al 100% su tutte le rarita'
-const RARITY = ['N', 'R', 'SR', 'SSR', 'UR', 'LR']
-const decodeRarity = (raw) => RARITY[int(raw)] ?? null
-
-// Le unita' giocabili hanno id a 7 cifre; quelle piu' lunghe (50003011,
-// 501023491) sono boss e varianti interne.
-const isPlayable = (c) => String(c.id).length === 7
+// tipo, classe, rarita' e "giocabile" stanno in datamine.mjs: li usa anche
+// load-game-cards, e le due letture devono coincidere.
 
 // ------------------------------------------------------------- lettura
 
@@ -145,8 +125,9 @@ const chunks = (a, n) => Array.from({ length: Math.ceil(a.length / n) }, (_, i) 
 try {
   await client.query('begin')
 
-  // quali carte abbiamo: si arricchiscono solo quelle, non si inseriscono
-  // le altre — senza epiteto sarebbero righe inservibili nel builder
+  // quali carte abbiamo: si arricchiscono solo quelle. Le unita' uscite
+  // senza pagina wiki le inserisce prima load-game-cards, quindi qui ci
+  // sono gia' e ricevono link, categorie e risvegli come le altre.
   const { rows: mine } = await client.query('select id from card')
   const ids = mine.map((r) => String(r.id)).filter((id) => byId.has(id))
   console.log(`\n  nostre carte: ${mine.length}, di cui nel datamine: ${ids.length}`)
@@ -244,12 +225,22 @@ try {
   //    ce l'abbiamo. Su 6979 rotte del gioco se ne collegano pochissime.
   //    Quindi qui si AGGIUNGE soltanto: le catene che il wiki ha ricavato
   //    dal "dokkan thumb" NON si toccano. (Prima le azzeravo e ne ho
-  //    perse 1064 in un colpo: le rotte del gioco diventano utili solo
-  //    importando anche le 9427 carte giocabili, non le nostre 2632.)
+  //    perse 1064 in un colpo.)
+  //
+  //    Le rotte Dokkan del gioco partono e arrivano sulla forma
+  //    Z-awakened (1034131 -> 1034141), mentre le nostre carte hanno l'id
+  //    della base (1034130, 1034140), come il wiki. Leggendo gli id cosi'
+  //    com'erano non se ne collegava nessuna: ogni capo torna all'unita'
+  //    che abbiamo. Contro le catene del wiki cosi' tornano 1071 su 1073.
+  //    Le rotte Zet (base -> Z-awakened) sono la stessa carta, le Optimal
+  //    non sono catene: restano fuori.
+  const ours = (id) => wanted.has(id) ? id
+    : id.endsWith('1') && wanted.has(String(Number(id) - 1)) ? String(Number(id) - 1) : null
   const chain = routes
-    .filter((r) => wanted.has(String(r.card_id)) && wanted.has(String(r.awaked_card_id))
-                   && r.card_id !== r.awaked_card_id)
-    .map((r) => [Number(r.awaked_card_id), Number(r.card_id)])
+    .filter((r) => r.type === 'CardAwakeningRoute::Dokkan')
+    .map((r) => [ours(String(r.awaked_card_id)), ours(String(r.card_id))])
+    .filter(([into, from]) => into && from && into !== from)
+    .map(([into, from]) => [Number(into), Number(from)])
   const { rowCount } = chain.length ? await client.query(`
     update card set awakens_from = m.from_id
     from (select distinct on (into_id) * from unnest($1::bigint[], $2::bigint[])

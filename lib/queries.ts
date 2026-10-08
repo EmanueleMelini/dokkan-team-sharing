@@ -256,7 +256,8 @@ export type ClearCard = {
   role: 'leader' | 'member' | 'friend'
   card_id: string
   name: string
-  epithet: string
+  // NULL per le carte che il wiki non ha ancora documentato (0015)
+  epithet: string | null
   type: string
   class: string
   rarity: string
@@ -287,6 +288,10 @@ export type ClearRow = {
   lifetime_score: number
   proofs: ClearProof[]
   cards: ClearCard[]
+  // I cambi di assetto a meta' evento della versione mostrata (0016): le
+  // carte si leggono con getVersionLineups, qui solo quanti sono.
+  changes: number
+  comments: number
 }
 
 export const CLEAR_PER_PAGINA = 20
@@ -320,7 +325,11 @@ export async function listClears(
               join card cd on cd.id = cl.card_id
               left join card_text ct on ct.card_id = cl.card_id and ct.locale = 'en'
               where cl.version_id = c.version_id
-            ), '[]'::json) as cards
+            ), '[]'::json) as cards,
+            (select count(*) from clear_lineup l
+              where l.version_id = c.version_id and l.seq > 1)::int as changes,
+            (select count(*) from clear_comment m
+              where m.version_id = c.version_id)::int as comments
      from clear_current c
      join app_user u on u.id = c.author_id
      join clear_reputation rep on rep.clear_id = c.id
