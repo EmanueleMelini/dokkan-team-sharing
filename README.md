@@ -15,11 +15,12 @@ missioni veri. Sopra c'è il sito: le pagine degli eventi, gli account e il
 builder con cui si inviano i clear. I numeri sono quelli di `dokkan_dev`
 all'8 ottobre 2026.
 
-- **63 tabelle, 3 view, 11 trigger, 49 funzioni** su PostgreSQL 15, in 21
+- **65 tabelle, 3 view, 11 trigger, 52 funzioni** su PostgreSQL 15, in 23
   migrazioni
 - **2697 carte**: 2651 dal wiki, con link skill, categorie, statistiche e
   date di uscita separate per Japan e Global, più 46 che ha solo il gioco
-  (senza epiteto). 662 hanno l'EZA, 299 anche la Super EZA
+  (senza epiteto). 662 hanno l'EZA, 299 anche la Super EZA. I testi
+  completi delle skill sono 10.705 righe di `card_skill` (sezione sul 0022)
 - **792 eventi**: 600 dal wiki (100 storia, 208 challenge, 152 Extreme
   Z-Battle, 114 limited, 20 bonus, 6 altri), banner compresi, e **192 dal
   gioco** che il wiki non documenta (2025-2026: 14 storia, 71 challenge, 86
@@ -33,11 +34,17 @@ all'8 ottobre 2026.
   sua regola su chi la monta: 1852 per tipo e classe, 5042 per categoria,
   1825 per lista di carte, 138 per nome
 - **6246 immagini** ospitate da noi
-- **1135 verifiche automatiche** in `db:test`: 27 passi, di cui 9
-  preparano il database e 18 sono suite di verifica, tutte verdi, su un
+- **1498 verifiche automatiche** in `db:test`: 33 passi, di cui 9
+  preparano il database e 24 sono suite di verifica, tutte verdi, su un
   database a parte che non è quello di sviluppo
 
-Due regole recenti da sapere:
+Tre regole recenti da sapere:
+
+- **Le pagine pubbliche stanno in cache e non leggono la sessione.** Gli
+  URL degli eventi si costruiscono con `lib/urls.ts`, i dati di chi guarda
+  arrivano solo da `/api/me` nelle isole client, e ogni scrittura
+  invalida per tag (sezione "Cache e budget CPU"). Dopo un import in
+  locale: `npm run cache:clear`.
 
 - **Le azioni sensibili chiedono un accesso recente.** Scollegare o
   collegare un provider e cancellare l'account passano solo con una
@@ -108,8 +115,13 @@ dopo `load-datamine` (`db/prod/pipeline.mjs`, spiegato in "Messa online").
 3. ci importa i dati veri dalle cache locali (carte, eventi, datamine), senza
    nessuna richiesta di rete;
 4. verifica le **query che alimentano le pagine** chiamando le funzioni vere
-   di `lib/queries.ts` (`queries.test.mts`, 124) e i **parametri dell'URL**
-   di `lib/parametri.ts` (`parametri.test.mts`, 42).
+   di `lib/queries.ts` (`queries.test.mts`, 124), i **parametri dell'URL**
+   di `lib/parametri.ts` (`parametri.test.mts`, 42), gli **URL degli
+   eventi** di `lib/urls.ts` (`urls.test.mts`) e i **tag della cache**
+   (`cache-tags.test.mts`);
+5. poi le suite del builder, degli account, dei dati del gioco, dei testi
+   delle skill (`card-page.test.mts`) e, per ultima, dell'aggiornamento
+   settimanale (`weekly-data.test.mts`).
 
 Un passo che prepara i dati, se fallisce, ferma tutto; una suite rossa non
 ferma le altre. Alla fine c'è un riepilogo, e il comando esce con errore se
@@ -143,10 +155,15 @@ alias `@/` di tsconfig.
 `npm run test:smoke` è un'altra cosa e **non fa parte di `db:test`**: prova
 il sito che gira già (per difetto `http://localhost:3000`, si cambia con
 `SMOKE_URL`) con sole richieste GET, quindi non scrive niente. Controlla i
-codici HTTP e i testi chiave della lista eventi, della ricerca con `_`, `%`
-e `%00`, delle pagine che non esistono (404, non 500), di un'EZA e di una
-sfida. Gli eventi da aprire li prende dalla lista: servono i dati importati,
-non i clear dimostrativi.
+codici HTTP e i testi chiave della lista eventi e delle viste filtrate
+(`/events/browse`, noindex), della ricerca con `_`, `%` e `%00`, delle
+pagine che non esistono (404, non 500), di un'EZA, di una sfida, degli URL
+delle viste (`/japan`, `/t/<tier>`, `/p/<n>`, con i loro 404), del 307 da
+`/` a `/events`, di `robots.txt` e di `/api/me` senza cookie. Gli eventi da
+aprire li prende dalle viste filtrate: servono i dati importati, non i
+clear dimostrativi. Contro `next start` con `SMOKE_EXPECT_CACHE=1`
+controlla anche che la seconda visita esca dalla cache (`x-nextjs-cache:
+HIT`).
 
 `npm run db:demo` crea tre clear dimostrativi su un evento **vero**,
 passando da `submit_clear()` — serve a vedere la pagina popolata invece che
@@ -244,13 +261,17 @@ db/
     0018_slot_builds.sql    le build degli slot (Hidden Potential, Skill Orb), congelate con la versione
     0019_account_settings.sql  Settings: unlink_provider, delete_account, le segnalazioni col bersaglio
     0021_equipment_limits.sql  le Skill Orb esclusive: chi puo' montare quale sfera, controllato dal builder
+    0022_card_skills.sql    card_skill: i testi completi delle skill, con EZA e Super EZA; set_prefers_animated
+    0023_import_run.sql     import_run: un import alla volta, e l'ultimo riuscito per l'aggiornamento settimanale
   seed/                     demo-clears.mjs: tre clear dimostrativi su un evento vero (db:demo)
   queries/reference.sql     le query di lettura principali, documentate
   test/                     le verifiche: run.sh le mette in fila (npm run db:test)
+  cache-clear.mjs           invalida la cache del server di sviluppo dopo un import (npm run cache:clear)
   import/
     fetch-wiki.mjs          scarica il wikitext delle carte, in cache
     fetch-events.mjs        scarica il wikitext degli eventi, in cache
     load-cards.mjs          interpreta le carte e le scrive, idempotente
+    wiki-skills.mjs         il template Characters letto come MediaWiki: i testi delle skill (card_skill)
     load-game-cards.mjs     le carte uscite su Global senza pagina wiki, dal datamine (db:game-cards)
     game-cards.mjs          la sua scelta: quali righe del datamine sono carte che mancano davvero
     load-events.mjs         idem per eventi, stage e difficoltà
@@ -267,6 +288,10 @@ db/
     target.mjs              il bersaglio: PROD_DATABASE_URL, i rifiuti, il TLS, la conferma --yes
     pipeline.mjs            l'ordine dell'import, uguale per setup e update
     harden.mjs              toglie i privilegi su public ai ruoli della Data API di Supabase
+    snapshot.mjs, compare.mjs, limits.json  la fotografia delle tabelle e i limiti dell'aggiornamento settimanale
+    dump.mjs, rehearsal.mjs il backup della produzione e il giro di prova su una copia locale
+    sanity.mjs, last-run.mjs, missing-assets.mjs, mirror-assets.mjs  i controlli e le immagini del workflow
+.github/workflows/weekly-data.yml  l'aggiornamento settimanale automatico (Messa online, punto j)
 public/assets/              le immagini ospitate da noi (non versionate)
   migrate.mjs               runner: applica le pendenti, una transazione ciascuna
   reset.mjs                 ricostruisce il database di sviluppo da zero
@@ -275,7 +300,10 @@ docs/                       l'analisi competitiva e le decisioni di progetto
 test/smoke.sh               prova di fumo sul sito che gira (npm run test:smoke)
 test/auth-smoke.sh          il giro del magic link sul sito che gira (npm run test:auth-smoke)
 lib/auth/                   better-auth: configurazione, mittente del link, Server Action
-lib/dal.ts                  chi e' l'utente: requireUser / requireOnboardedUser
+lib/dal.ts                  chi e' l'utente: requireUser / requireOnboardedUser (mai nelle pagine pubbliche)
+lib/urls.ts                 gli URL degli eventi: /events/<id>[/japan][/t/<tier>[/p/<n>]], /events/browse
+lib/cache/                  'use cache' sopra le query pure, i tag, l'invalidazione, /api/revalidate
+lib/viewer/                 chi guarda: il tipo di /api/me e il cookie dts_signed_in
 lib/clears/                 le Server Action dei clear, i loro validatori e le frasi d'errore
 lib/clears.ts               le letture del builder e del clear: modifica, cambi, voti, commenti
 lib/cards.ts                la ricerca delle carte per il picker (anche GET /api/cards)
@@ -287,6 +315,9 @@ scripts/assets-deploy.mjs   public/assets su Cloudflare Pages, con _headers (ass
 backups/                    le copie di prod:backup (non versionate)
 components/builder/         il builder dei clear: slot, picker delle carte, build, dettagli, prove
 components/clears/          la scheda di un clear: squadre, cambi, voti, commenti, Delete
+components/evento/, eventi/ la pagina evento e la lista, uguali per tutti (stanno in cache)
+components/viewer/          ViewerProvider e useViewer(): le isole client che leggono /api/me
+test/cpu.sh                 la CPU per richiesta su next start (npm run test:cpu)
 ```
 
 ### Sulle migrazioni
@@ -394,6 +425,16 @@ che glielo permette.
 
 `card.imported_from` vale `wiki` su queste righe: il giorno che esiste una
 pipeline dall'APK si sa esattamente cosa sostituire.
+
+### I testi delle skill (migrazione 0022)
+
+`card_text` tiene un riassunto per carta (leader, passiva e super di base) per la ricerca e il builder. I testi completi stanno in `card_skill`, una riga per skill: leader, super (anche 2-3 per le forme con più super), Ultra Super Attack, passiva, attiva con la condizione, Standby, dominio, trasformazione, Unit Super, EX Super e Finish, ognuna con le varianti EZA (`tier = 'eza'`) e Super EZA (`'seza'`) quando il wiki le scrive. A un'EZA senza nome passa quello della base.
+
+Il template si legge come lo legge MediaWiki (`db/import/wiki-skills.mjs`): i parametri si dividono sui `|` fuori da link, template e note, quindi `|SA type = Ki |SA name = Galick Gun` dà tutti e due i campi e la passiva che va a capo dopo un `<hr>` resta intera. Le note `<ref>` (i numeri esatti dietro "Raises DEF") vanno in `details` e non restano incollate al testo; quelle con nome riusate dall'EZA prendono la loro definizione. `description` tiene una riga per effetto, e `- ` segna un punto elenco. Le frecce del wiki diventano ↑ e ↓, Permanent e OneTime diventano "(Permanent)" e "(Once only)", le icone dei tipi tornano parole.
+
+Si prende la prima scheda della pagina, cioè la carta. Attiva, Standby, dominio, Unit Super, EX Super e Finish si prendono da un'altra scheda solo se la prima non li ha (il Finish sta sulla scheda della modalità Standby).
+
+Sul database di sviluppo: 10.705 righe su 2.651 carte; leader EZA 649, passiva Super EZA 33, Ultra 185, attive 217. Le 46 carte solo del datamine non hanno testi. load-cards stampa la copertura per tipo e livello a ogni giro: un calo improvviso dice che il parser ha perso un campo. L'import resta idempotente: cancella e riscrive le righe `official` delle carte che importa, nella stessa transazione.
 
 ### Attribuzione, che non è opzionale
 
@@ -1171,7 +1212,9 @@ parte**, apposta.
   ricalcolati dai trigger). L'unico buco era `report`, il cui `target_id`
   è polimorfico e senza FK: ora un trigger toglie la segnalazione quando
   sparisce il suo clear, la sua tip o la sua prova (vale anche per
-  `delete_clear`). Dopo, `signOut` toglie il cookie e si torna a
+  `delete_clear`). Prima di cancellare raccoglie gli eventi, le carte e i
+  profili che l'utente ha toccato, e dopo li invalida nella cache. Poi
+  `signOut` toglie il cookie (e `dts_signed_in`) e si torna a
   `/events?account=deleted`, con un avviso che chi è dentro non vede.
 - Il limite è nella natura: si cancella una volta, e si scollegano al più
   tre provider.
@@ -1259,13 +1302,18 @@ Le verifiche sono `db/test/submit.test.mts` (gli ingressi SQL) e
 
 ### Le pagine
 
-- **Pagina evento.** Nel pannello del livello scelto c'è "Submit a clear"
+- **Pagina evento.** Il livello scelto sta nel percorso
+  (`/events/<id>[/japan]/t/<tier>[/p/<n>]`, sezione "Cache e budget CPU").
+  Nel suo pannello c'è "Submit a clear"
   (chi non è entrato vede "Sign in to submit a clear", con `?next=` al
   builder dello stesso livello). Ogni clear mostra i cambi di squadra sotto
   la partenza, i voti (su e giù, il voto di chi guarda, `useOptimistic`),
   i commenti della versione corrente in un `<details>` chiuso, e per
   l'autore Edit e Delete (con conferma). I dati in più li legge
-  `lib/clears/vista.ts`, poche query per pagina.
+  `lib/clears/vista.ts`, poche query per pagina; voto, Edit/Delete, modulo
+  dei commenti e invio sono isole client che leggono `/api/me?tier=`, così
+  l'HTML della pagina è uguale per tutti e sta in cache. Dopo un invio o
+  una revisione si arriva alla pagina dove il clear compare davvero.
 - **`/events/[id]/submit?tier=`** e **`/events/[id]/clears/[clearId]/edit`**:
   lo stesso builder (`components/builder/`). Lo stato è un `useReducer`
   puro in `lib/clears/builder-stato.ts` e parte come un solo campo JSON;
@@ -1414,8 +1462,11 @@ per non arrivarci.
   scritto da Vercel: un header mandato dal client non lo sposta.
   `AUTH_IP_HEADERS` lo cambia (per esempio dietro un altro proxy).
 - `robots.ts` e `sitemap.ts`: indicizzati gli eventi; fuori API, accesso,
-  Settings e pagine di invio. La sitemap ha `/events` e gli ultimi
-  200 eventi, letti a ogni richiesta (il build non tocca il database).
+  Settings, pagine di invio e le viste filtrate (`/events/browse`). La
+  sitemap ha `/events` e tutti gli eventi, in cache per un giorno.
+  **Il build legge il database** (solo SELECT): prerenderizza `/events`, la
+  sitemap e fino a 100 eventi (sezione "Cache e budget CPU"), quindi
+  `DATABASE_URL` deve rispondere anche durante il build.
   `robots.txt` è statico e prende l'URL da `BETTER_AUTH_URL` **al build**.
 - `.vercelignore` lascia fuori `public/assets` (1,2 GB) e le cache
   dell'import: il build non ne ha bisogno.
@@ -1423,6 +1474,31 @@ per non arrivarci.
 Le variabili su Vercel, una per una, e tutti i passi della prima messa
 online sono nella sezione seguente. Le prove: `npm run db:test` (passi
 "configurazione di produzione" e "script di produzione").
+
+## Cache e budget CPU
+
+Vercel Hobby dà 4 ore di CPU attiva al mese, senza extra. Per questo le pagine pubbliche (`/events`, `/events/<id>/…`) non leggono mai né la sessione né la query string: sono prerender (ISR) che la CDN serve senza invocare funzioni. Chi è dentro costa una sola richiesta a `/api/me` per pagina; chi non è dentro, niente.
+
+- **URL**: `/events` (statica) · `/events/browse?region=&type=&status=&q=&page=` (viste filtrate, dinamiche, noindex, escluse da `robots.txt`) · `/events/<id>` · `/events/<id>/japan` · `/events/<id>[/japan]/t/<tier>` · `…/t/<tier>/p/<n>` (n ≥ 2). Si costruiscono solo con `lib/urls.ts`. Un tier che non è dell'evento, `p/1` o una pagina oltre l'ultima sono 404. Su `next start` e su Vercel la prima visita a un URL non prerenderizzato riceve lo shell con 200 e il 404 nello stream (noindex); dalla seconda visita è un 404 vero, dalla cache. `/` porta a `/events` con un 307 (`next.config.ts`). Restano con la query string le pagine per utente: `/events/<id>/submit?tier=` (e `region=japan`) e `/events?account=deleted` dopo la cancellazione dell'account (l'avviso lo legge un'isola client).
+- **Dati**: `lib/cache/data.ts` (`'use cache'` con `cacheLife` e `cacheTag`) avvolge `lib/queries.ts` e `lib/clears.ts`, che restano senza cache perché i test li importano fuori da Next. Tag: `catalog`, `events-list`, `community`, `event:<id>`, `card:<id>`, `profile:<handle>`. Lo stato degli eventi (Ongoing/Ended) scade al prossimo inizio o fine di una run (minimo 5 minuti).
+- **Invalidazione** (`lib/cache/invalidate.ts`): invio, revisione, cancellazione e commento rigenerano subito l'evento (`updateTag`); il voto lo segna vecchio senza rigenerare (`revalidateTag` `'max'`): gli altri vedono il voto dopo una visita, chi vota lo vede subito da `/api/me`. Mai `revalidatePath('/', 'layout')`.
+- **Chi guarda**: il cookie `dts_signed_in=1` (non segreto, non httpOnly) lo mette better-auth a ogni accesso e lo toglie l'uscita; solo con lui il browser chiama `/api/me` (private, no-store). Header, voto, Edit/Delete, commenti e invio sono isole client (`components/viewer`).
+- **Import**: in produzione `db/prod/update.mjs` chiama `POST /api/revalidate` (Bearer `CRON_SECRET`, la stessa variabile del cron; serve anche `PROD_SITE_URL`, da mettere in `~/.config/dokkants/prod.env` per la routine a mano). In locale `db:import`, `db:refresh` e `db:demo` finiscono con `npm run cache:clear`; dopo una modifica a mano con psql lancialo tu, altrimenti `next dev` mostra i dati vecchi fino al riavvio. In `next dev` senza `CRON_SECRET` la rotta è aperta.
+- **Build**: legge il database (solo SELECT): fino a 100 eventi Global in corso o in arrivo, `/events` e la sitemap (tutti gli eventi). Se Supabase Free è in pausa, il build fallisce. Ogni deploy riparte con la cache vuota.
+- **Misure** (`test/cpu.sh` su `next start` locale, 200 richieste per classe, ms di CPU per richiesta):
+
+  | classe | prima (ogni pagina dinamica) | dopo | dopo, NEXT_CACHE_MEMORY=0 |
+  |---|---|---|---|
+  | /events | 8,50 | 1,65-1,85 (HIT) | 2,55 |
+  | pagina evento (20 id) | 6,10 | 1,40 (HIT) | 16,45 |
+  | pagina tier (16) | 5,45 | 1,30-1,85 (HIT) | 27,75 |
+  | /events/browse | 7,85 | 12-16 (dinamica) | 12,55 |
+  | /api/cards | 1,50 | 1,2-2,2 | 1,30 |
+
+  In locale anche una pagina in cache passa da Node (circa 1,5 ms); su Vercel esce dalla CDN e costa zero. La colonna NEXT_CACHE_MEMORY=0 è il caso peggiore: in locale le pagine generate a richiesta non restano, su Vercel stanno nella cache ISR durevole. Dopo il deploy: Vercel Observability → Functions (CPU attiva per rotta) e la pagina Usage (invocazioni, scritture ISR).
+- **Come misurare**: `npm run build`; `NODE_ENV=production NEXT_PRIVATE_DEBUG_CACHE=1 npx next start -p 3100 > /tmp/next.log 2>&1 &`; `CPU_URL=http://localhost:3100 CPU_LOG=/tmp/next.log npm run test:cpu`. In locale servono anche `RESEND_API_KEY` ed `EMAIL_FROM` finti, e `VERCEL=1` per non fare la pulizia delle sessioni su `dokkan_dev`.
+
+Le prove: `npm run db:test` (passi "URL degli eventi" e "cache: tag e /api/revalidate") e `npm run test:smoke`, che con `SMOKE_EXPECT_CACHE=1` contro `next start` controlla anche che la seconda visita a `/events` e a un evento sia un `x-nextjs-cache: HIT`.
 
 ## Messa online
 
@@ -1512,6 +1588,8 @@ La CLI carica la cartella del progetto: `.vercelignore` lascia fuori
    cat > ~/.config/dokkants/prod.env <<'X'
    PROD_DATABASE_URL='postgresql://postgres.<ref>:<password>@aws-…-eu-central-1.pooler.supabase.com:5432/postgres'
    PROD_DATABASE_CA_CERT="$HOME/.config/dokkants/prod-ca-2021.crt"
+   PROD_SITE_URL='https://dokkants.emanuelemelini.dev'
+   CRON_SECRET='<lo stesso di Vercel, passo f>'
    X
    chmod 600 ~/.config/dokkants/prod.env
    ```
@@ -1629,7 +1707,7 @@ resta quello di Cloudflare.
 
    | Variabile | Cosa metterci |
    | --- | --- |
-   | `DATABASE_URL` | la stringa del **Transaction pooler** (porta 6543) |
+   | `DATABASE_URL` | la stringa del **Transaction pooler** (porta 6543); serve anche al build, che legge gli eventi da prerenderizzare |
    | `DATABASE_CA_CERT` | il contenuto di `prod-ca-2021.crt`, PEM intero (vanno bene anche gli a capo scritti `\n`) |
    | `BETTER_AUTH_URL` | `https://dokkants.emanuelemelini.dev` (serve anche al build: `robots.txt` è statico) |
    | `BETTER_AUTH_SECRET` | **nuovo**, non quello di sviluppo: `openssl rand -base64 32` |
@@ -1698,8 +1776,14 @@ I callback di produzione stanno **accanto** a quelli di sviluppo
       account per provider, o un account con i tre collegati da Settings).
 - [ ] Il **magic link** arriva (Resend → Emails mostra "Delivered"), si
       apre e porta a `/welcome` per scegliere l'handle.
-- [ ] `/robots.txt` indica la sitemap di `dokkants.emanuelemelini.dev`, e
-      `/sitemap.xml` elenca gli eventi.
+- [ ] `/robots.txt` indica la sitemap di `dokkants.emanuelemelini.dev`,
+      esclude `/events/browse`, e `/sitemap.xml` elenca gli eventi.
+- [ ] **La cache**: un secondo `curl -sI` di `/events` e di una pagina
+      evento risponde con `x-vercel-cache: HIT` (o `STALE`), e
+      `/api/me` senza cookie dà `{"user":null}` con `cache-control`
+      `private, no-store`. Anche `SMOKE_URL=https://dokkants.emanuelemelini.dev
+      npm run test:smoke` passa (solo GET; senza `SMOKE_EXPECT_CACHE`,
+      che legge `x-nextjs-cache` di `next start` e non l'header di Vercel).
 - [ ] **Il cron**: Settings → Cron Jobs mostra `/api/cron/purge` alle 4
       UTC; "Run" lo lancia subito, e nei log della funzione la risposta è
       200 con `{"purged":n}`. Da fuori, `curl -i
@@ -1723,6 +1807,9 @@ npm run prod:update -- --yes    # solo l'import, dalle cache appena scaricate
 `prod:update` controlla prima che lo schema sia aggiornato (se ci sono
 migrazioni nuove, chiede `prod:setup`) e poi rifà la stessa fila di
 `prod:setup`, migrazioni escluse. Un secondo giro non cambia niente.
+Alla fine chiede al sito di rinfrescare le pagine (`POST /api/revalidate`
+con `PROD_SITE_URL` e `CRON_SECRET`); senza le due variabili lo salta, e
+le pagine si aggiornano solo alla scadenza della cache o al deploy dopo.
 
 **I backup.** Supabase Free non ne fa. `prod:backup` usa `pg_dump` dello
 schema `public` (con le estensioni) in `backups/<ora UTC>.sql.gz` e tiene
@@ -1755,12 +1842,63 @@ addebita.
 | Resend Free | 100 email al giorno, 3000 al mese | le email in più falliscono: il magic link non arriva, i provider OAuth continuano a funzionare | Resend → Usage ed Emails |
 
 Il segnale da tenere d'occhio nella prima settimana è la CPU attiva di
-Vercel: ogni pagina è renderizzata dal server, bot compresi.
+Vercel: le pagine pubbliche escono dalla cache (sezione "Cache e budget
+CPU"), ma `/events/browse`, l'accesso, Settings e l'invio passano sempre
+dal server, bot compresi.
+
+### j) L'aggiornamento settimanale automatico (GitHub Actions)
+
+`.github/workflows/weekly-data.yml` fa da solo la routine del punto i), ogni venerdì alle 03:17 UTC (il datamine di solito arriva mercoledì o giovedì):
+
+1. riscarica wiki e datamine. Il datamine con `--strict`: commit noto e tutte le tabelle, altrimenti si ferma. Se il wiki non risponde usa la cache della settimana prima e lo scrive nel riepilogo;
+2. `db/prod/sanity.mjs` confronta con la cache precedente: pagine del wiki calate di oltre il 2% o un CSV sotto il 90% fermano tutto;
+3. `db/prod/last-run.mjs`: se commit del datamine e contenuto del wiki sono quelli dell'ultimo import riuscito (tabella `import_run`, migrazione 0023), "Nothing new" e fine;
+4. un `pg_dump` della produzione (`db/prod/dump.mjs`), cifrato con age per la tua chiave pubblica e caricato come artifact `prod-backup-<data>` (14 giorni). Il dump in chiaro non lascia mai il runner: il repository è pubblico;
+5. il giro di prova: il dump ripristinato in un Postgres 17 dentro il runner (`db/prod/rehearsal.mjs`), poi `node db/migrate.mjs --check` (se la produzione è indietro si ferma: le migrazioni restano `prod:setup` a mano), poi lo stesso `prod:update` con `--allow-local`;
+6. `db/prod/snapshot.mjs` prima e dopo, e `db/prod/compare.mjs` con `db/prod/limits.json`: le tabelle degli utenti devono restare identiche (sempre, nessuna eccezione) e ogni tabella di gioco ha un tetto alle righe tolte. Una violazione ferma il job prima della produzione;
+7. le immagini nuove: chiede al wiki solo quelle senza riga (`fetch-assets --missing`). Un 403 della CDN del wiki diventa un avviso e non si ritenta. Se ne arriva almeno una, `db/prod/mirror-assets.mjs` ricostruisce l'albero completo dalla nostra CDN (ogni file verificato con sha256), ci aggiunge le nuove e lo pubblica su Pages. Un deploy di Pages è una fotografia intera: mai solo i file nuovi;
+8. `prod:update` sulla produzione con le stesse cache, poi un confronto con il giro di prova (avvisa soltanto: nel frattempo gli utenti scrivono). Alla fine `prod:update` chiama `POST /api/revalidate` del sito (sezione "Cache e budget CPU");
+9. il riepilogo del job: cambiamenti per tabella, eventi e carte nuovi, immagini, "Needs attention", limiti.
+
+**Da configurare una volta**, nelle Settings del repository su GitHub:
+
+- Environments → `production`, con Deployment branches "Selected branches" = `main`. Secret dell'environment (non del repository):
+  - `PROD_DATABASE_URL`: il pooler di **sessione** (`aws-0-eu-central-1.pooler.supabase.com:5432`, utente `postgres.<ref>`). L'host diretto `db.<ref>.supabase.co` è solo IPv6, e i runner di GitHub non hanno IPv6;
+  - `PROD_DATABASE_CA_CERT_PEM`: il contenuto del `.crt` di Supabase;
+  - `CLOUDFLARE_API_TOKEN`: un token con solo Account → Cloudflare Pages → Edit;
+  - `CRON_SECRET`: lo stesso di Vercel, per rinfrescare le pagine dopo l'import.
+- Variables: `CLOUDFLARE_ACCOUNT_ID`, `CF_PAGES_PROJECT` (`dokkants-assets`), `ASSET_BASE_URL` (`https://dokkants-assets.emanuelemelini.dev`), `PROD_SITE_URL` (`https://dokkants.emanuelemelini.dev`), `BACKUP_AGE_RECIPIENT`, `WEEKLY_APPLY` (`false` all'inizio).
+- La chiave age, sul Mac: `brew install age`, poi `age-keygen -o ~/.config/dokkants/backup.agekey` e `chmod 600` sul file. La riga `# public key: age1...` va in `BACKUP_AGE_RECIPIENT`. La chiave privata resta solo da te (tienine una copia sicura: senza, i backup non si aprono).
+- Settings → Notifications → Actions: "Only notify for failed workflows". GitHub scrive a chi ha modificato per ultimo la riga del cron.
+
+**Le prime settimane** `WEEKLY_APPLY=false`: il cron fa solo la prova. Leggi 2-3 riepiloghi e aggiusta `limits.json` se serve. Prima di accendere, controlla che i file su Pages siano esattamente quelli della tabella `asset`: un file su Pages senza riga sparirebbe al primo deploy fatto dalla CI. Poi metti `WEEKLY_APPLY=true`. A mano: Actions → Weekly data update → Run workflow. `dry_run` è acceso per difetto; spento, applica davvero anche con `WEEKLY_APPLY=false`.
+
+**Limiti superati.** Il job si ferma e il riepilogo dice tabella, righe tolte e tetto. Se le cancellazioni sono giuste (il gioco ha davvero tolto quegli eventi), rilancia a mano con `allow_deletions`: vale per i dati di gioco, mai per quelli degli utenti. Un tetto con numero e percentuale vale per il più stretto dei due; la regola `"*"` (almeno il 97% delle righe) vale per le tabelle senza un limite proprio. `force` rifà tutto anche senza novità, `skip_wiki` usa il wiki in cache.
+
+**Aprire un backup.** Scarica l'artifact `prod-backup-<data>`: contiene `<nome>.dump.age` e `<nome>.dump.extensions.json` (solo gli schemi delle estensioni, nessun dato). Nella stessa cartella:
+
+```bash
+age -d -i ~/.config/dokkants/backup.agekey -o <nome>.dump <nome>.dump.age
+createdb dokkan_restore_test
+DATABASE_URL=postgres://localhost/dokkan_restore_test node db/prod/rehearsal.mjs --dump <nome>.dump
+```
+
+`rehearsal.mjs` accetta solo un database locale e vuoto: ricrea le estensioni negli schemi della produzione e lancia `pg_restore`, che deve essere almeno della versione del server (Postgres.app 17 se Supabase è sulla 17, oppure `PG_RESTORE=/percorso/pg_restore`). Il dump contiene email e sessioni: cancella la copia in chiaro quando hai finito.
+
+**In locale** ci sono gli stessi pezzi: `npm run prod:snapshot -- --out a.json`, `npm run prod:compare -- a.json b.json`, `npm run prod:sanity`. `npm run prod:mirror-assets -- --from https://dokkants-assets.emanuelemelini.dev --to public/assets` rifà le immagini su una macchina nuova scaricandole dalla CDN, e riprende da dove si era fermato.
+
+**Cosa può andare storto.**
+- Il wiki blocca l'API anche dai datacenter: si usa la cache. Se non c'è un giro riuscito da più di 30 giorni l'artifact è scaduto e il job fallisce.
+- Il cron di un repository pubblico si spegne dopo 60 giorni senza commit: GitHub avvisa per email, e un commit lo riaccende.
+- Un `prod:update` dal Mac mentre gira la CI viene rifiutato da `import_run`. Un giro rimasto "running" per più di 2 ore si considera morto.
+
 ## Cosa manca, in ordine
 
 1. **Il calendario, da tenere vivo.** Rifare il datamine con `--fresh`
    ogni settimana, poi `db:game-events` e `db:windows`: gli eventi nuovi
-   arrivano da lì, il wiki non ne scrive più. Japan resta senza finestre
+   arrivano da lì, il wiki non ne scrive più. In produzione lo fa il
+   workflow settimanale (Messa online, punto j), da accendere con
+   `WEEKLY_APPLY=true` dopo le prime prove. Japan resta senza finestre
    vere, e 374 eventi Global restano "attivi, fine non nota" (312 del wiki,
    62 del gioco). Le corse di un'area riaperta dopo più di un mese partono
    dall'ultimo blocco: la corsa di prima non ha una run del gioco sua.

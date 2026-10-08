@@ -1,10 +1,13 @@
 'use server'
 
-import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { DatabaseError } from 'pg'
 import { sql, sqlOne } from '@/lib/db'
 import { requireOnboardedUser } from '@/lib/dal'
+import { clearCardIds } from '@/lib/clears'
+import { clearPage } from '@/lib/queries'
+import { afterClearWrite } from '@/lib/cache/invalidate'
+import { clearAnchor, eventHref } from '@/lib/urls'
 import { friendlyClearError } from '@/lib/clears/errors'
 import {
   parseBigintId, parseChangeNote, parseComment, parsePayloadField, parseUuid, parseVote,
@@ -35,12 +38,13 @@ function dbError(e: unknown): ClearActionState {
   throw e
 }
 
-type Where = { event_id: string; reg: 'global' | 'japan' }
+type Where = { event_id: string; reg: 'global' | 'japan'; tier_id: string }
 
-/** Dove sta un clear: l'evento e la regione, dal database e non dal form. */
+/** Dove sta un clear: l'evento, la regione e il tier, dal database e non dal form. */
 async function whereIsClear(clearId: string): Promise<Where | null> {
   return sqlOne<Where>(
-    `select c.event_id::text, r.reg::text from clear c join event_run r on r.id = c.run_id
+    `select c.event_id::text, r.reg::text, c.stage_tier_id::text as tier_id
+     from clear c join event_run r on r.id = c.run_id
      where c.id = $1::uuid`,
     [clearId],
   )
@@ -48,29 +52,27 @@ async function whereIsClear(clearId: string): Promise<Where | null> {
 
 async function whereIsVersion(versionId: string): Promise<Where | null> {
   return sqlOne<Where>(
-    `select c.event_id::text, r.reg::text from clear_version v
+    `select c.event_id::text, r.reg::text, c.stage_tier_id::text as tier_id from clear_version v
      join clear c on c.id = v.clear_id join event_run r on r.id = c.run_id
      where v.id = $1::uuid`,
     [versionId],
   )
 }
 
-/** La pagina dell'evento e la lista: i conteggi dei clear cambiano in entrambe. */
-function refresh(w: Where | null) {
-  if (!w) return
-  revalidatePath(`/events/${w.event_id}`)
-  revalidatePath('/events')
-}
+// L'invalidazione della cache per ogni scrittura sta in lib/cache/tags.ts
+// (tagsFor): l'evento subito per invio, revisione, cancellazione e
+// commento; il voto senza rigenerare la pagina nella risposta.
 
-function clearHref(w: Where, tierId: string, clearId: string) {
-  const qs = new URLSearchParams({ ...(w.reg === 'japan' ? { region: 'japan' } : {}), tier: tierId })
-  return `/events/${w.event_id}?${qs}#clear-${clearId}`
+/** Il clear nella pagina del suo tier, alla pagina dove la lista lo mostra. */
+async function clearHref(w: Where, clearId: string) {
+  const page = (await clearPage(w.tier_id, w.reg, clearId)) ?? 1
+  return eventHref({ id: w.event_id, reg: w.reg, tier: w.tier_id, page }) + clearAnchor(clearId)
 }
 
 /** Invia un clear dal builder. Se riesce porta al clear, nella pagina dell'evento. */
 export async function submitClear(_prev: ClearActionState, form: FormData): Promise<ClearActionState> {
   const eventHint = parseBigintId(form.get('event'))
-  const user = await requireOnboardedUser(eventHint ? `/events/${eventHint}` : '/events')
+  const user = await requireOnboardedUser(eventHint ? eventHref({ id: eventHint }) : '/events')
   const run = parseBigintId(form.get('run'))
   const tier = parseBigintId(form.get('tier'))
   if (!run || !tier) return { error: 'Pick the difficulty and the run you cleared.' }
@@ -88,8 +90,8 @@ export async function submitClear(_prev: ClearActionState, form: FormData): Prom
     return dbError(e)
   }
   const w = await whereIsClear(clearId)
-  refresh(w)
-  redirect(w ? clearHref(w, tier, clearId) : '/events')
+  if (w) afterClearWrite('submit', { eventId: w.event_id, cardIds: await clearCardIds(clearId), handles: [user.handle] })
+  redirect(w ? await clearHref(w, clearId) : '/events')
 }
 
 /**
@@ -111,13 +113,10 @@ export async function reviseClear(_prev: ClearActionState, form: FormData): Prom
   } catch (e) {
     return dbError(e)
   }
-  const w = await sqlOne<Where & { tier_id: string }>(
-    `select c.event_id::text, r.reg::text, c.stage_tier_id::text as tier_id
-     from clear c join event_run r on r.id = c.run_id where c.id = $1::uuid`,
-    [clearId],
-  )
-  refresh(w)
-  redirect(w ? clearHref(w, w.tier_id, clearId) : '/events')
+  const w = await whereIsClear(clearId)
+  // le carte di tutte le versioni: quelle tolte e quelle nuove
+  if (w) afterClearWrite('revise', { eventId: w.event_id, cardIds: await clearCardIds(clearId), handles: [user.handle] })
+  redirect(w ? await clearHref(w, clearId) : '/events')
 }
 
 /** Cancella un clear dell'utente, con versioni, voti e commenti. */
@@ -125,14 +124,14 @@ export async function deleteClear(_prev: ClearActionState, form: FormData): Prom
   const user = await requireOnboardedUser('/events')
   const clearId = parseUuid(form.get('clear'))
   if (!clearId) return { error: 'This clear does not exist or is not yours.' }
-  // prima della cancellazione: dopo non si saprebbe piu' quale pagina rinfrescare
-  const w = await whereIsClear(clearId)
+  // prima della cancellazione: dopo non si saprebbe piu' quali pagine rinfrescare
+  const [w, carte] = await Promise.all([whereIsClear(clearId), clearCardIds(clearId)])
   try {
     await sql('select delete_clear($1::uuid, $2::uuid)', [user.id, clearId])
   } catch (e) {
     return dbError(e)
   }
-  refresh(w)
+  if (w) afterClearWrite('delete', { eventId: w.event_id, cardIds: carte, handles: [user.handle] })
   return { ok: true }
 }
 
@@ -152,7 +151,8 @@ export async function voteClear(_prev: ClearActionState, form: FormData): Promis
   } catch (e) {
     return dbError(e)
   }
-  refresh(await whereIsVersion(versionId))
+  const w = await whereIsVersion(versionId)
+  if (w) afterClearWrite('vote', { eventId: w.event_id })
   return { ok: true, score }
 }
 
@@ -175,6 +175,7 @@ export async function addComment(_prev: ClearActionState, form: FormData): Promi
   } catch (e) {
     return dbError(e)
   }
-  refresh(await whereIsVersion(versionId))
+  const w = await whereIsVersion(versionId)
+  if (w) afterClearWrite('comment', { eventId: w.event_id })
   return { ok: true, commentId }
 }

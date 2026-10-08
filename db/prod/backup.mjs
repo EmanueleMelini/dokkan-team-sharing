@@ -7,12 +7,12 @@
 // pg_dump dello schema public (le nostre tabelle; auth, storage e gli
 // altri schemi di Supabase non sono nostri) in backups/<ora UTC>.sql.gz,
 // tenendo le ultime 8 copie.
-import { execFileSync, spawn } from 'node:child_process'
-import { createWriteStream, existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync } from 'node:fs'
+import { spawn } from 'node:child_process'
+import { createWriteStream, mkdirSync, readdirSync, renameSync, rmSync, statSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
 import { pipeline } from 'node:stream/promises'
 import { createGzip } from 'node:zlib'
-import pg from 'pg'
+import { dumpArgs, pickPgDump, serverInfo, splitPassword } from './pgdump.mjs'
 import { ROOT, prepare } from './target.mjs'
 
 const KEEP = 8
@@ -21,44 +21,17 @@ const DIR = process.env.BACKUP_DIR ? resolve(process.env.BACKUP_DIR) : join(ROOT
 
 const { url, env } = prepare('prod:backup', ['pg_dump -n public', `backups/, ultime ${KEEP}`])
 
-// La versione del server decide il pg_dump: uno piu' vecchio del server
-// si rifiuta, uno uguale o piu' nuovo va bene. Si preferisce quello della
-// stessa versione (Postgres.app 15 su questa macchina).
-const c = new pg.Client({ connectionString: url })
-await c.connect()
-const serverMajor = Math.floor(Number((await c.query('show server_version_num')).rows[0].server_version_num) / 10000)
-await c.end()
-
-function candidates() {
-  const out = []
-  if (process.env.PG_DUMP) out.push(process.env.PG_DUMP)
-  const app = '/Applications/Postgres.app/Contents/Versions'
-  if (existsSync(app)) for (const v of readdirSync(app)) out.push(join(app, v, 'bin', 'pg_dump'))
-  out.push('pg_dump')
-  return out
-}
-const majorOf = (bin) => {
-  try {
-    const m = execFileSync(bin, ['--version'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).match(/(\d+)\.\d+/)
-    return m ? Number(m[1]) : null
-  } catch { return null }
-}
-const found = [...new Set(candidates())].map((bin) => ({ bin, major: majorOf(bin) }))
-  .filter((x) => x.major != null && x.major >= serverMajor)
-  .sort((a, b) => (a.major - serverMajor) - (b.major - serverMajor))
-if (!found.length) {
+const { major: serverMajor } = await serverInfo(url)
+const found = pickPgDump(serverMajor)
+if (!found) {
   console.error(`\n  nessun pg_dump >= ${serverMajor} (la versione del server).`)
   console.error(`  Installa Postgres.app ${serverMajor} o indica il binario con PG_DUMP=/percorso/pg_dump\n`)
   process.exit(1)
 }
-const { bin, major } = found[0]
+const { bin, major } = found
 console.log(`  server ${serverMajor}, uso ${bin} (${major})`)
 
-// La password non va sulla riga di comando (si vede in ps): passa da
-// PGPASSWORD, e l'URL resta senza.
-const u = new URL(url)
-const dumpEnv = { ...env }
-if (u.password) { dumpEnv.PGPASSWORD = decodeURIComponent(u.password); u.password = '' }
+const { url: dumpUrl, env: dumpEnv } = splitPassword(url, env)
 
 // Il dump contiene le email degli utenti: cartella e file leggibili solo
 // dal proprietario, non dagli altri account della macchina.
@@ -69,12 +42,7 @@ const final = join(DIR, `${stamp}.sql.gz`)
 const show = (p) => (relative(ROOT, p).startsWith('..') ? p : relative(ROOT, p))
 const partial = `${final}.partial`
 
-// Le estensioni dello schema si dichiarano una per una: con --schema
-// pg_dump le lascerebbe fuori, e il dump non si ripristinerebbe su un
-// database vuoto (citext, btree_gist e pg_trgm servono alle tabelle).
-const EXT = ['pgcrypto', 'citext', 'btree_gist', 'pg_trgm'].flatMap((e) => ['--extension', e])
-const child = spawn(bin, ['--dbname', u.href, '--schema', 'public', ...EXT, '--no-owner', '--no-privileges'],
-  { env: dumpEnv, stdio: ['ignore', 'pipe', 'inherit'] })
+const child = spawn(bin, dumpArgs(dumpUrl), { env: dumpEnv, stdio: ['ignore', 'pipe', 'inherit'] })
 const exited = new Promise((res) => child.on('close', (code) => res(code)))
 try {
   await pipeline(child.stdout, createGzip({ level: 9 }), createWriteStream(partial, { mode: 0o600 }))

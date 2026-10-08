@@ -6,7 +6,6 @@
 export const LEGALE = {
   titolare: 'Emanuele Melini',
   paese: 'Italy',
-  // da confermare con il proprietario prima della messa online
   contatto: 'privacy@emanuelemelini.dev',
   sito: 'dokkants.emanuelemelini.dev',
   aggiornato: 'October 8, 2026',

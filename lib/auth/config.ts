@@ -7,6 +7,7 @@ import type { MagicLinkSender } from '@/lib/auth/email'
 import type { AuthEnv } from '@/lib/auth/env'
 import { FRESH_SESSION_SECONDS, isFreshSession } from '@/lib/auth/fresh'
 import { mayEmail, rateLimitStorage } from '@/lib/auth/rate-limit'
+import { HINT_COOKIE, hintOptions } from '@/lib/viewer/hint'
 
 export const MAGIC_LINK_TTL_SECONDS = 600
 export const SESSION_DAYS = 30
@@ -70,6 +71,10 @@ export function createAuth({ env, sendMagicLink, plugins = [] }: Options) {
         locale: { type: 'string', required: false, input: false },
         role: { type: 'string', required: false, input: false },
         onboardedAt: { type: 'date', required: false, input: false, fieldName: 'onboarded_at' },
+        // L'animazione delle carte per difetto (Settings): la legge /api/me.
+        prefersAnimated: {
+          type: 'boolean', required: false, input: false, defaultValue: false, fieldName: 'prefers_animated',
+        },
       },
       // Un account nuovo solo con un'email che il provider dichiara
       // verificata (il magic link la verifica da se'). Senza questo, chi
@@ -157,6 +162,15 @@ export function createAuth({ env, sendMagicLink, plugins = [] }: Options) {
         if (s && !isFreshSession(s.session.createdAt)) {
           throw APIError.from('FORBIDDEN', BASE_ERROR_CODES.SESSION_NOT_FRESH)
         }
+      }),
+      // L'indizio dts_signed_in (lib/viewer/hint.ts): nasce con ogni sessione
+      // nuova (magic link, callback OAuth) e muore con l'uscita. Le pagine in
+      // cache non leggono la sessione: e' lui a dire al browser di chiedere
+      // /api/me. Dura quanto la sessione; /api/me lo rinnova a ogni visita.
+      after: createAuthMiddleware(async (ctx) => {
+        const opzioni = hintOptions(env.baseURL, SESSION_DAYS * 24 * 60 * 60)
+        if (ctx.path === '/sign-out') ctx.setCookie(HINT_COOKIE, '', { ...opzioni, maxAge: 0 })
+        else if (ctx.context.newSession) ctx.setCookie(HINT_COOKIE, '1', opzioni)
       }),
     },
 

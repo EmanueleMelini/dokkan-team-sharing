@@ -3,7 +3,8 @@
 # che gira gia', con un indirizzo finto (smoke+<ora>@example.invalid).
 #
 #   richiesta del link -> link letto dal file di sviluppo -> verifica ->
-#   cookie di sessione -> /welcome -> /settings rimanda a /welcome ->
+#   cookie di sessione e indizio dts_signed_in -> /api/me -> nessun handle
+#   nell'HTML in cache di un evento -> /welcome -> /settings rimanda a /welcome ->
 #   lo stesso link una seconda volta non vale -> uscita -> sessione morta
 #
 # Solo in sviluppo: il link si legge da $TMPDIR/dokkan-magic-links.log, che
@@ -79,6 +80,22 @@ chiedi /api/auth/get-session
 grep -q '"onboardedAt":null' "$TMP/body" && pass "sessione: utente nuovo, non ancora completo" \
   || fail "get-session non dice onboardedAt null"
 
+# L'indizio per le pagine in cache, e chi guarda solo da /api/me
+grep -qE 'dts_signed_in[[:space:]]+1' "$JAR" && pass "indizio dts_signed_in impostato" || fail "nessun indizio dts_signed_in"
+handle=$(grep -oE '"handle":"[^"]+"' "$TMP/body" | head -1 | cut -d'"' -f4)
+chiedi /api/me
+grep -qF "\"handle\":\"$handle\"" "$TMP/body" && pass "/api/me con la sessione: l'utente" || fail "/api/me non dice l'utente"
+# La privacy della cache: la pagina di un evento e' la stessa per tutti, e
+# l'HTML che riceve chi e' dentro non contiene niente di suo.
+evento=$(curl -s --max-time 120 "$BASE/sitemap.xml" | grep -oE '/events/[0-9]+</loc>' | head -1 | grep -oE '[0-9]+')
+if [ -n "$evento" ] && [ -n "$handle" ]; then
+  chiedi "/events/$evento"
+  [ "$codice" = 200 ] && ! grep -qF "$handle" "$TMP/body" && pass "l'HTML di /events/$evento non contiene l'handle" \
+    || fail "/events/$evento: $codice, o l'HTML contiene l'handle"
+else
+  fail "nessun evento nella sitemap o nessun handle per la prova di privacy"
+fi
+
 chiedi '/welcome?next=/events'
 [ "$codice" = 200 ] && grep -q 'Welcome' "$TMP/body" && pass "/welcome: 200 con il form" || fail "/welcome: $codice"
 chiedi /settings
@@ -94,6 +111,8 @@ chiedi /api/auth/sign-out -X POST -H "origin: $BASE" -H 'content-type: applicati
 [ "$codice" = 200 ] && pass "uscita: 200" || fail "uscita: $codice"
 chiedi /api/auth/get-session
 [ "$(cat "$TMP/body")" = null ] && pass "dopo l'uscita la sessione non c'e' piu'" || fail "sessione ancora viva dopo l'uscita"
+grep -qE 'dts_signed_in[[:space:]]+1' "$JAR" && fail "dopo l'uscita l'indizio dts_signed_in e' rimasto" \
+  || pass "dopo l'uscita l'indizio dts_signed_in non c'e' piu'"
 
 echo
 if [ "$fails" -eq 0 ]; then echo "  auth smoke: tutto verde"; else echo "  auth smoke: $fails rossi"; exit 1; fi

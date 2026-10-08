@@ -11,6 +11,12 @@ import { accountEmail, linkedProviderIds, requireOnboardedUser, sessionIsFresh }
 
 export const metadata: Metadata = { title: 'Settings', robots: { index: false } }
 
+// Pagina per utente: legge la sessione in cima, fuori da ogni <Suspense>.
+// instant = false la toglie dalla verifica dello shell statico di
+// cacheComponents, cosi' i redirect (a /login, a /welcome) restano 307
+// veri e notFound() un 404 vero, invece di uno streaming con 200.
+export const instant = false
+
 const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v)
 
 export default async function SettingsPage({ searchParams }: PageProps<'/settings'>) {

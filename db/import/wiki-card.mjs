@@ -164,3 +164,7 @@ export function awakensInto(w, idByTitle) {
 // titolo della pagina -> id, per awakensInto
 export const idsByTitle = (pages, ids) =>
   new Map(pages.filter((p) => ids.get(p.pageid)?.id).map((p) => [titleKey(p.title), ids.get(p.pageid).id]))
+
+// I testi delle skill (template letto come MediaWiki, note, EZA): stanno
+// in wiki-skills.mjs, qui si riesportano per chi importa da questo modulo.
+export { baseTexts, cleanSkill, inlineField, refsOf, skillsFromPage, templateParams } from './wiki-skills.mjs'

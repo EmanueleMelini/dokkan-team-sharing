@@ -55,3 +55,6 @@ next-env.d.ts
 
 # copie del database di produzione (npm run prod:backup)
 /backups
+
+# la cache della settimana prima, per db/prod/sanity.mjs
+/db/import/.cache.prev

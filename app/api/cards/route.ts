@@ -1,5 +1,6 @@
 import type { NextRequest } from 'next/server'
 import { assetUrl } from '@/lib/db'
+import { CACHE_CATALOGO } from '@/lib/cache/headers'
 import {
   CARD_CLASSES, CARD_RARITIES, CARD_SEARCH_MAX, CARD_TYPES, searchCards,
   type CardClass, type CardRarity, type CardType,
@@ -54,10 +55,6 @@ export async function GET(request: NextRequest) {
       total,
       next: from + hits.length < total ? from + hits.length : null,
     },
-    {
-      // Le carte cambiano solo con un import: un minuto nel browser, cinque
-      // minuti nella cache condivisa, e intanto la copia vecchia va bene.
-      headers: { 'Cache-Control': 'public, max-age=60, s-maxage=300, stale-while-revalidate=3600' },
-    },
+    { headers: CACHE_CATALOGO },
   )
 }

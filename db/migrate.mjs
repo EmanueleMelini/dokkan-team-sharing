@@ -9,6 +9,12 @@
 //
 //   node db/migrate.mjs           applica le pendenti
 //   node db/migrate.mjs --status  elenca e non tocca niente
+//   node db/migrate.mjs --check   come --status, ma esce 4 se ci sono
+//                                 pendenti (1 se un file applicato e' cambiato)
+//
+// --check serve alla CI settimanale, che non migra mai da sola: se la
+// produzione e' indietro rispetto al codice si ferma e lo dice, e le DDL
+// restano un gesto a mano (npm run prod:setup).
 import { createHash } from 'node:crypto'
 import { readFileSync, readdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -35,7 +41,10 @@ console.log(`  database: ${describeTarget()}`)
 const client = new pg.Client({ connectionString: connectionString() })
 await client.connect()
 
-await client.query(`
+const READ_ONLY = process.argv.includes('--status') || process.argv.includes('--check')
+// in sola lettura la tabella non si crea: un database senza e' "tutto pendente"
+const { rows: [{ exists }] } = await client.query(`select to_regclass('schema_migrations') is not null as exists`)
+if (!READ_ONLY) await client.query(`
   create table if not exists schema_migrations (
     version     text primary key,
     checksum    text        not null,
@@ -43,8 +52,8 @@ await client.query(`
     duration_ms integer     not null
   )`)
 
-const { rows: applied } = await client.query(
-  'select version, checksum from schema_migrations order by version')
+const { rows: applied } = exists || !READ_ONLY ? await client.query(
+  'select version, checksum from schema_migrations order by version') : { rows: [] }
 const seen = new Map(applied.map((r) => [r.version, r.checksum]))
 const files = onDisk()
 
@@ -68,12 +77,18 @@ for (const version of seen.keys()) {
 
 const pending = files.filter((m) => !seen.has(m.version))
 
-if (process.argv.includes('--status')) {
+if (READ_ONLY) {
+  const check = process.argv.includes('--check')
   for (const m of files) {
-    console.log(`  ${seen.has(m.version) ? 'applicata' : 'PENDENTE '}  ${m.version}`)
+    // con --check solo le pendenti: l'elenco intero e' rumore nel log
+    if (!check || !seen.has(m.version)) console.log(`  ${seen.has(m.version) ? 'applicata' : 'PENDENTE '}  ${m.version}`)
   }
   console.log(`\n  ${files.length} migrazioni, ${pending.length} da applicare`)
   await client.end()
+  if (check && pending.length) {
+    console.error('  il database e\' indietro rispetto al codice: lancia prima npm run prod:setup -- --yes')
+    process.exit(4)
+  }
   process.exit(0)
 }
 

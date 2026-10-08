@@ -1,7 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import { headers } from 'next/headers'
+import { cookies, headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { DatabaseError } from 'pg'
 import { sql } from '@/lib/db'
@@ -10,17 +10,29 @@ import { friendlyAccountError, handleMatches } from '@/lib/auth/account'
 import { PROVIDERS } from '@/lib/auth/env'
 import { safeNext } from '@/lib/auth/safe-next'
 import { requireFreshUser, requireUser } from '@/lib/dal'
+import { collectUserFootprint, invalidateUser } from '@/lib/cache/invalidate'
+import { HINT_COOKIE } from '@/lib/viewer/hint'
 
 // Le Server Action dell'accesso. Ognuna si comporta come un endpoint
 // pubblico (una POST diretta la raggiunge): rilegge la sessione da sola
 // e non accetta mai un id utente dal client.
+//
+// Niente invalidazione del layout ('/', 'layout'): con cacheComponents quel
+// tag sta su ogni pagina, e ogni accesso o uscita svuoterebbe la cache di
+// tutto il sito. L'header non dipende piu' dal server: lo aggiornano le
+// isole client (components/viewer) con /api/me e l'indizio dts_signed_in.
+
+/** Toglie l'indizio dts_signed_in: le pagine smettono di chiedere /api/me. */
+async function togliIndizio() {
+  ;(await cookies()).delete(HINT_COOKIE)
+}
 
 /** Esce: cancella la riga della sessione e il cookie, poi torna alla home. */
 export async function signOutAction() {
   await auth.api.signOut({ headers: await headers() })
-  // L'header (UserMenu) sta nel layout: senza questo il client terrebbe
-  // quello vecchio, con l'utente ancora dentro.
-  revalidatePath('/', 'layout')
+  // Anche l'hook di better-auth lo toglie; qui resta vero se l'uscita
+  // avviene senza passare dalla sua rotta HTTP.
+  await togliIndizio()
   redirect('/events')
 }
 
@@ -55,7 +67,8 @@ export async function completeOnboardingAction(
     const msg = onboardingError(e)
     if (msg !== 'done') return { ...echo, error: msg }
   }
-  revalidatePath('/', 'layout') // l'header passa da "Finish setup" all'handle
+  // L'header passa da "Finish setup" all'handle da solo: il provider del
+  // client rilegge /api/me al cambio di pagina finche' l'utente e' in setup.
   redirect(next)
 }
 
@@ -121,12 +134,16 @@ export async function deleteAccountAction(_prev: AccountState, form: FormData): 
   if (!handleMatches(typed, user.handle)) {
     return { error: 'That is not your handle. Type it exactly as shown above the box.' }
   }
+  // Prima della cancellazione: dopo non si saprebbe piu' quali pagine
+  // mostravano i suoi clear, commenti e voti.
+  const tracce = await collectUserFootprint(user.id)
   try {
     await sql('select delete_account($1::uuid, $2)', [user.id, String(typed)])
   } catch (e) {
     return accountError(e)
   }
+  invalidateUser(tracce)
   await auth.api.signOut({ headers: await headers() })
-  revalidatePath('/', 'layout')
+  await togliIndizio()
   redirect('/events?account=deleted')
 }

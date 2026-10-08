@@ -1,0 +1,423 @@
+# L'aggiornamento settimanale dei dati di gioco.
+#
+# 1. scarica wiki e datamine (cache della settimana prima come ripiego);
+# 2. fa un giro di prova completo su una copia della produzione, dentro il
+#    runner, e lo confronta riga per riga con i limiti di db/prod/limits.json;
+# 3. immagini nuove: le chiede al wiki, e se arrivano ripubblica l'albero
+#    completo su Cloudflare Pages (prima che una riga le usi);
+# 4. applica alla produzione con le stesse cache;
+# 5. scrive il riepilogo del job.
+# La produzione non si scrive mai prima che il giro di prova sia passato.
+#
+# Il repository e' pubblico: log, riepiloghi e artifact li legge chiunque.
+# Quindi niente trigger pull_request (le fork non vedono mai i secret), i
+# secret stanno nell'environment "production" (solo il branch main), il
+# dump si carica solo cifrato con age, e le parti di PROD_DATABASE_URL si
+# mascherano prima di ogni comando che le potrebbe stampare.
+#
+# Applica davvero: a mano con dry_run spento, dal cron solo con la
+# variabile WEEKLY_APPLY=true (le prime settimane resta false: solo prova).
+name: Weekly data update
+
+on:
+  schedule:
+    # venerdi' 03:17 UTC: dopo il commit del datamine (di solito mer/gio),
+    # fuori dall'ora tonda e lontano dal cron di pulizia delle 04:00
+    - cron: '17 3 * * 5'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Stop after the rehearsal: production is not touched'
+        type: boolean
+        default: true
+      force:
+        description: 'Run even if nothing changed since the last import'
+        type: boolean
+        default: false
+      allow_deletions:
+        description: 'Bypass the deletion limits on game data (never on user data)'
+        type: boolean
+        default: false
+      skip_wiki:
+        description: 'Do not fetch the wiki, use the cached copy'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  actions: read   # gh run download della cache dell'ultimo giro riuscito
+
+concurrency:
+  group: prod-data
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  update:
+    if: github.repository == 'EmanueleMelini/dokkan-team-sharing' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    environment: production
+    services:
+      # il database del giro di prova: usa e getta, raggiungibile solo dal
+      # runner. Accesso trust e nessuna password: un URL con la password
+      # scritta dentro lo segnalano gli scanner di segreti del repo pubblico.
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_DB: rehearsal
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      REHEARSAL_URL: postgres://postgres@localhost:5432/rehearsal
+      # gli importer non leggono file .env: vale solo DATABASE_URL del passo
+      DOKKAN_ENV_FILES: 'off'
+      # poche connessioni: il pooler di sessione di Supabase ne ammette poche
+      IMPORT_POOL_MAX: '4'
+      APPLY: ${{ (github.event_name == 'workflow_dispatch' && !inputs.dry_run) || (github.event_name == 'schedule' && vars.WEEKLY_APPLY == 'true') }}
+      ALLOW_DELETIONS: ${{ github.event_name == 'workflow_dispatch' && inputs.allow_deletions }}
+      FORCE: ${{ github.event_name == 'workflow_dispatch' && inputs.force }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+
+      # nessuno script di installazione mentre i secret sono nell'environment:
+      # agli importer serve solo pg
+      - run: npm ci --ignore-scripts
+
+      - name: Install ffmpeg, age and the PostgreSQL 17 client
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt noble-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list > /dev/null
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends postgresql-client-17 ffmpeg age > /dev/null
+          echo "PG_DUMP=/usr/lib/postgresql/17/bin/pg_dump" >> "$GITHUB_ENV"
+          echo "PG_RESTORE=/usr/lib/postgresql/17/bin/pg_restore" >> "$GITHUB_ENV"
+
+      - name: Secrets to files, masks
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          CA_PEM: ${{ secrets.PROD_DATABASE_CA_CERT_PEM }}
+        run: |
+          if [ -z "$PROD_DATABASE_URL" ] || [ -z "$CA_PEM" ]; then
+            echo "::error::PROD_DATABASE_URL and PROD_DATABASE_CA_CERT_PEM must be secrets of the production environment"
+            exit 1
+          fi
+          node db/prod/ci-mask.mjs
+          umask 077
+          printf '%s\n' "$CA_PEM" > "$RUNNER_TEMP/supabase-ca.crt"
+          mkdir -p "$RUNNER_TEMP/empty" "$RUNNER_TEMP/new" "$RUNNER_TEMP/backup"
+          : > "$RUNNER_TEMP/attention.md"
+
+      - name: Restore the import cache
+        id: cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: db/import/.cache
+          key: import-cache-${{ github.run_id }}
+          restore-keys: import-cache-
+
+      # la cache di Actions sparisce dopo 7 giorni senza uso, cioe' proprio
+      # a cadenza settimanale: di riserva l'artifact dell'ultimo giro riuscito
+      - name: Fall back to the last successful run's artifact
+        if: steps.cache.outputs.cache-matched-key == ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          id=$(gh run list -R "$GITHUB_REPOSITORY" -w weekly-data.yml -s success -L 1 --json databaseId -q '.[0].databaseId')
+          if [ -n "$id" ] && gh run download "$id" -R "$GITHUB_REPOSITORY" -n import-cache -D db/import/.cache; then
+            echo "  cache dal giro $id"
+          else
+            echo "::warning::no import cache found: every source is fetched from scratch"
+          fi
+
+      - name: Keep last week's cache for the sanity check
+        run: |
+          rm -rf db/import/.cache.prev
+          if [ -d db/import/.cache ]; then cp -a db/import/.cache db/import/.cache.prev; fi
+
+      - name: Fetch the wiki
+        id: wiki
+        if: ${{ !inputs.skip_wiki }}
+        continue-on-error: true
+        run: node db/import/fetch-wiki.mjs --fresh && node db/import/fetch-events.mjs --fresh
+
+      - name: Wiki fallback
+        env:
+          WIKI_OUTCOME: ${{ steps.wiki.outcome }}
+        run: |
+          if [ "$WIKI_OUTCOME" = success ]; then echo "WIKI_MODE=fresh" >> "$GITHUB_ENV"; exit 0; fi
+          if [ ! -s db/import/.cache/wiki-cards.json ] || [ ! -s db/import/.cache/wiki-events.json ]; then
+            echo "::error::the wiki is unreachable and there is no cached copy (load-cards needs it)"
+            exit 1
+          fi
+          echo "WIKI_MODE=cached" >> "$GITHUB_ENV"
+          if [ "$WIKI_OUTCOME" = failure ]; then
+            echo "::warning::wiki unreachable: using the cached copy"
+            echo "- Wiki unreachable: used the cached copy." >> "$RUNNER_TEMP/attention.md"
+          fi
+
+      # il datamine invece deve arrivare: senza, l'import non ha senso
+      - name: Fetch the datamine
+        id: datamine
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node db/import/fetch-datamine.mjs --fresh --strict
+
+      - name: Sanity check of the sources
+        run: node db/prod/sanity.mjs
+
+      - name: Anything new since the last import?
+        id: skip
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          PROD_DATABASE_CA_CERT: ${{ runner.temp }}/supabase-ca.crt
+        run: node db/prod/last-run.mjs
+
+      - name: Decide
+        env:
+          CHANGED: ${{ steps.skip.outputs.changed }}
+          LAST_OK: ${{ steps.skip.outputs.last_ok }}
+        run: |
+          if [ "$CHANGED" = true ] || [ "$FORCE" = true ]; then echo "GO=true" >> "$GITHUB_ENV"; exit 0; fi
+          echo "GO=false" >> "$GITHUB_ENV"
+          { echo "## Weekly data update, $(date -u +%F)"; echo
+            echo "Nothing new since ${LAST_OK:-the last import}: same datamine commit and wiki content."; } >> "$GITHUB_STEP_SUMMARY"
+
+      # Un dump solo: e' il backup e la sorgente del giro di prova. Il file
+      # in chiaro (email, sessioni) resta nel runner; fuori va solo cifrato
+      # per la chiave pubblica del proprietario, che la privata non la da'.
+      - name: Back up production (encrypted)
+        if: env.GO == 'true'
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          PROD_DATABASE_CA_CERT: ${{ runner.temp }}/supabase-ca.crt
+          AGE_RECIPIENT: ${{ vars.BACKUP_AGE_RECIPIENT }}
+        run: |
+          case "$AGE_RECIPIENT" in
+            age1*) ;;
+            *) echo "::error::the BACKUP_AGE_RECIPIENT variable must be an age public key (age1...)"; exit 1 ;;
+          esac
+          umask 077
+          node db/prod/dump.mjs --out "$RUNNER_TEMP/prod.dump" --yes
+          name="prod-backup-$(date -u +%Y-%m-%dT%H%MZ)"
+          age -r "$AGE_RECIPIENT" -o "$RUNNER_TEMP/backup/$name.dump.age" "$RUNNER_TEMP/prod.dump"
+          # gli schemi delle estensioni (nessun dato): servono a rehearsal.mjs per ripristinarlo
+          cp "$RUNNER_TEMP/prod.dump.extensions.json" "$RUNNER_TEMP/backup/$name.dump.extensions.json"
+          echo "BACKUP_NAME=$name" >> "$GITHUB_ENV"
+
+      - name: Upload the encrypted backup
+        if: env.GO == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ env.BACKUP_NAME }}
+          path: |
+            ${{ runner.temp }}/backup/*.dump.age
+            ${{ runner.temp }}/backup/*.dump.extensions.json
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Rehearsal database from the dump
+        if: env.GO == 'true'
+        env:
+          DATABASE_URL: ${{ env.REHEARSAL_URL }}
+        run: |
+          node db/prod/rehearsal.mjs --dump "$RUNNER_TEMP/prod.dump"
+          rm -f "$RUNNER_TEMP/prod.dump"
+          rc=0
+          node db/migrate.mjs --check || rc=$?
+          if [ "$rc" = 4 ]; then
+            echo "::error::production is behind the repository's migrations: run npm run prod:setup -- --yes first (CI never migrates)"
+          fi
+          exit "$rc"
+
+      # Lo stesso update.mjs dell'applicazione vera, verso il database del
+      # runner (--allow-local), senza immagini sul disco come in produzione
+      - name: Rehearse the import
+        if: env.GO == 'true'
+        env:
+          DATABASE_URL: ${{ env.REHEARSAL_URL }}
+          PROD_DATABASE_URL: ${{ env.REHEARSAL_URL }}
+        run: |
+          node db/prod/snapshot.mjs --out "$RUNNER_TEMP/before.json"
+          ASSET_DIR="$RUNNER_TEMP/empty" node db/prod/update.mjs --yes --allow-local 2>&1 | tee "$RUNNER_TEMP/rehearsal.log"
+          node db/prod/snapshot.mjs --out "$RUNNER_TEMP/after.json"
+
+      - name: Compare and enforce the limits
+        if: env.GO == 'true'
+        run: |
+          flags=()
+          if [ "$ALLOW_DELETIONS" = true ]; then flags+=(--allow-deletions); fi
+          rc=0
+          node db/prod/compare.mjs "$RUNNER_TEMP/before.json" "$RUNNER_TEMP/after.json" \
+            --limits db/prod/limits.json --header "${flags[@]}" \
+            --out "$RUNNER_TEMP/diff.md" --json "$RUNNER_TEMP/rehearsal.json" || rc=$?
+          cat "$RUNNER_TEMP/diff.md" >> "$GITHUB_STEP_SUMMARY"
+          kept=$(grep -cE '^  tengo ' "$RUNNER_TEMP/rehearsal.log" || true)
+          if [ "${kept:-0}" -gt 0 ]; then
+            echo "- $kept rows the wiki no longer lists were kept because clears or tips use them (see the rehearsal log)." >> "$RUNNER_TEMP/attention.md"
+          fi
+          if [ "$rc" = 3 ]; then
+            echo "::error::deletion limits exceeded, production not touched. If the deletions are expected, run again with allow_deletions."
+          fi
+          exit "$rc"
+
+      - name: Missing images
+        id: images
+        if: env.GO == 'true'
+        env:
+          DATABASE_URL: ${{ env.REHEARSAL_URL }}
+        run: node db/prod/missing-assets.mjs --json "$RUNNER_TEMP/missing.json"
+
+      # Solo i job senza riga, una volta, senza ritentare i 403: insistere
+      # contro un controllo anti-bot e' come lo si fa salire.
+      - name: Download new images from the wiki
+        id: download
+        if: env.GO == 'true' && steps.images.outputs.pending != '0'
+        env:
+          DATABASE_URL: ${{ env.REHEARSAL_URL }}
+          ASSET_DIR: ${{ runner.temp }}/new
+        run: |
+          node db/import/fetch-assets.mjs --missing || echo "::warning::fetch-assets --missing failed: images stay pending"
+          n=$(find "$ASSET_DIR" -type f | wc -l | tr -d ' ')
+          echo "downloaded=$n" >> "$GITHUB_OUTPUT"
+          if [ "$n" -gt 0 ]; then
+            node db/prod/snapshot.mjs --out "$RUNNER_TEMP/after-images.json"
+            node db/prod/compare.mjs "$RUNNER_TEMP/before.json" "$RUNNER_TEMP/after-images.json" \
+              --out /dev/null --json "$RUNNER_TEMP/rehearsal-images.json" || true
+          fi
+
+      # Un deploy di Pages e' una fotografia intera: si pubblica l'albero
+      # completo (ricostruito dalla nostra CDN e verificato), mai solo i nuovi
+      - name: Build the full image tree
+        if: env.GO == 'true' && env.APPLY == 'true' && fromJSON(steps.download.outputs.downloaded || '0') > 0
+        env:
+          DATABASE_URL: ${{ env.REHEARSAL_URL }}
+          ASSET_BASE_URL: ${{ vars.ASSET_BASE_URL }}
+        run: |
+          min=$(node -e "console.log(JSON.parse(require('fs').readFileSync(process.argv[1], 'utf8')).tables.asset.count)" "$RUNNER_TEMP/before.json")
+          node db/prod/mirror-assets.mjs --from "$ASSET_BASE_URL" --to "$RUNNER_TEMP/tree" \
+            --extra "$RUNNER_TEMP/new" --min-files "$min"
+
+      - name: Deploy the images to Cloudflare Pages
+        if: env.GO == 'true' && env.APPLY == 'true' && fromJSON(steps.download.outputs.downloaded || '0') > 0
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CF_PAGES_PROJECT: ${{ vars.CF_PAGES_PROJECT || 'dokkants-assets' }}
+        run: |
+          npx --yes wrangler@4.148.0 pages deploy "$RUNNER_TEMP/tree" \
+            --project-name="$CF_PAGES_PROJECT" --branch=main --commit-dirty=true
+          echo "ASSETS_DEPLOYED=true" >> "$GITHUB_ENV"
+
+      - name: Check the new images are served
+        if: env.ASSETS_DEPLOYED == 'true'
+        env:
+          ASSET_BASE_URL: ${{ vars.ASSET_BASE_URL }}
+        run: |
+          mapfile -t keys < <(cd "$RUNNER_TEMP/new" && find . -type f | sed 's|^\./||' | head -3)
+          for k in "${keys[@]}"; do
+            ok=
+            for _ in 1 2 3 4 5 6; do
+              if curl -fsSI -o /dev/null "${ASSET_BASE_URL%/}/$k"; then ok=1; break; fi
+              sleep 10
+            done
+            if [ -z "$ok" ]; then echo "::error::$k is not served after the deploy: production not touched"; exit 1; fi
+          done
+
+      - name: Images summary
+        if: env.GO == 'true'
+        env:
+          DATABASE_URL: ${{ env.REHEARSAL_URL }}
+          DOWNLOADED: ${{ steps.download.outputs.downloaded || '0' }}
+        run: |
+          node db/prod/missing-assets.mjs --out "$RUNNER_TEMP/images.md" \
+            --downloaded "$DOWNLOADED" --deployed "${ASSETS_DEPLOYED:-false}" >> "$RUNNER_TEMP/images.log"
+          cat "$RUNNER_TEMP/images.md" >> "$GITHUB_STEP_SUMMARY"
+          pending=$(node -e "const m=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'));console.log(m.pending)" "$RUNNER_TEMP/missing.json")
+          if [ "$pending" -gt 0 ]; then
+            echo "- Images pending: $pending before this run, downloaded $DOWNLOADED (the wiki CDN often answers 403 to datacenter IPs; run npm run db:assets on the Mac)." >> "$RUNNER_TEMP/attention.md"
+          fi
+
+      # Le stesse cache del giro di prova: datamine fissato da _snapshot.json,
+      # lo stesso JSON del wiki. ASSET_DIR punta all'albero appena pubblicato,
+      # cosi' fetch-assets --offline adotta i file nuovi.
+      - name: Apply to production
+        if: env.GO == 'true' && env.APPLY == 'true'
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          PROD_DATABASE_CA_CERT: ${{ runner.temp }}/supabase-ca.crt
+          PROD_SITE_URL: ${{ vars.PROD_SITE_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          tree="$RUNNER_TEMP/empty"
+          if [ "${ASSETS_DEPLOYED:-}" = true ]; then tree="$RUNNER_TEMP/tree"; fi
+          node db/prod/snapshot.mjs --prod --out "$RUNNER_TEMP/prod-before.json"
+          echo "APPLY_STARTED=true" >> "$GITHUB_ENV"
+          ASSET_DIR="$tree" node db/prod/update.mjs --yes
+          node db/prod/snapshot.mjs --prod --out "$RUNNER_TEMP/prod-after.json"
+          echo "APPLIED=true" >> "$GITHUB_ENV"
+
+      # Gli utenti hanno potuto scrivere fra il dump e l'applicazione: si
+      # confrontano solo i dati di gioco, e una differenza avvisa e basta
+      - name: Post-check against the rehearsal
+        if: env.APPLIED == 'true'
+        run: |
+          expect="$RUNNER_TEMP/rehearsal.json"
+          if [ "${ASSETS_DEPLOYED:-}" = true ] && [ -s "$RUNNER_TEMP/rehearsal-images.json" ]; then expect="$RUNNER_TEMP/rehearsal-images.json"; fi
+          node db/prod/compare.mjs "$RUNNER_TEMP/prod-before.json" "$RUNNER_TEMP/prod-after.json" \
+            --expect "$expect" --out "$RUNNER_TEMP/post.md" | tee "$RUNNER_TEMP/post.log"
+          if grep -q '^::warning::' "$RUNNER_TEMP/post.log"; then
+            echo "- Production changed differently from the rehearsal (see the warnings)." >> "$RUNNER_TEMP/attention.md"
+          fi
+          { echo "### Applied to production"; echo; echo "Post-check done, warnings below if any."; echo; } >> "$GITHUB_STEP_SUMMARY"
+
+      # Dati pubblici (wiki CC BY-SA, datamine): vanno bene in un repository
+      # pubblico. Solo se il datamine e' arrivato intero, mai una cache a meta'.
+      - name: Save the import cache
+        if: always() && steps.datamine.outcome == 'success'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: db/import/.cache
+          key: import-cache-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Upload the import cache
+        if: always() && steps.datamine.outcome == 'success'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: import-cache
+          path: db/import/.cache
+          retention-days: 30
+          include-hidden-files: true
+          overwrite: true
+          if-no-files-found: error
+
+      - name: Needs attention
+        if: always()
+        run: |
+          rm -f "$RUNNER_TEMP/prod.dump"
+          if [ -s "$RUNNER_TEMP/attention.md" ]; then
+            { echo "### Needs attention"; echo; cat "$RUNNER_TEMP/attention.md"; echo; } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ "${APPLY_STARTED:-}" = true ] && [ "${APPLIED:-}" != true ]; then
+            echo "**The production apply failed part way.** The importers are idempotent: fix the cause and run again. Backup of this run: ${BACKUP_NAME:-none}." >> "$GITHUB_STEP_SUMMARY"
+          elif [ "${GO:-}" = true ] && [ "${APPLIED:-}" != true ]; then
+            echo "Dry run or stopped before the apply: production not touched." >> "$GITHUB_STEP_SUMMARY"
+          fi

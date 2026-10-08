@@ -26,6 +26,8 @@ type Props = {
   iniziale: BuilderStato
   /** dove porta "Cancel": la pagina dell'evento */
   annulla: string
+  /** inviato: l'azione e' partita; false se e' tornata con un errore (BuilderAzzerabile) */
+  onInvio?: (inviato: boolean) => void
 }
 
 type Aperto = { l: number; i: number; dove: string } | null
@@ -36,7 +38,7 @@ type Aperto = { l: number; i: number; dove: string } | null
  * il database, che resta l'autorità. Qui si controlla prima solo per
  * rispondere subito, senza un giro sul server.
  */
-export function Builder({ modo, eventId, tierId, clearId, runs, categorie, abilita, iniziale, annulla }: Props) {
+export function Builder({ modo, eventId, tierId, clearId, runs, categorie, abilita, iniziale, annulla, onInvio }: Props) {
   const [stato, dispatch] = useReducer(reducer, iniziale)
   const [aperto, setAperto] = useState<Aperto>(null)
   const [build, setBuild] = useState<BuildAperta | null>(null)
@@ -47,9 +49,13 @@ export function Builder({ modo, eventId, tierId, clearId, runs, categorie, abili
     if (modo === 'edit') {
       const r = parseChangeNote(form.get('change_note'))
       if (!r.ok) return { error: r.error }
-      return reviseClear(prev, form)
     }
-    return submitClear(prev, form)
+    // Se riesce l'azione porta alla pagina dell'evento (redirect) e non
+    // torna qui: tornare vuol dire un rifiuto, e il form resta com'e'.
+    onInvio?.(true)
+    const esito = modo === 'edit' ? await reviseClear(prev, form) : await submitClear(prev, form)
+    onInvio?.(false)
+    return esito
   }, {})
 
   const cambi = stato.squadre.length - 1

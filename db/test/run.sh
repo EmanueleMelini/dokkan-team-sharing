@@ -5,14 +5,17 @@
 #   configurazione di produzione (pool, TLS, cron, IP) ->
 #   import dei dati veri (carte del wiki, poi quelle solo nel gioco) -> query
 #   delle pagine (lib/queries.ts vero) -> parametri dell'URL (lib/parametri.ts)
+#   -> URL degli eventi (lib/urls.ts) -> tag della cache (lib/cache/*)
 #   -> builder dei clear (0016, lib/clears*, lib/cards.ts, /api/cards)
 #   -> build degli slot (0018, Skill Orb, /api/equipment) -> sfere
 #   esclusive (0021)
 #   -> settings dell'account (0019: scollegare, cancellare l'account)
-#   -> carte solo nel gioco (load-game-cards) -> finestre degli eventi dal
+#   -> carte solo nel gioco (load-game-cards) -> skill delle carte (0022)
+#   -> finestre degli eventi dal
 #   gioco (load-windows) -> eventi creati dal gioco (load-game-events) ->
 #   stage delle riedizioni -> classificazione (story, SBR, archivi) ->
-#   missioni dal gioco (load-missions)
+#   missioni dal gioco (load-missions) -> aggiornamento settimanale
+#   (weekly-data)
 #
 # Gira su dokkan_test, o su TEST_DATABASE_URL se c'e' (il nome deve finire
 # per _test): il database di sviluppo non si tocca. Prima db:test lo
@@ -83,6 +86,14 @@ passo "import missioni (cache)" prepara node db/import/load-missions.mjs
 passo "import equipaggiamento (cache)" prepara node db/import/load-equipment.mjs
 passo "query delle pagine" verifica node_ts db/test/queries.test.mts
 passo "parametri dell'URL" verifica node_ts db/test/parametri.test.mts
+# Gli URL degli eventi (lib/urls.ts): la grammatica dei percorsi e i link
+# che il sito costruisce. Funzioni pure, niente database.
+passo "URL degli eventi" verifica node_ts db/test/urls.test.mts
+# La cache (lib/cache/*): i tag di ogni scrittura, i tag ammessi,
+# /api/revalidate con una funzione finta al posto di next/cache, e la
+# guardia che tiene lib/queries.ts, lib/clears.ts, lib/cards.ts e
+# lib/equipment.ts senza 'use cache'. Funzioni pure.
+passo "cache: tag e /api/revalidate" verifica node_ts db/test/cache-tags.test.mts
 # Il builder dei clear (0016): invio e revisione in una transazione, gli
 # assetti congelati, chi puo' cosa, il limite per ora, voti e commenti.
 # Dopo gli import (servono carte e ricorrenze vere) e dopo le query delle
@@ -110,6 +121,12 @@ passo "settings dell'account" verifica node_ts db/test/account-settings.test.mts
 # Rilancia load-game-cards e load-datamine, e prova il passaggio al wiki
 # con una pagina finta su 1034200 (poi rimette la carta com'era).
 passo "carte dal gioco" verifica node_ts db/test/game-cards.test.mts
+# La pagina della carta (0022): i vincoli di card_skill, set_prefers_animated
+# e le skill che load-cards scrive dalla cache vera (EZA, note con nome,
+# testi di card_text ripuliti, un secondo giro che non cambia niente).
+# Rilancia load-cards, poi load-game-cards e load-datamine come sopra.
+# Crea solo utenti cardpagetest+ e la carta finta 1999990, e li toglie.
+passo "pagina della carta (dati)" verifica node_ts db/test/card-page.test.mts
 # Per ultima: rilancia load-windows e set-event-window, e ritocca qualche
 # run per provarli (rimettendole come le ha trovate).
 passo "finestre dal gioco" verifica node_ts db/test/windows.test.mts
@@ -129,6 +146,14 @@ passo "classificazione" verifica node_ts db/test/classification.test.mts
 # puntano. Rilancia load-missions, poi confronta un evento con i CSV,
 # controlla corse, premi e nomi, e che un secondo giro non cambi niente.
 passo "missioni" verifica node_ts db/test/missions.test.mts
+# L'aggiornamento settimanale (.github/workflows/weekly-data.yml, 0023): i
+# limiti di compare.mjs, i controlli sulle sorgenti, il commit del datamine
+# e il token, la scelta delle immagini, il mirror, le maschere dei log; poi
+# snapshot.mjs vero (un dry-run non scrive), un clear vero e load-events,
+# load-game-events e load-missions rilanciati dalla cache senza che i dati
+# degli utenti cambino, migrate --check, import_run e la forma del workflow.
+# Crea solo weeklytest+weekly_author e il database <test>_mc_test, e li toglie.
+passo "aggiornamento settimanale" verifica node_ts db/test/weekly-data.test.mts
 
 riepilogo
 if [ "$rosso" -eq 0 ]; then echo "TUTTO VERDE"; else echo "$rosso passi rossi"; exit 1; fi

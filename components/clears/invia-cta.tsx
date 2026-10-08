@@ -1,9 +1,10 @@
+'use client'
+
 import Link from 'next/link'
 import { Plus } from '@phosphor-icons/react/dist/ssr'
+import { useViewer } from '@/components/viewer/provider'
 
 type Props = {
-  /** ready: va al builder; setup: deve finire /welcome; anon: deve entrare */
-  modo: 'ready' | 'setup' | 'anon'
   /** il builder con il tier già scelto */
   invia: string
 }
@@ -11,9 +12,12 @@ type Props = {
 /**
  * L'invito a inviare un clear, nel pannello del livello scelto. Chi non è
  * entrato vede dove entrare: dopo l'accesso (e /welcome) torna al builder
- * di questo stesso livello.
+ * di questo stesso livello. Chi guarda lo dice /api/me (useViewer): finché
+ * non risponde vale la versione anonima, quella della pagina in cache.
  */
-export function InviaClear({ modo, invia }: Props) {
+export function InviaClear({ invia }: Props) {
+  const { mode } = useViewer()
+  const modo = mode === 'ready' || mode === 'setup' ? mode : 'anon'
   const href =
     modo === 'ready' ? invia
       : modo === 'setup' ? `/welcome?next=${encodeURIComponent(invia)}`
@@ -22,6 +26,7 @@ export function InviaClear({ modo, invia }: Props) {
   return (
     <Link
       href={href}
+      prefetch={false}
       className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-[13px] font-medium rounded-[var(--raggio)] transition-colors active:scale-[0.98] whitespace-nowrap ${
         modo === 'ready'
           ? 'bg-inchiostro text-sfondo hover:opacity-90'

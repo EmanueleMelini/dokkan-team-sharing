@@ -237,15 +237,105 @@ export async function listStartedRuns(eventId: string, reg: Region): Promise<Run
   )
 }
 
+// ---------------------------------------------------------------------
+//  Chi guarda e cosa tocca una scrittura (cache: /api/me, lib/cache/*)
+// ---------------------------------------------------------------------
+
+/** Lo stato di chi guarda su un tier: i suoi voti, i suoi clear, i punteggi vivi. */
+export type ViewerTierState = {
+  votes: Record<string, -1 | 1>
+  own: string[]
+  scores: Record<string, number>
+}
+
+/** Oltre questi clear per tier i punteggi vivi si fermano: la pagina ne mostra 20. */
+const PUNTEGGI_MAX = 500
+
 /**
- * Quali dei clear mostrati sono dell'utente: le pagine ci mettono Edit e
- * Delete. L'id dell'autore non esce dal server, si confronta qui.
+ * Per /api/me?tier=: la pagina in cache e' quella anonima, e qui arriva
+ * cio' che dipende da chi guarda. I punteggi ci sono perche' la copia della
+ * CDN puo' essere vecchia di un voto: chi ha votato vede sempre il vero.
+ * Gli id dell'autore non escono: si confrontano qui.
  */
-export async function ownClearIds(userId: string | null, clearIds: string[]): Promise<Set<string>> {
-  if (!userId || !clearIds.length) return new Set()
-  const rows = await sql<{ id: string }>(
-    `select id::text from clear where author_id = $1::uuid and id = any ($2::uuid[])`,
-    [userId, clearIds],
+export async function viewerTierState(userId: string, tierId: string): Promise<ViewerTierState> {
+  const rows = await sql<{ version_id: string; clear_id: string; score: number; value: -1 | 1 | null; own: boolean }>(
+    `select c.version_id::text, c.id::text as clear_id, c.score::int, v.value::int as value,
+            (c.author_id = $1::uuid) as own
+     from clear_current c
+     left join clear_vote v on v.version_id = c.version_id and v.user_id = $1::uuid
+     where c.stage_tier_id = $2::bigint and c.status = 'published'
+     order by (v.user_id is not null or c.author_id = $1::uuid) desc,
+              c.has_proof desc, c.score desc, c.turns nulls last, c.id
+     limit $3`,
+    [userId, tierId, PUNTEGGI_MAX],
   )
-  return new Set(rows.map((r) => r.id))
+  const out: ViewerTierState = { votes: {}, own: [], scores: {} }
+  for (const r of rows) {
+    out.scores[r.version_id] = r.score
+    if (r.value === 1 || r.value === -1) out.votes[r.version_id] = r.value
+    if (r.own) out.own.push(r.clear_id)
+  }
+  return out
+}
+
+/** Le carte di tutte le versioni di un clear, assetti a meta' evento compresi. */
+export async function clearCardIds(clearId: string): Promise<string[]> {
+  const rows = await sql<{ id: string }>(
+    `select distinct k.card_id::text as id
+     from clear_version v
+     join lateral (
+       select card_id from clear_card where version_id = v.id
+       union select card_id from clear_lineup_card where version_id = v.id
+     ) k on true
+     where v.clear_id = $1::uuid`,
+    [clearId],
+  )
+  return rows.map((r) => r.id)
+}
+
+export type UserFootprint = { eventIds: string[]; cardIds: string[]; handles: string[] }
+
+/**
+ * Le pagine pubbliche che mostrano qualcosa di un utente: gli eventi dei
+ * suoi clear, dei clear che ha commentato o votato; le carte dei suoi
+ * clear; il suo profilo e quello degli autori che ha votato (i voti
+ * ricevuti stanno nel profilo). Da leggere PRIMA di cancellare.
+ */
+export async function userFootprint(userId: string, extraHandles: string[] = []): Promise<UserFootprint> {
+  const [eventi, carte, handle] = await Promise.all([
+    sql<{ id: string }>(
+      `select c.event_id::text as id from clear c where c.author_id = $1::uuid
+       union select c.event_id::text from clear_comment m
+         join clear_version v on v.id = m.version_id join clear c on c.id = v.clear_id
+        where m.author_id = $1::uuid
+       union select c.event_id::text from clear_vote x
+         join clear_version v on v.id = x.version_id join clear c on c.id = v.clear_id
+        where x.user_id = $1::uuid`,
+      [userId],
+    ),
+    sql<{ id: string }>(
+      `select k.card_id::text as id from clear c
+         join clear_version v on v.clear_id = c.id
+         join clear_card k on k.version_id = v.id
+        where c.author_id = $1::uuid
+       union select k.card_id::text from clear c
+         join clear_version v on v.clear_id = c.id
+         join clear_lineup_card k on k.version_id = v.id
+        where c.author_id = $1::uuid`,
+      [userId],
+    ),
+    sql<{ handle: string }>(
+      `select u.handle::text as handle from app_user u where u.id = $1::uuid
+       union select a.handle::text from clear_vote x
+         join clear_version v on v.id = x.version_id join clear c on c.id = v.clear_id
+         join app_user a on a.id = c.author_id
+        where x.user_id = $1::uuid`,
+      [userId],
+    ),
+  ])
+  return {
+    eventIds: eventi.map((r) => r.id),
+    cardIds: carte.map((r) => r.id),
+    handles: [...new Set([...handle.map((r) => r.handle), ...extraHandles])],
+  }
 }

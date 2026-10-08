@@ -6,14 +6,15 @@
 //   node db/import/fetch-events.mjs           scarica (usa la cache)
 //   node db/import/fetch-events.mjs --count   conta e si ferma
 //   node db/import/fetch-events.mjs --fresh   ignora la cache
-import { mkdirSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const CACHE = join(HERE, '.cache', 'wiki-events.json')
 const API = 'https://dbz-dokkanbattle.fandom.com/api.php'
-const UA = 'DokkanTeamSharing/0.1 (progetto personale, import una volta)'
+// chi siamo e perche', in chiaro: e' un import settimanale, non un browser
+const UA = 'DokkanTeamSharing/0.1 (+https://github.com/EmanueleMelini/dokkan-team-sharing; weekly import)'
 const has = (f) => process.argv.includes(f)
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
@@ -74,10 +75,13 @@ do {
 
 console.log()
 mkdirSync(dirname(CACHE), { recursive: true })
-writeFileSync(CACHE, JSON.stringify({
+// prima un file a parte, poi il nome vero: un giro interrotto a meta'
+// della scrittura lascia la cache vecchia intera, non una troncata
+writeFileSync(CACHE + '.partial', JSON.stringify({
   source: API,
   license: 'CC BY-SA (contenuto del wiki) — attribuzione richiesta',
   fetched_at: new Date().toISOString(),
   pages,
 }, null, 0))
+renameSync(CACHE + '.partial', CACHE)
 console.log(`  salvate in ${CACHE.replace(process.cwd() + '/', '')} (${(readFileSync(CACHE).length / 1e6).toFixed(1)} MB)`)

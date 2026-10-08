@@ -15,11 +15,18 @@
 //   node db/import/fetch-assets.mjs --only thumb --limit 50
 //   node db/import/fetch-assets.mjs --force        riscarica anche se c'e'
 //   node db/import/fetch-assets.mjs --offline      solo righe dai file sul disco
+//   node db/import/fetch-assets.mjs --missing      solo i job senza riga in asset
 //
 // --offline serve per la produzione (db/prod/): le immagini le serve
 // Cloudflare, il database deve solo avere le righe in asset e i
 // collegamenti. Nessun file si scarica, nessun nome si chiede al wiki;
-// cio' che non e' sul disco resta senza immagine e viene contato.
+// cio' che non e' sul disco resta senza immagine e viene contato. Le righe
+// gia' presenti si collegano anche se il file qui non c'e'.
+//
+// --missing serve alla CI settimanale: con ASSET_DIR vuoto chiede al wiki
+// solo le immagini che non hanno ancora una riga, cioe' quelle nuove.
+// IMPORT_POOL_MAX limita le connessioni (il pooler di Supabase ne ammette
+// poche per sessione).
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
@@ -28,6 +35,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import pg from 'pg'
 import { connectionString, describeTarget } from '../env.mjs'
+import { selectJobs } from './asset-select.mjs'
 import { assignCardIds, datamineCards, field, lineField } from './wiki-card.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -37,7 +45,8 @@ const CACHE_EV = join(HERE, '.cache', 'wiki-events.json')
 const CACHE_ITEMS = join(HERE, '.cache', 'wiki-items-template.json')
 const ASSET_DIR = process.env.ASSET_DIR ?? join(ROOT, 'public', 'assets')
 const API = 'https://dbz-dokkanbattle.fandom.com/api.php'
-const UA = 'DokkanTeamSharing/0.1 (progetto personale, import una volta)'
+// chi siamo e perche', in chiaro: e' un import settimanale, non un browser
+const UA = 'DokkanTeamSharing/0.1 (+https://github.com/EmanueleMelini/dokkan-team-sharing; weekly import)'
 
 const argv = process.argv.slice(2)
 const has = (f) => argv.includes(f)
@@ -46,7 +55,11 @@ const ONLY = val('--only', 'all')
 const LIMIT = Number(val('--limit', Infinity))
 const FORCE = has('--force')
 const OFFLINE = has('--offline')
+const MISSING = has('--missing')
 if (OFFLINE && FORCE) { console.error('\n  --offline e --force insieme non hanno senso\n'); process.exit(1) }
+if (MISSING && FORCE) { console.error('\n  --missing e --force insieme non hanno senso\n'); process.exit(1) }
+// in un job di GitHub Actions ogni immagine mancata diventa un avviso
+const CI = process.env.GITHUB_ACTIONS === 'true'
 // --only thumb|art include la rispettiva variante animata;
 // --only anim prende solo le animate
 const want = (k) => ONLY === 'all' || ONLY === k
@@ -192,7 +205,7 @@ console.log(`  database: ${describeTarget()}`)
 // Un pool e non un Client: i worker scaricano in parallelo e ognuno
 // scrive la sua riga in asset. Su un Client solo, node-postgres mette in
 // coda le query e avvisa che in pg@9 non lo fara' piu'.
-const pool = new pg.Pool({ connectionString: url, max: 10 })
+const pool = new pg.Pool({ connectionString: url, max: Number(process.env.IMPORT_POOL_MAX) || 10 })
 const client = { query: (...a) => pool.query(...a) }
 
 // L'URL diretto dei thumb animati: certe pagine (quasi tutte le LR) non
@@ -376,12 +389,15 @@ if (has('--flatten-existing')) {
   process.exit(0)
 }
 
-const capped = jobs.slice(0, LIMIT === Infinity ? jobs.length : LIMIT)
-console.log(`  ${capped.length} asset da considerare${capped.length < jobs.length ? ` (di ${jobs.length}, --limit)` : ''}`)
-
 // quali sono gia' a posto
 const { rows: existing } = await client.query('select key, byte_size, source_url from asset')
 const have = new Map(existing.map((r) => [r.key, r]))
+
+const { todo, kept, dropped } = selectJobs(jobs, have.keys(), { missing: MISSING, offline: OFFLINE })
+if (MISSING) console.log(`  --missing: ${dropped} hanno gia' la riga, restano ${todo.length}`)
+const capped = todo.slice(0, LIMIT === Infinity ? todo.length : LIMIT)
+console.log(`  ${capped.length} asset da considerare${capped.length < todo.length ? ` (di ${todo.length}, --limit)` : ''}` +
+            (kept.length ? `, ${kept.length} gia' in tabella (collegati senza guardare il disco)` : ''))
 
 // Quali mancano davvero: se il file e' sul disco non serve chiedere al
 // wiki dove sta. Su un db:reset questo evita 2430 richieste inutili.
@@ -393,13 +409,15 @@ const onDisk = (job) => {
 }
 const needsWiki = OFFLINE ? [] : FORCE ? capped : capped.filter((j) => !onDisk(j))
 const files = [...new Set(needsWiki.flatMap((j) => j.files))]
-console.log(`  ${capped.length - needsWiki.length} gia' sul disco, ${files.length} file da risolvere sul wiki`)
+console.log(OFFLINE ? '  offline: niente da chiedere al wiki'
+  : `  ${capped.length - needsWiki.length} gia' sul disco, ${files.length} file da risolvere sul wiki`)
 const urls = files.length ? await resolve(files) : new Map()
 const orfani = needsWiki.filter((j) => !j.files.some((f) => urls.has(f)) && !j.directUrl)
 if (orfani.length) console.log(`  senza nessuna immagine: ${orfani.length} (${orfani.slice(0, 3).map((j) => j.keyBase).join(', ')})`)
+if (CI && orfani.length) console.log(`::warning::${orfani.length} images have no source on the wiki (first: ${orfani.slice(0, 5).map((j) => j.keyBase).join(', ')})`)
 
-let done = 0, skipped = 0, adoptedN = 0, failed = 0, bytes = 0
-const results = []
+let done = 0, skipped = kept.length, adoptedN = 0, failed = 0, bytes = 0
+const results = [...kept]
 
 // Il file c'e' sul disco ma la riga in asset no. Succede a ogni db:reset,
 // che ricrea il database ma non tocca public/assets. Riscaricare mezzo
@@ -466,7 +484,10 @@ async function run(job) {
     results.push({ ...job, key })
   } catch (err) {
     failed++
-    if (failed <= 8) console.log(`\n    ${job.files[0]}: ${err.message}`)
+    // un 403 della CDN del wiki non si ritenta (download() ritenta solo i
+    // 5xx e i 429): insistere e' cio' che fa salire un controllo anti-bot
+    if (CI && failed <= 40) console.log(`::warning::image not downloaded: ${job.keyBase} (${err.message})`)
+    else if (failed <= 8) console.log(`\n    ${job.files[0]}: ${err.message}`)
   }
 }
 
@@ -476,8 +497,9 @@ const queue = [...capped]
 await Promise.all(Array.from({ length: CONC }, async () => {
   while (queue.length) {
     await run(queue.shift())
-    const n = done + skipped + adoptedN + failed
-    if (n % 50 === 0) process.stdout.write(`\r    ${n}/${capped.length}  scaricati ${done}, dal disco ${adoptedN}, saltati ${skipped}, falliti ${failed}, ${(bytes / 1e6).toFixed(0)} MB`)
+    const n = done + skipped - kept.length + adoptedN + failed
+    // il contatore che si riscrive solo su un terminale: in un log di CI sarebbero migliaia di righe
+    if (process.stdout.isTTY && n % 50 === 0) process.stdout.write(`\r    ${n}/${capped.length}  scaricati ${done}, dal disco ${adoptedN}, saltati ${skipped}, falliti ${failed}, ${(bytes / 1e6).toFixed(0)} MB`)
   }
 }))
 console.log(`\r    ${capped.length}/${capped.length}  scaricati ${done}, ripresi dal disco ${adoptedN}, saltati ${skipped}, ${OFFLINE ? 'non sul disco' : 'falliti'} ${failed}, ${(bytes / 1e6).toFixed(1)} MB          `)

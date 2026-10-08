@@ -1,45 +1,56 @@
 'use client'
 
-import { useActionState, useOptimistic } from 'react'
+import { useActionState, useOptimistic, useState } from 'react'
 import { ArrowFatDown, ArrowFatUp } from '@phosphor-icons/react/dist/ssr'
 import { voteClear, type ClearActionState } from '@/lib/clears/actions'
+import { useViewer, useViewerTier } from '@/components/viewer/provider'
 
 type Voto = -1 | 1 | null
 
 type Props = {
   versionId: string
+  clearId: string
+  /** il punteggio della copia in cache: /api/me porta quello vivo */
   score: number
-  vote: Voto
-  /** ready: può votare; own: è il suo clear; anon/setup: solo il punteggio */
-  modo: 'ready' | 'own' | 'anon' | 'setup'
 }
 
 const bottone =
   'inline-flex items-center justify-center w-7 h-7 rounded-[var(--raggio)] border transition-colors active:scale-[0.98] disabled:opacity-60'
 
 /**
- * Su e giù sulla versione corrente. Il punteggio cambia subito
- * (useOptimistic) e poi arriva quello vero: l'azione rivalida la pagina,
- * che torna con il punteggio e il voto letti dal database.
+ * Su e giù sulla versione corrente. La pagina in cache e' quella anonima:
+ * il voto di chi guarda e il punteggio vivo arrivano da /api/me
+ * (useViewerTier). Il punteggio cambia subito (useOptimistic) e poi resta
+ * quello che restituisce l'azione: il voto non rigenera la pagina (costa
+ * CPU a ogni clic), quindi le props non cambiano.
  */
-export function VotoClear({ versionId, score, vote, modo }: Props) {
+export function VotoClear({ versionId, clearId, score: inCache }: Props) {
+  const { mode } = useViewer()
+  const tier = useViewerTier()
+  // legato alla versione: dopo una revisione il voto riparte da zero
+  const [confermato, setConfermato] = useState<{ v: string; score: number; vote: Voto } | null>(null)
+  const base = (confermato?.v === versionId ? confermato : null) ?? { score: tier?.scores[versionId] ?? inCache, vote: tier?.votes[versionId] ?? null }
   const [ottimista, applica] = useOptimistic(
-    { score, vote },
+    base,
     (cur, nuovo: -1 | 0 | 1) => ({
       vote: nuovo === 0 ? null : nuovo,
       score: cur.score - (cur.vote ?? 0) + nuovo,
     }),
   )
   const [stato, azione, inCorso] = useActionState<ClearActionState, FormData>(async (prev, form) => {
-    applica(Number(form.get('value')) as -1 | 0 | 1)
-    return voteClear(prev, form)
+    const nuovo = Number(form.get('value')) as -1 | 0 | 1
+    applica(nuovo)
+    const r = await voteClear(prev, form)
+    if (r.ok && r.score !== undefined) setConfermato({ v: versionId, score: r.score, vote: nuovo === 0 ? null : nuovo })
+    return r
   }, {})
 
-  if (modo !== 'ready') {
+  // Sul proprio clear, da anonimi e finche' /api/me non risponde: solo il punteggio
+  if (mode !== 'ready' || tier?.own.includes(clearId)) {
     return (
       <div className="flex items-baseline gap-1 text-[11px] text-tenue">
         <span>Votes</span>
-        <span className="numeri text-[13px] text-inchiostro">{score}</span>
+        <span className="numeri text-[13px] text-inchiostro">{base.score}</span>
       </div>
     )
   }
@@ -77,7 +88,7 @@ export function VotoClear({ versionId, score, vote, modo }: Props) {
       </div>
       {/* Il punteggio nuovo e gli errori si annunciano: il focus resta sul bottone */}
       <p aria-live="polite" className="sr-only">
-        {!inCorso && stato.ok ? `Score ${score}` : ''}
+        {!inCorso && stato.ok ? `Score ${base.score}` : ''}
       </p>
       {stato.error && !inCorso && (
         <p role="alert" className="text-[11px] text-str max-w-[24ch] text-right">{stato.error}</p>

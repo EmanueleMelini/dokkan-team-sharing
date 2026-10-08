@@ -1,5 +1,6 @@
 // L'id delle carte dalle pagine del wiki (db/import/wiki-card.mjs), che
-// load-cards e fetch-assets usano tutti e due.
+// load-cards e fetch-assets usano tutti e due, e i testi delle skill
+// (db/import/wiki-skills.mjs: template, note, EZA).
 //
 // Funzioni pure, niente database. La prima parte usa pagine scritte qui,
 // cosi' ogni caso brutto c'e' di sicuro; la seconda le pagine vere della
@@ -10,7 +11,8 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import {
-  assignCardIds, awakensInto, datamineCards, field, idFieldIds, idsByTitle, imageCardId, lineField,
+  assignCardIds, awakensInto, baseTexts, cleanSkill, datamineCards, field, idFieldIds, idsByTitle, imageCardId,
+  inlineField, lineField, refsOf, skillsFromPage,
 } from '../import/wiki-card.mjs'
 
 let fails = 0
@@ -133,6 +135,89 @@ console.log('\nawakensInto')
   vale('vuoto non scavalca la riga', awakensInto('|dokkan thumb = \n|thumb = [[File:Card 1000010 thumb.png]]', byTitle), null)
 }
 
+console.log('\ninlineField (i testi delle skill)')
+{
+  const w = '|SA type = Ki |SA name = Galick Gun\n|UltraSA name = Big Bang\n|PS name = \n|PS description =\n'
+    + '<b>Basic effect(s)</b><br>- ATK 100%<hr>\n<b>For every attack</b><br>- DEF 20%\n'
+    + '|LS description = [[File:TEQ icon.png|30px|link=Category:TEQ]] & [[Prodigies|Prodigy]] Type ATK +60%\n'
+    + '|Active skill = Causes damage<ref>x [[File:Global server.png|20px]]</ref> |Active skill condition = Once'
+  vale('due campi sulla stessa riga: il secondo', inlineField(w, 'SA name'), 'Galick Gun')
+  vale('...e il primo, fino al "|" del secondo', inlineField(w, 'SA type'), 'Ki')
+  vale('"SA name" non e\' "|UltraSA name ="', inlineField('|UltraSA name = Big Bang', 'SA name'), null)
+  vale('un [[a|b]] e un [[File:..|link=..]] nel valore non lo tagliano', inlineField(w, 'LS description'),
+       '[[File:TEQ icon.png|30px|link=Category:TEQ]] & [[Prodigies|Prodigy]] Type ATK +60%')
+  vale('un campo vuoto non prende la riga dopo', inlineField(w, 'PS name'), null)
+  vale('la passiva a capo dopo l\'"=" e dopo un <hr> resta intera', inlineField(w, 'PS description'),
+       '<b>Basic effect(s)</b><br>- ATK 100%<hr>\n<b>For every attack</b><br>- DEF 20%')
+  vale('un "|" dentro una nota non chiude il campo', inlineField(w, 'Active skill'),
+       'Causes damage<ref>x [[File:Global server.png|20px]]</ref>')
+  vale('...e il campo dopo la nota si legge', inlineField(w, 'Active skill condition'), 'Once')
+  vale('la prima scheda del tabber, non la seconda',
+       inlineField('{{Characters\n|SA name = A\n}}\n|-|Rage=\n{{Characters\n|SA name = B\n|SA name2 = C\n}}', 'SA name2'), null)
+}
+
+console.log('\ncleanSkill')
+{
+  const c = (s, refs) => cleanSkill(s, refs)
+  vale('<br> va a capo, <hr> separa, <b> diventa un titoletto',
+       c('<b>Basic effect(s)</b><br>- ATK 120%<hr><b>When HP</b><br>- DEF 20%').text,
+       'Basic effect(s)\n- ATK 120%\nWhen HP\n- DEF 20%')
+  vale('{{Passive|UpArrow}} non resta nel testo: diventa la freccia', c('- ATK & DEF 120%{{Passive|UpArrow}}').text, '- ATK & DEF 120% ↑')
+  vale('DownArrow e\' un calo, OneTime e Permanent restano parole',
+       c('-{{Passive|OneTime}}DEF 20%{{Passive|DownArrow}}<br>-{{Passive|Permanent}}Ki +1').text,
+       '- (Once only) DEF 20% ↓\n- (Permanent) Ki +1')
+  vale('la nota va nei dettagli, e niente resta incollato',
+       c('Raises DEF for 1 turn<ref>Raises DEF by 30% for 1 turn</ref>Raises ATK<ref>ATK +20%</ref>, then'),
+       { text: 'Raises DEF for 1 turn Raises ATK, then', details: ['Raises DEF by 30% for 1 turn', 'ATK +20%'] })
+  const refs = refsOf('x<ref name="[2]">Launched at 1-7 Ki</ref> y<ref name=lvl>From SA Lv.5</ref>')
+  vale('una nota vuota col nome prende la definizione', c('Power Flick (Extreme)<ref name="[2]"></ref>', refs),
+       { text: 'Power Flick (Extreme)', details: ['Launched at 1-7 Ki'] })
+  vale('...anche scritta <ref name=x/>, senza virgolette', c('Blast<ref name=lvl/>', refs).details, ['From SA Lv.5'])
+  vale('una nota che non esiste non lascia niente', c('Blast<ref name="[9]"/>', refs), { text: 'Blast', details: [] })
+  vale('la stessa nota due volte si scrive una volta', c('a<ref>n</ref> b<ref>n</ref>').details, ['n'])
+  vale('[[File:TEQ icon.png]] diventa TEQ, come prima; SINT e Rainbow pure',
+       c('[[File:TEQ icon.png|30px|link=Category:TEQ]] Type; [[File:SINT icon.png|30px]] and [[File:Rainbow icon.png|30px|link=Rainbow Ki]] Ki').text,
+       'TEQ Type; Super INT and Rainbow Ki')
+  vale('gli altri [[File:]] spariscono, gli stati del nemico restano parole',
+       c('[[File:Card 1 thumb.png|80px]]status: [[File:St 0100.png|30px|link=Stun]] or [[File:St_0012.png|link=Lower DEF]]').text,
+       'status: Stun or Lower DEF')
+  vale('[[a|b]] diventa b, [[:Category:X|Y]] diventa Y, [[c]] diventa c',
+       c('"[[Prodigies|Prodigy]]", [[:Category:Super Class|Super Class]] and [[Youth]]').text, '"Prodigy", Super Class and Youth')
+  vale('"-" da solo e\' "nessuna skill"', c('-').text, null)
+  vale('spazi e righe vuote via, "-x" diventa "- x"', c('  <br><br>-ATK   +1<br> <br>').text, '- ATK +1')
+  vale('commenti e template sconosciuti via', c('ATK<!-- nota | con pipe --> +1{{Foo|bar}}').text, 'ATK +1')
+  vale('null resta null', c(null), { text: null, details: [] })
+}
+
+console.log('\nskillsFromPage')
+{
+  const w = '{{Characters\n|LS description = Ki +3\n|LS description Z = Ki +4\n'
+    + '|SA type = Ki |SA name = Galick Gun<ref name="[1]">12 Ki</ref>\n|SA description = Raises DEF<ref>DEF +30%</ref> and damages\n'
+    + '|SA name Z = Galick Gun (Extreme)<ref name="[1]"></ref>\n|SA description Z = Raises DEF a lot\n'
+    + '|PS name = Pride\n|PS description = - ATK 100%\n|PS description Z = - ATK 200%\n|PS description SZ = - ATK 300%\n'
+    + '|SA type Active = M |Active skill name = Go!\n|Active skill = Causes damage |Active skill condition = Once only\n'
+    + '|Transform type = Rage\n|Transform condition = HP 30% or less\n}}\n'
+    + '|-|Standby=\n{{Characters\n|SA name = Other\n|SA description = not ours\n|Finish attack 1 name = End\n|Finish attack 1 description = Big hit\n}}'
+  const rows = skillsFromPage(w)
+  const k = (kind, tier = 'base', seq = 1) => rows.find((r) => r.kind === kind && r.tier === tier && r.seq === seq)
+  vale('leader base ed EZA', [k('leader')?.description, k('leader', 'eza')?.description], ['Ki +3', 'Ki +4'])
+  vale('super: nome, tipo e nota del nome e della descrizione', k('super'),
+       { kind: 'super', tier: 'base', seq: 1, name: 'Galick Gun', description: 'Raises DEF and damages',
+         details: ['12 Ki', 'DEF +30%'], condition: null, ki: 'Ki' })
+  vale('super EZA col suo nome e la nota col nome risolta', [k('super', 'eza')?.name, k('super', 'eza')?.details], ['Galick Gun (Extreme)', ['12 Ki']])
+  vale('passiva: il nome della base passa a EZA e Super EZA', ['base', 'eza', 'seza'].map((t) => k('passive', t)?.name), ['Pride', 'Pride', 'Pride'])
+  vale('passiva Super EZA', k('passive', 'seza')?.description, '- ATK 300%')
+  vale('attiva con condizione e tipo', [k('active')?.name, k('active')?.condition, k('active')?.ki], ['Go!', 'Once only', 'M'])
+  vale('trasformazione: la condizione, col tipo come nome', [k('transform')?.name, k('transform')?.description], ['Rage', 'HP 30% or less'])
+  vale('il Finish dalla scheda dello Standby', k('finish')?.name, 'End')
+  vale('la super della seconda scheda non e\' della carta', rows.filter((r) => r.kind === 'super').length, 2)
+  const tre = skillsFromPage('{{Characters\n|SA name = A<ref name="[2]">1-7 Ki</ref>\n|SA name2 = B\n|SA name3 = C\n'
+    + '|SA description = one<br>two<ref>n2</ref><br> three\n}}')
+  vale('tre super, una riga di descrizione ciascuna', tre.map((r) => [r.seq, r.name, r.description, r.details]),
+       [[1, 'A', 'one', ['1-7 Ki']], [2, 'B', 'two', ['n2']], [3, 'C', 'three', []]])
+  vale('una pagina senza testi non ha skill', skillsFromPage('{{Characters\n|PS description = -\n|LS description = \n}}'), [])
+}
+
 // --------------------------------------------- le pagine vere, se ci sono
 const CACHE = fileURLToPath(new URL('../import/.cache/wiki-cards.json', import.meta.url))
 const dm = datamineCards()
@@ -149,6 +234,47 @@ if (existsSync(CACHE) && dm) {
   vale('nessun id su due pagine', tutti.length - new Set(tutti).size, 0)
   const p = pages.find((x) => /^\|[ \t]*ID[ \t]*=[ \t]*13306[ \t]*$/m.test(x.wikitext))
   if (p) vale('1033060: l\'artwork non e\' l\'immagine della frase', lineField(p.wikitext, 'artwork'), null)
+}
+
+// i testi delle skill sulle pagine vere: bastano le pagine, non il datamine
+if (existsSync(CACHE)) {
+  console.log('\nle skill delle pagine vere')
+  const { pages } = JSON.parse(readFileSync(CACHE, 'utf8'))
+  const pagina = (t) => pages.find((x) => x.title === t)?.wikitext
+  const vegeta = pagina('Stable Combat Power Vegeta (Mini) (DAIMA)')        // 1030680
+  check('c\'e\' la pagina di 1030680', Boolean(vegeta))
+  if (vegeta) {
+    const t = baseTexts(vegeta)
+    check('1030680: la super non ha la nota incollata', !/turnRaises|Multiplier/.test(t.super_attack ?? ''), t.super_attack)
+    check('1030680: la passiva ha i punti elenco', /\n- /.test(t.passive ?? ''), JSON.stringify(t.passive?.slice(0, 60)))
+    check('1030680: la passiva tiene la parte dopo l\'<hr> a capo', /For every attack received or evaded/.test(t.passive ?? ''))
+  }
+  const pan = pagina('Wings Spread Out to the Cosmos Pan (GT) (Honey)')
+  check('c\'e\' la pagina di Pan (GT) (Honey)', Boolean(pan))
+  if (pan) {
+    const rows = skillsFromPage(pan)
+    const ultra = rows.find((r) => r.kind === 'ultra' && r.tier === 'eza')
+    check('Pan: Ultra Super Attack EZA', Boolean(ultra), ultra?.name)
+    check('Pan: la nota con nome risolta nei dettagli', ultra?.details.some((d) => /30% chance to stun/.test(d)), JSON.stringify(ultra?.details))
+    const act = rows.find((r) => r.kind === 'active')
+    check('Pan: attiva con la condizione', Boolean(act?.condition), act?.condition)
+  }
+  // su tutte le pagine: niente markup rimasto, e le super hanno il nome
+  // (con field() a inizio riga, "|SA type = Ki |SA name = ..." lo perdeva)
+  const tutte = pages.flatMap((x) => skillsFromPage(x.wikitext))
+  const sporche = tutte.filter((r) => [r.name, r.description, r.condition, ...r.details]
+    .some((v) => v && /\[\[|\]\]|\{\{|\}\}|<\/?(ref|br|hr|b)\b/i.test(v)))
+  check('nessun markup nei testi', sporche.length === 0, sporche.length ? JSON.stringify(sporche[0]).slice(0, 200) : `${tutte.length} righe`)
+  const conNome = tutte.filter((r) => r.kind === 'super' && r.tier === 'base' && r.name).length
+  check('le super di base hanno il nome', conNome > 2500, `${conNome}`)
+  const dup = new Set(), doppie = []
+  for (const x of pages) {
+    for (const r of skillsFromPage(x.wikitext)) {
+      const k = `${x.pageid}/${r.kind}/${r.tier}/${r.seq}`
+      if (dup.has(k)) doppie.push(k); dup.add(k)
+    }
+  }
+  check('nessuna chiave (carta, tipo, livello, seq) doppia', doppie.length === 0, doppie.slice(0, 3).join(' '))
 }
 
 console.log(`\n  ${passes} PASS, ${fails} FAIL`)

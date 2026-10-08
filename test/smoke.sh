@@ -47,8 +47,14 @@ verifica () {
 # pero' contiene quel testo su OGNI pagina (e' il confine not-found del
 # layout). Next marca la risposta con noindex, e solo quella: basta quello,
 # insieme al codice.
+#
+# Con next start (e su Vercel) un URL evento non prerenderizzato riceve alla
+# prima visita lo shell dell'app con 200, e il 404 arriva nello stream (con
+# noindex); la pagina rigenerata dietro e' un 404 vero, servito dalla cache
+# dalla seconda visita. Per questo un 200 con noindex vale un secondo giro.
 verifica_404 () { # nome percorso
   prendi "$2"
+  if [ "$codice" = 200 ] && grep -q '<meta name="robots" content="noindex"' "$TMP/html"; then prendi "$2"; fi
   if [ "$codice" != 404 ]; then fail "$1: $2 ha risposto $codice, atteso 404"; return; fi
   if ! grep -q '<meta name="robots" content="noindex"' "$TMP/html"; then fail "$1: $2 senza noindex"; return; fi
   if grep -qE -- "$ERRORE" "$TMP/testo"; then fail "$1: $2 mostra l'errore"; return; fi
@@ -75,19 +81,23 @@ ERRORE='Something went wrong'
 
 echo "la lista degli eventi"
 verifica "prima pagina" /events 200 '(^| )1-60 of [0-9]+ events' "$ERRORE"
-verifica "seconda pagina" '/events?page=2' 200 '(^| )61-[0-9]+ of [0-9]+ events' "$ERRORE"
-verifica "pagina enorme: si torna alla prima, niente 500" '/events?page=99999999999999999999' 200 \
+# Le viste filtrate stanno in /events/browse: /events e' statica e non legge la query
+verifica "seconda pagina" '/events/browse?page=2' 200 '(^| )61-[0-9]+ of [0-9]+ events' "$ERRORE"
+verifica "pagina enorme: si torna alla prima, niente 500" '/events/browse?page=99999999999999999999' 200 \
   ' of [0-9]+ events' "$ERRORE"
-verifica "versione giapponese" '/events?region=japan' 200 ' of [0-9]+ events' "$ERRORE"
+verifica "versione giapponese" '/events/browse?region=japan' 200 ' of [0-9]+ events' "$ERRORE"
+prendi '/events/browse?page=2'
+grep -q '<meta name="robots" content="noindex, follow"' "$TMP/html" && pass "le viste filtrate sono noindex" \
+  || fail "/events/browse senza noindex"
 
 echo "la ricerca"
-verifica "un NUL nella ricerca non rompe la query" '/events?q=%00' 200 ' events?( |$)' "$ERRORE"
+verifica "un NUL nella ricerca non rompe la query" '/events/browse?q=%00' 200 ' events?( |$)' "$ERRORE"
 # Come per il %: da jolly troverebbe tutti gli eventi, su piu' pagine.
 # Non si chiede "0 events", che smetterebbe di valere il giorno in cui un
 # nome importato contiene davvero un _.
-verifica "il _ cerca un _, non un carattere qualsiasi" '/events?q=_' 200 '[0-9]+ events? ' "$ERRORE| of [0-9]+ events"
+verifica "il _ cerca un _, non un carattere qualsiasi" '/events/browse?q=_' 200 '[0-9]+ events? ' "$ERRORE| of [0-9]+ events"
 # con il % come jolly uscirebbero tutti, su piu' pagine ("1-60 of ...")
-verifica "il % cerca un %" '/events?q=%25' 200 '%' "$ERRORE| of [0-9]+ events"
+verifica "il % cerca un %" '/events/browse?q=%25' 200 '%' "$ERRORE| of [0-9]+ events"
 
 echo "le pagine che non ci sono"
 verifica_404 "id non numerico" /events/abc
@@ -95,13 +105,50 @@ verifica_404 "id che non esiste" /events/999999999999
 verifica_404 "percorso sconosciuto" /percorso-che-non-esiste
 
 echo "le pagine evento"
-EZA=${SMOKE_EZA_ID:-$(primo_evento '/events?type=zbattle' '[0-9]+ levels')}
-STAGE=${SMOKE_STAGE_ID:-$(primo_evento '/events?type=challenge' '[1-9][0-9]* stages?')}
+EZA=${SMOKE_EZA_ID:-$(primo_evento '/events/browse?type=zbattle' '[0-9]+ levels')}
+STAGE=${SMOKE_STAGE_ID:-$(primo_evento '/events/browse?type=challenge' '[1-9][0-9]* stages?')}
 if [ -z "$EZA" ]; then fail "nessuna EZA con livelli nella lista: mancano i dati importati?"
 else verifica "un'EZA ($EZA) parla di livelli" "/events/$EZA" 200 '[0-9]+ levels' "$ERRORE|[0-9]+ stages? "
 fi
 if [ -z "$STAGE" ]; then fail "nessuna sfida con stage nella lista: mancano i dati importati?"
 else verifica "una sfida ($STAGE) parla di stage" "/events/$STAGE" 200 '[0-9]+ stages?' "$ERRORE|[0-9]+ levels"
+  verifica "la versione giapponese nel percorso" "/events/$STAGE/japan" 200 'Japanese version' "$ERRORE"
+fi
+
+echo "gli URL delle viste (lib/urls.ts)"
+if [ -n "$EZA" ]; then
+  prendi "/events/$EZA"
+  TIER=$(grep -oE "href=\"/events/$EZA/t/[0-9]+\"" "$TMP/html" | head -1 | grep -oE '[0-9]+"$' | tr -d '"')
+  if [ -z "$TIER" ]; then fail "la pagina dell'EZA non ha link /t/<tier>"
+  else
+    verifica "un livello scelto" "/events/$EZA/t/$TIER" 200 '[0-9]+ levels' "$ERRORE"
+    verifica_404 "un tier che non e' dell'evento" "/events/$EZA/t/999999999999"
+    verifica_404 "p/1 non esiste (la pagina 1 e' senza /p)" "/events/$EZA/t/$TIER/p/1"
+    verifica_404 "una pagina oltre l'ultima" "/events/$EZA/t/$TIER/p/99999"
+  fi
+  verifica_404 "un segmento sconosciuto" "/events/$EZA/zzz"
+  verifica_404 "Japan con la maiuscola" "/events/$EZA/Japan"
+fi
+read -r codice dove < <(curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' --max-time 60 "$BASE/")
+[ "$codice" = 307 ] && [ "$dove" = "$BASE/events" ] && pass "/ porta a /events (307)" || fail "/: $codice $dove"
+prendi /robots.txt
+grep -q 'Disallow: /events/browse' "$TMP/html" && pass "robots.txt esclude /events/browse" || fail "robots.txt senza /events/browse"
+
+echo "chi guarda (/api/me)"
+intestazioni=$(curl -s -D - -o "$TMP/html" --max-time 60 "$BASE/api/me" | tr -d '\r')
+[ "$(cat "$TMP/html")" = '{"user":null}' ] && grep -qi '^cache-control:.*no-store' <<<"$intestazioni" \
+  && pass "/api/me senza cookie: {\"user\":null}, no-store" || fail "/api/me senza cookie: $(head -c 80 "$TMP/html")"
+grep -qi '^access-control-allow-origin' <<<"$intestazioni" && fail "/api/me con un header CORS" \
+  || pass "/api/me senza header CORS"
+
+# Contro next start (non next dev): le pagine pubbliche escono dalla cache
+if [ "${SMOKE_EXPECT_CACHE:-}" = 1 ]; then
+  echo "la cache (next start)"
+  for p in /events ${EZA:+/events/$EZA}; do
+    curl -s -o /dev/null "$BASE$p"
+    stato=$(curl -s -D - -o /dev/null "$BASE$p" | tr -d '\r' | grep -i '^x-nextjs-cache:' | awk '{print $2}')
+    [ "$stato" = HIT ] && pass "$p al secondo giro: HIT" || fail "$p al secondo giro: x-nextjs-cache ${stato:-assente}"
+  done
 fi
 
 [ "$fails" -eq 0 ] && echo "TUTTO VERDE" || { echo "$fails verifiche rosse"; exit 1; }

@@ -15,7 +15,10 @@ export const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]', ''])
 // il vecchio database di un altro progetto sullo stesso server: mai
 const FORBIDDEN_DBS = new Set(['dokkanteamsharing'])
-const SSL_PARAMS = ['sslmode', 'sslrootcert', 'sslcert', 'sslkey', 'sslpassword', 'uselibpqcompat', 'ssl']
+// L'ordine non conta (si cancellano dall'URL uno per uno), ma 'sslpassword'
+// sta in fondo: seguito da un'altra stringa, gli scanner di segreti la
+// leggevano come una password con quel valore (falso positivo di GitGuardian).
+const SSL_PARAMS = ['ssl', 'sslmode', 'sslrootcert', 'sslcert', 'sslkey', 'uselibpqcompat', 'sslpassword']
 
 const fail = (msg) => { throw new Error(msg) }
 

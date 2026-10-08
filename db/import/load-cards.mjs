@@ -13,7 +13,9 @@ import { fileURLToPath } from 'node:url'
 import pg from 'pg'
 import { connectionString, describeTarget } from '../env.mjs'
 import { snapshotInfo } from './datamine.mjs'
-import { assignCardIds, awakensInto, datamineCards, field, idsByTitle, scalar } from './wiki-card.mjs'
+import {
+  assignCardIds, awakensInto, baseTexts, datamineCards, field, idsByTitle, scalar, skillsFromPage,
+} from './wiki-card.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 // WIKI_CARDS_CACHE solo per i test: game-cards.test.mts gli passa una
@@ -28,6 +30,11 @@ const LOCALE = 'en'   // il wiki e' in inglese
 // field(), scalar() e l'id della carta stanno in wiki-card.mjs: li usa
 // anche fetch-assets, e i due devono vedere la stessa carta.
 
+// Nome ed epiteto. I testi delle skill no: li pulisce cleanSkill
+// (wiki-skills.mjs), che tiene gli a capo e mette le note <ref> da parte.
+// Questa versione schiacciava tutto su una riga e lasciava il testo delle
+// note incollato al resto ("for 1 turnRaises SA Multiplier by 30%...").
+//
 // Le leader skill sul wiki scrivono i tipi come icone, non come testo:
 // "[[File:TEQ icon.png|30px]] & [[File:INT icon.png|30px]] Type ATK +30%".
 // Buttare via i File lascerebbe "& Type ATK +30%", che non dice niente.
@@ -108,10 +115,8 @@ function parseCard(page, assigned, byTitle) {
       def: int(scalar(w, 'DEF max')),
       wiki_title: page.title,
     },
-    text: { name, epithet,
-            leader_skill: clean(field(w, 'LS description')) || null,
-            passive:      clean(field(w, 'PS description')) || null,
-            super_attack: clean(field(w, 'SA description')) || null },
+    text: { name, epithet, ...baseTexts(w) },
+    skills: skillsFromPage(w),
     releases: [
       { reg: 'japan',  released_at: parseDate(scalar(w, 'JPdate')) },
       { reg: 'global', released_at: parseDate(scalar(w, 'GLBdate')) },
@@ -173,6 +178,16 @@ console.log(`  categorie distinte:  ${allCats.length}`)
 console.log(`  con EZA: ${cards.filter((c) => c.card.has_eza).length}`)
 console.log(`  uscite su Global: ${cards.filter((c) => c.releases.some((r) => r.reg === 'global')).length}`)
 console.log(`  solo su Japan:    ${cards.filter((c) => !c.releases.some((r) => r.reg === 'global')).length}`)
+
+// Quante carte hanno ogni testo, per tipo e livello: un calo improvviso
+// fra due import dice che il parser ha perso un campo.
+const coverage = new Map()
+for (const c of cards) {
+  for (const k of new Set(c.skills.map((x) => `${x.kind}/${x.tier}`))) coverage.set(k, (coverage.get(k) ?? 0) + 1)
+}
+const skillRows = cards.reduce((n, c) => n + c.skills.length, 0)
+console.log(`\n  skill: ${skillRows} righe; carte per tipo/livello:`)
+console.log('    ' + [...coverage].sort().map(([k, n]) => `${k} ${n}`).join('  '))
 
 if (DRY) {
   const sample = cards.find((c) => c.card.wiki_title === 'Pride Regained Super Saiyan Vegeta') ?? cards[0]
@@ -250,6 +265,25 @@ try {
        t.map(()=>'official')])
   }
   console.log(`  carte scritte: ${cards.length}`)
+
+  // Le skill si sostituiscono in blocco, come link e categorie: una skill
+  // che sparisce dal wiki sparisce anche qui. Solo le righe 'official' di
+  // queste carte: una traduzione della community resta.
+  await client.query(`delete from card_skill where card_id = any($1::bigint[]) and locale = $2 and source = 'official'`,
+    [cards.map((c) => c.card.id), LOCALE])
+  const sk = cards.flatMap((c) => c.skills.map((x) => ({ card_id: c.card.id, ...x })))
+  for (const part of chunks(sk, 2000)) {
+    // json e non unnest: details e' un array per riga, e unnest di un
+    // array a due dimensioni vuole righe tutte lunghe uguali
+    await client.query(`
+      insert into card_skill (card_id, locale, kind, tier, seq, name, description, details, condition, ki, source)
+      select x.card_id, $2, x.kind, x.tier, x.seq, x.name, x.description,
+             array(select jsonb_array_elements_text(x.details)), x.condition, x.ki, 'official'
+        from jsonb_to_recordset($1::jsonb) as x(card_id bigint, kind card_skill_kind, tier card_skill_tier,
+             seq smallint, name text, description text, details jsonb, condition text, ki text)`,
+      [JSON.stringify(part), LOCALE])
+  }
+  console.log(`  skill scritte: ${sk.length}`)
 
   const rel = cards.flatMap((c) => c.releases.map((r) => ({ id: c.card.id, ...r })))
   for (const part of chunks(rel, 1000)) {

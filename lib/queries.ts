@@ -300,6 +300,14 @@ export type ClearRow = {
 
 export const CLEAR_PER_PAGINA = 20
 
+/**
+ * L'ordine dei clear di un tier: prima quelli con prova, poi i piu'
+ * votati. Unico per tutto il sito, cosi' clearPage() trova la pagina dove
+ * la lista mostra davvero un clear (profili, pagina carta, moderazione).
+ * Vuole l'alias c su clear_current.
+ */
+export const ORDINE_CLEAR = 'c.has_proof desc, c.score desc, c.turns nulls last, c.id'
+
 /** I clear di una difficoltà in una regione, con la squadra e le prove. */
 export async function listClears(
   tierId: string,
@@ -339,8 +347,87 @@ export async function listClears(
      join app_user u on u.id = c.author_id
      join clear_reputation rep on rep.clear_id = c.id
      where c.stage_tier_id = $1::bigint and c.reg = $2 and c.status = 'published'
-     order by c.has_proof desc, c.score desc, c.turns nulls last, c.id
+     order by ${ORDINE_CLEAR}
      limit $3 offset $4`,
     [tierId, reg, limit, offset],
+  )
+}
+
+/** La pagina (da 1) della lista del suo tier in cui sta un clear, o null. */
+export async function clearPage(tierId: string, reg: Region, clearId: string): Promise<number | null> {
+  const r = await sqlOne<{ n: number }>(
+    `select x.n::int from (
+       select c.id, row_number() over (order by ${ORDINE_CLEAR}) as n
+       from clear_current c
+       where c.stage_tier_id = $1::bigint and c.reg = $2 and c.status = 'published'
+     ) x where x.id = $3::uuid`,
+    [tierId, reg, clearId],
+  )
+  return r ? Math.ceil(r.n / CLEAR_PER_PAGINA) : null
+}
+
+// ---------------------------------------------------------------------
+//  Per la cache (lib/cache/data.ts): quando cambia lo stato, cosa
+//  prerenderizzare, cosa mettere nella sitemap
+// ---------------------------------------------------------------------
+
+/**
+ * Fra quanti secondi il prossimo inizio o fine di una ricorrenza (di un
+ * evento, o di tutti con null). event_status calcola Ongoing ed Ended da
+ * now(): una pagina in cache deve scadere a quel confine, non un giorno
+ * dopo. null: nessun confine in futuro.
+ */
+export async function secondsToNextStatusChange(eventId: string | null): Promise<number | null> {
+  const r = await sqlOne<{ s: number | null }>(
+    `select ceil(extract(epoch from min(t) - now()))::int as s from (
+       select starts_at as t from event_run
+        where starts_at > now() and ($1::bigint is null or event_id = $1::bigint)
+       union all
+       select ends_at from event_run
+        where ends_at > now() and ($1::bigint is null or event_id = $1::bigint)
+     ) x`,
+    [eventId],
+  )
+  return r?.s ?? null
+}
+
+/** Quanti eventi si prerenderizzano al build: ogni pagina costa tempo di build e spazio. */
+export const EVENTI_STATICI_MAX = 100
+
+/**
+ * Gli eventi Global in corso o in arrivo con una fine nota, i piu' vicini
+ * alla fine per primi: sono quelli che si aprono adesso. Mai vuota (con
+ * cacheComponents generateStaticParams deve dare almeno un id): senza
+ * eventi cosi' resta il piu' recente.
+ */
+export async function staticEventIds(limit = EVENTI_STATICI_MAX): Promise<string[]> {
+  const righe = await sql<{ id: string }>(
+    `select x.id from (
+       select distinct on (es.event_id) es.event_id::text as id, es.ends_at
+       from event_status es
+       join event_text et on et.event_id = es.event_id and et.locale = 'en'
+       where es.reg = 'global' and es.status in ('active', 'upcoming') and es.ends_at is not null
+       order by es.event_id, es.ends_at
+     ) x order by x.ends_at, x.id limit $1`,
+    [limit],
+  )
+  if (righe.length) return righe.map((r) => r.id)
+  const ultimo = await sqlOne<{ id: string }>(
+    `select e.id::text from event e
+     join event_text et on et.event_id = e.id and et.locale = 'en'
+     order by e.id desc limit 1`,
+  )
+  return ultimo ? [ultimo.id] : []
+}
+
+/** Tutti gli eventi che si mostrano (hanno il nome in inglese), per la sitemap. */
+export async function sitemapEvents(): Promise<{ id: string; ultima: Date | null }[]> {
+  return sql<{ id: string; ultima: Date | null }>(
+    `select e.id::text, max(r.starts_at) filter (where r.starts_at <= now()) as ultima
+     from event e
+     join event_text et on et.event_id = e.id and et.locale = 'en'
+     left join event_run r on r.event_id = e.id
+     group by e.id
+     order by ultima desc nulls last, e.id desc`,
   )
 }

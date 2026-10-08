@@ -1,8 +1,8 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { Suspense } from 'react'
 import { Geist, Geist_Mono } from 'next/font/google'
 import { UserMenu } from '@/components/auth/user-menu'
+import { ViewerProvider } from '@/components/viewer/provider'
 import './globals.css'
 
 const geistSans = Geist({ variable: '--font-geist-sans', subsets: ['latin'] })
@@ -18,6 +18,9 @@ export default function RootLayout({ children }: LayoutProps<'/'>) {
   return (
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full`}>
       <body className="font-sans min-h-full flex flex-col">
+        {/* Chi guarda lo sa solo il browser (/api/me): il layout e le pagine
+            pubbliche restano uguali per tutti, e quindi in cache. */}
+        <ViewerProvider>
         <header className="border-b border-linea bg-superficie">
           <div className="mx-auto max-w-6xl px-5 h-14 flex items-center gap-6">
             <Link href="/events" className="font-semibold tracking-tight text-inchiostro">
@@ -28,12 +31,8 @@ export default function RootLayout({ children }: LayoutProps<'/'>) {
                 Events
               </Link>
             </nav>
-            {/* La sessione si legge solo qui dentro: il resto dell'header e
-                la pagina non aspettano i cookie. */}
             <div className="ml-auto">
-              <Suspense fallback={null}>
-                <UserMenu />
-              </Suspense>
+              <UserMenu />
             </div>
           </div>
         </header>
@@ -67,6 +66,7 @@ export default function RootLayout({ children }: LayoutProps<'/'>) {
             </nav>
           </div>
         </footer>
+        </ViewerProvider>
       </body>
     </html>
   )

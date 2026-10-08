@@ -1,6 +1,5 @@
-import Link from 'next/link'
 import { ChatCircle } from '@phosphor-icons/react/dist/ssr'
-import { CommentoForm } from '@/components/clears/commento-form'
+import { CommentoSpazio } from '@/components/clears/commento-spazio'
 import { soloGiorno } from '@/lib/date'
 import type { ClearComment } from '@/lib/clears'
 
@@ -10,9 +9,8 @@ type Props = {
   commenti: ClearComment[]
   /** quanti sono in tutto: la lista ne porta al massimo 100 */
   totale: number
-  modo: 'ready' | 'own' | 'anon' | 'setup'
-  /** dove porta "Sign in" o "Finish setup" per chi non può ancora scrivere */
-  accesso: string
+  /** la pagina a cui tornare dopo l'accesso, per chi non può ancora scrivere */
+  ritorno: string
 }
 
 /**
@@ -20,7 +18,7 @@ type Props = {
  * clear resta corta da scorrere. <details> si apre da tastiera senza JS
  * e resta aperto quando l'azione rinfresca la pagina.
  */
-export function Commenti({ versionId, idBase, commenti, totale, modo, accesso }: Props) {
+export function Commenti({ versionId, idBase, commenti, totale, ritorno }: Props) {
   const n = Math.max(totale, commenti.length)
   return (
     <details className="mt-3 group">
@@ -49,16 +47,8 @@ export function Commenti({ versionId, idBase, commenti, totale, modo, accesso }:
             ))}
           </ol>
         )}
-        {modo === 'ready' || modo === 'own' ? (
-          <CommentoForm versionId={versionId} idBase={idBase} />
-        ) : (
-          <p className="mt-2 text-[12px] text-tenue">
-            <Link href={accesso} className="text-testo underline decoration-oro-linea underline-offset-2 hover:text-inchiostro">
-              {modo === 'setup' ? 'Finish setting up your account' : 'Sign in'}
-            </Link>{' '}
-            to comment.
-          </p>
-        )}
+        {/* chi guarda lo sa solo il browser (/api/me): un'isola client */}
+        <CommentoSpazio versionId={versionId} idBase={idBase} ritorno={ritorno} />
       </div>
     </details>
   )

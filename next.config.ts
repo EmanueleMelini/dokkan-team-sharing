@@ -29,9 +29,34 @@ const securityHeaders = [
   ...(production ? [{ key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains' }] : []),
 ]
 
+// La cache (Vercel Hobby: 4 ore di CPU attiva al mese, niente extra). Le
+// pagine pubbliche non leggono ne' la sessione ne' la query string: sono
+// prerender che la CDN serve senza invocare funzioni. I dati stanno in
+// 'use cache' (lib/cache/data.ts) e si invalidano per tag a ogni scrittura
+// (lib/cache/invalidate.ts) e con gli import (/api/revalidate).
+//
+// partialPrefetching serve all'ISR degli id non prerenderizzati al build:
+// la prima visita genera la pagina, le successive la trovano in cache.
+const cacheLife = {
+  // dati del gioco: cambiano solo con un import, che invalida per tag
+  catalog: { stale: 300, revalidate: 86_400, expire: 2_592_000 },
+  // clear, voti, commenti: invalidati per tag a ogni scrittura
+  community: { stale: 60, revalidate: 86_400, expire: 604_800 },
+}
+
 const nextConfig: NextConfig = {
   images: { unoptimized: true },
   poweredByHeader: false,
+  cacheComponents: true,
+  partialPrefetching: true,
+  cacheLife,
+  // NEXT_CACHE_MEMORY=0 imita in locale una funzione serverless, dove la
+  // cache in memoria non sopravvive fra le richieste (test/cpu.sh).
+  ...(process.env.NEXT_CACHE_MEMORY === '0' ? { cacheMaxMemorySize: 0 } : {}),
+  // Il redirect sta nel routing: nessuna funzione per chi apre /.
+  async redirects() {
+    return [{ source: '/', destination: '/events', permanent: false }]
+  },
   async headers() {
     return [{ source: '/:path*', headers: securityHeaders }]
   },

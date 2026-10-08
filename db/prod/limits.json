@@ -1,0 +1,13 @@
+{
+  "user_tables": "identical",
+  "card": { "maxRemoved": 0 },
+  "asset": { "maxRemoved": 0 },
+  "event": { "maxRemoved": 10, "maxRemovedPct": 1 },
+  "stage": { "maxRemoved": 20, "maxRemovedPct": 1 },
+  "stage_tier": { "maxRemoved": 40, "maxRemovedPct": 1 },
+  "mission": { "maxRemoved": 300, "maxRemovedPct": 4 },
+  "event_run": { "maxRemovedPct": 5 },
+  "card_category": { "maxRemovedPct": 2 },
+  "card_link": { "maxRemovedPct": 2 },
+  "*": { "minTotalPct": 97 }
+}

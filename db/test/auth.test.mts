@@ -6,7 +6,7 @@
 // un'email @example.invalid e se ne va alla fine, anche se qualcosa fallisce.
 import { randomBytes } from 'node:crypto'
 import pg from 'pg'
-import { createAuth } from '@/lib/auth/config'
+import { SESSION_DAYS, createAuth } from '@/lib/auth/config'
 import { readAuthEnv } from '@/lib/auth/env'
 import { FRESH_SESSION_SECONDS, isFreshSession } from '@/lib/auth/fresh'
 import { suggestHandle } from '@/lib/auth/handle'
@@ -226,7 +226,8 @@ try {
   check('e scade in 10 minuti', salvati.every((s) => s.scade > 590 && s.scade <= 600), salvati.map((s) => s.scade).join(','))
 
   res = await apri(link!.url)
-  const cookie = (res.headers.get('set-cookie') ?? '').split(';')[0]
+  const impostati = res.headers.getSetCookie()
+  const cookie = (impostati.find((c) => c.startsWith('dts.session_token=')) ?? '').split(';')[0]
   check('il link porta a /welcome con il cookie di sessione', res.status === 302
     && res.headers.get('location') === `${BASE}/welcome?next=/events` && cookie.startsWith('dts.session_token='),
     `${res.status} ${res.headers.get('location')}`)
@@ -238,6 +239,25 @@ try {
     'select onboarded_at, role, reg from app_user where email = $1', [em])
   check('nel database: onboarded_at nullo, ruolo e regione di default', riga?.onboarded_at === null
     && riga.role === 'member' && riga.reg === 'global', JSON.stringify(riga))
+
+  // L'indizio dts_signed_in (lib/viewer/hint.ts): le pagine in cache non
+  // leggono la sessione, e' lui a dire al browser di chiedere /api/me.
+  const indizio = impostati.find((c) => c.startsWith('dts_signed_in='))
+  const attr = (indizio ?? '').toLowerCase()
+  check('la verifica imposta dts_signed_in=1', !!indizio && indizio.startsWith('dts_signed_in=1;'), indizio ?? 'assente')
+  check('leggibile dal browser (non HttpOnly), SameSite=Lax, Path=/', !attr.includes('httponly') &&
+    attr.includes('samesite=lax') && attr.includes('path=/'), indizio ?? '')
+  check('dura quanto la sessione', attr.includes(`max-age=${SESSION_DAYS * 24 * 60 * 60}`), indizio ?? '')
+  check('Secure solo su https (qui http://localhost)', !attr.includes('secure'))
+  check('prefersAnimated nella sessione, falso per difetto', sess?.user.prefersAnimated === false,
+    String(sess?.user.prefersAnimated))
+  res = await auth.handler(new Request(`${BASE}/api/auth/update-user`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', origin: BASE, cookie, 'x-forwarded-for': `10.9.1.${ip++}` },
+    body: JSON.stringify({ prefersAnimated: true }),
+  }))
+  const animata = await one<{ p: boolean }>('select prefers_animated as p from app_user where email = $1', [em])
+  check('prefersAnimated non si scrive dal client (input: false)', animata.p === false, `${res.status}`)
 
   res = await apri(link!.url)
   check('lo stesso link una seconda volta: INVALID_TOKEN', res.status === 302
@@ -338,7 +358,7 @@ try {
     const nuovo = inviati.at(-1)
     check('da dentro si chiede un altro link', res.status === 200 && nuovo?.email === em && nuovo.url !== link!.url, `${res.status}`)
     res = await auth.handler(new Request(nuovo!.url, { headers: { cookie, 'x-forwarded-for': `10.9.4.${ip++}` } }))
-    const cookie2 = (res.headers.get('set-cookie') ?? '').split(';')[0]
+    const cookie2 = (res.headers.getSetCookie().find((x) => x.startsWith('dts.session_token=')) ?? '').split(';')[0]
     check('  aprirlo con il vecchio cookie porta a /welcome?next=/settings con un cookie nuovo', res.status === 302
       && res.headers.get('location') === `${BASE}/welcome?next=/settings` && cookie2.startsWith('dts.session_token=') && cookie2 !== cookie,
       `${res.status} ${res.headers.get('location')}`)
@@ -347,6 +367,16 @@ try {
     res = await collega(cookie2)
     c = await codice(res)
     check('  e /link-social la lascia passare', c !== 'SESSION_NOT_FRESH', `${res.status} ${c}`)
+
+    // L'uscita dalla rotta di better-auth toglie anche l'indizio
+    res = await auth.handler(new Request(`${BASE}/api/auth/sign-out`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', origin: BASE, cookie: cookie2, 'x-forwarded-for': `10.9.4.${ip++}` },
+      body: '{}',
+    }))
+    const tolto = res.headers.getSetCookie().find((x) => x.startsWith('dts_signed_in='))?.toLowerCase() ?? ''
+    check('/sign-out scade dts_signed_in', res.status === 200 && tolto.startsWith('dts_signed_in=;') && tolto.includes('max-age=0'),
+      `${res.status} ${tolto || 'assente'}`)
   }
 } catch (e) {
   check('nessuna eccezione inattesa', false, e instanceof Error ? e.stack ?? e.message : String(e))

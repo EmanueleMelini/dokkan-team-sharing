@@ -1,20 +1,34 @@
+'use client'
+
 import Link from 'next/link'
+import { Suspense } from 'react'
 import { SignInLink } from '@/components/auth/sign-in-link'
 import { SignOutButton } from '@/components/auth/sign-out-button'
-import { currentUser } from '@/lib/dal'
+import { useViewer } from '@/components/viewer/provider'
 
 const piccolo = 'text-sm text-tenue hover:text-inchiostro transition-colors'
 
 /**
- * La parte dell'header che dipende dalla sessione. Sta dentro un
- * <Suspense> nel layout: leggere i cookie qui non blocca il resto della
- * pagina (guida authentication di Next).
+ * La parte dell'header che dipende da chi guarda. L'header e' nel layout
+ * di ogni pagina in cache, quindi non legge la sessione: l'utente arriva
+ * da /api/me (useViewer). Finche' non si sa, uno spazio vuoto della stessa
+ * larghezza, cosi' l'header non salta.
  */
-export async function UserMenu() {
-  const user = await currentUser()
-  if (!user) return <SignInLink className={piccolo} />
+export function UserMenu() {
+  const { mode, user } = useViewer()
 
-  if (!user.onboarded) {
+  if (mode === 'unknown') return <span aria-hidden="true" className="block h-6 w-16" />
+
+  // SignInLink legge la query (per ?next=): useSearchParams vuole un <Suspense>
+  if (mode === 'anon' || !user) {
+    return (
+      <Suspense fallback={<span aria-hidden="true" className="block h-6 w-16" />}>
+        <SignInLink className={piccolo} />
+      </Suspense>
+    )
+  }
+
+  if (mode === 'setup') {
     return (
       <div className="flex items-center gap-4">
         <Link href="/welcome" className="text-sm text-oro font-medium hover:underline underline-offset-2">
@@ -29,6 +43,7 @@ export async function UserMenu() {
     <div className="flex items-center gap-4">
       <Link
         href="/settings"
+        prefetch={false}
         aria-label={`Settings for ${user.handle}`}
         className="flex items-center gap-2 text-sm text-inchiostro hover:text-oro transition-colors"
       >

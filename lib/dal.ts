@@ -22,6 +22,8 @@ export type CurrentUser = {
   /** Il nome dato dal provider: solo il suggerimento per /welcome. */
   displayName: string
   onboarded: boolean
+  /** l'animazione delle carte per difetto (app_user.prefers_animated) */
+  prefersAnimated: boolean
 }
 
 /** La sessione della richiesta, letta una volta per render (React cache). */
@@ -42,6 +44,7 @@ export const currentUser = cache(async (): Promise<CurrentUser | null> => {
     reg: u.reg === 'japan' ? 'japan' : 'global',
     displayName: u.name ?? '',
     onboarded: u.onboardedAt != null,
+    prefersAnimated: u.prefersAnimated === true,
   }
 })
 

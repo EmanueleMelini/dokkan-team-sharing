@@ -13,11 +13,11 @@ import {
   parseBigintId, parseBuilderPayload, parseChangeNote, parseComment, parsePayloadField, parseUuid, parseVote,
 } from '@/lib/clears/validate'
 import {
-  getClearForEdit, getClearVersions, getComments, getVersionCounts, getVersionLineups, getViewerVotes,
-  listStartedRuns,
+  clearCardIds, getClearForEdit, getClearVersions, getComments, getVersionCounts, getVersionLineups, getViewerVotes,
+  listStartedRuns, userFootprint, viewerTierState,
 } from '@/lib/clears'
 import { searchCards } from '@/lib/cards'
-import { listClears } from '@/lib/queries'
+import { CLEAR_PER_PAGINA, clearPage, listClears } from '@/lib/queries'
 import { GET } from '@/app/api/cards/route'
 import { SUBMIT, REVISE, check, dati, guardia, num, one, payload, stato, utente } from '@/db/test/builder-helpers'
 
@@ -135,6 +135,51 @@ async function letture() {
   check('listClears: i campi nuovi changes e comments', riga?.changes === 1 && riga.comments === 2 &&
     riga.version_id === v2, JSON.stringify(riga && { c: riga.changes, m: riga.comments }))
   check('listClears: le altre colonne ci sono ancora', !!riga && riga.cards.length === 7 && riga.handle === 'lib_author')
+
+  await cache({ d, autore, altro, clear, v2 })
+}
+
+/** Le letture per la cache: /api/me?tier= e le pagine da invalidare (lib/cache/*). */
+async function cache({ d, autore, altro, clear, v2 }: {
+  d: Awaited<ReturnType<typeof dati>>; autore: string; altro: string; clear: string; v2: string
+}) {
+  console.log('\n  -- viewerTierState (/api/me?tier=)')
+  // un secondo clear, di chi guarda, nello stesso tier
+  const suo = (await one<{ id: string }>(SUBMIT, [altro, d.run, d.tier, JSON.stringify(payload(d.cards))])).id
+  const daAutore = await viewerTierState(autore, d.tier)
+  const daAltro = await viewerTierState(altro, d.tier)
+  check('own: solo i propri clear del tier', daAutore.own.includes(clear) && !daAutore.own.includes(suo) &&
+    daAltro.own.includes(suo) && !daAltro.own.includes(clear), JSON.stringify({ a: daAutore.own, b: daAltro.own }))
+  check('votes: solo i voti di chi guarda', daAltro.votes[v2] === 1 && daAutore.votes[v2] === undefined,
+    JSON.stringify(daAltro.votes))
+  const punti = await one<{ s: number }>('select score::int as s from clear_current where id = $1', [clear])
+  check('scores: uguali a clear_current.score', daAutore.scores[v2] === punti.s && daAltro.scores[v2] === punti.s)
+  const altroTier = await one<{ id: string } | null>(
+    'select id::text from stage_tier where id <> $1::bigint and event_id = (select event_id from stage_tier where id = $1::bigint) limit 1',
+    [d.tier])
+  if (altroTier) {
+    const vuoto = await viewerTierState(altro, altroTier.id)
+    check('un altro tier: niente di questo', !vuoto.own.includes(suo) && vuoto.votes[v2] === undefined && !(v2 in vuoto.scores))
+  }
+
+  console.log('\n  -- clearPage, clearCardIds, userFootprint')
+  const tutte = await listClears(d.tier, 'global', { limit: 1000 })
+  const pos = tutte.findIndex((r) => r.id === clear)
+  check('clearPage: la pagina dove la lista lo mostra', pos >= 0 &&
+    (await clearPage(d.tier, 'global', clear)) === Math.floor(pos / CLEAR_PER_PAGINA) + 1)
+  check('clearPage: un clear di un altro tier non c\'e\'', altroTier ? (await clearPage(altroTier.id, 'global', clear)) === null : true)
+  const carteClear = await clearCardIds(clear)
+  check('clearCardIds: le carte di tutte le versioni', d.cards.slice(0, 8).every((c) => carteClear.includes(String(c))),
+    `${carteClear.length} carte`)
+  const evento = (await one<{ e: string }>('select event_id::text as e from clear where id = $1', [clear])).e
+  const fa = await userFootprint(altro)
+  check('userFootprint: gli eventi votati, commentati e scritti', fa.eventIds.includes(evento) && fa.eventIds.length === 1,
+    JSON.stringify(fa.eventIds))
+  check('userFootprint: il proprio profilo e quello degli autori votati',
+    fa.handles.includes('lib_viewer') && fa.handles.includes('lib_author'), JSON.stringify(fa.handles))
+  check('userFootprint: le carte dei propri clear', d.cards.slice(0, 8).every((c) => fa.cardIds.includes(String(c))))
+  const fb = await userFootprint(autore, ['vecchio_handle'])
+  check('userFootprint: gli handle in piu\'', fb.handles.includes('vecchio_handle') && fb.handles.includes('lib_author'))
 }
 
 async function carte() {
@@ -170,13 +215,18 @@ async function carte() {
 
   const chiama = async (qs: string) => {
     const res = await GET({ nextUrl: new URL(`http://test.invalid/api/cards?${qs}`) } as NextRequest)
-    return { status: res.status, cache: res.headers.get('cache-control') ?? '', body: await res.json() }
+    return {
+      status: res.status, cache: res.headers.get('cache-control') ?? '',
+      cdn: res.headers.get('cdn-cache-control') ?? '', body: await res.json(),
+    }
   }
   const r = await chiama('q=goku&type=AGL')
   check('la rotta risponde in JSON compatto', r.status === 200 && Array.isArray(r.body.cards) &&
     r.body.cards.every((c: Record<string, unknown>) =>
       Object.keys(c).sort().join() === 'class,epithet,id,name,rarity,thumb,type'), JSON.stringify(r.body.cards?.[0]))
-  check('con la cache pubblica', /public/.test(r.cache) && /s-maxage/.test(r.cache), r.cache)
+  // Cache-Control per il browser, CDN-Cache-Control (piu' lunga) per la CDN di Vercel
+  check('con la cache pubblica', /public/.test(r.cache) && /max-age=300/.test(r.cache) &&
+    /s-maxage=21600/.test(r.cdn) && /stale-while-revalidate=86400/.test(r.cdn), `${r.cache} | ${r.cdn}`)
   const tutte = await chiama('')
   check('pagina da 40 con il prossimo offset', tutte.body.cards.length === 40 && tutte.body.next === 40)
   for (const qs of ['type=XXX', 'class=Mega', 'rarity=SSSR', 'category=abc', 'offset=-1', 'offset=99999', `q=${'x'.repeat(61)}`]) {

@@ -1,5 +1,6 @@
 import type { NextRequest } from 'next/server'
 import { EQUIP_SEARCH_MAX, EQUIP_TIERS, cardExists, countHiddenEquipment, searchEquipment } from '@/lib/equipment'
+import { CACHE_CATALOGO } from '@/lib/cache/headers'
 
 // La ricerca delle Skill Orb per l'editor delle build: pubblica e in sola
 // lettura, come /api/cards. Parametri sbagliati danno 400, non una lista
@@ -46,6 +47,6 @@ export async function GET(request: NextRequest) {
       hidden,
     },
     // cambiano solo con un import, come le carte
-    { headers: { 'Cache-Control': 'public, max-age=60, s-maxage=300, stale-while-revalidate=3600' } },
+    { headers: CACHE_CATALOGO },
   )
 }

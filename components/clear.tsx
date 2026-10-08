@@ -1,19 +1,18 @@
-import Link from 'next/link'
 import { ArrowSquareOut, Camera, Prohibit, ShieldCheck, VideoCamera } from '@phosphor-icons/react/dist/ssr'
 import { Squadra } from '@/components/clears/squadra'
 import { Cambi } from '@/components/clears/cambi'
 import { Commenti } from '@/components/clears/commenti'
-import { EliminaClear } from '@/components/clears/elimina'
+import { AzioniProprie } from '@/components/clears/azioni-proprie'
 import { VotoClear } from '@/components/clears/voto'
 import { soloGiorno } from '@/lib/date'
 import type { ClearComment, VersionLineup } from '@/lib/clears'
-import type { Spettatore } from '@/lib/clears/vista'
 import type { ClearProof, ClearRow } from '@/lib/queries'
 
 type Props = {
   clear: ClearRow
   eventId: string
-  spettatore: Spettatore
+  /** la pagina del tier, per tornarci dopo l'accesso (commenti) */
+  ritorno: string
   cambi: VersionLineup[]
   commenti: ClearComment[]
 }
@@ -54,7 +53,12 @@ function Prova({ prova }: { prova: ClearProof }) {
   )
 }
 
-export function Clear({ clear, eventId, spettatore, cambi, commenti }: Props) {
+/**
+ * Un clear nella pagina dell'evento. E' la versione anonima, la stessa per
+ * tutti e quindi in cache: voto, Edit/Delete e il modulo dei commenti sono
+ * isole client che leggono chi guarda da /api/me.
+ */
+export function Clear({ clear, eventId, ritorno, cambi, commenti }: Props) {
   const titolo = `clear-${clear.id}`
   const revisioni = clear.versions - 1
 
@@ -76,7 +80,7 @@ export function Clear({ clear, eventId, spettatore, cambi, commenti }: Props) {
               <dd className="numeri text-[13px] text-inchiostro">{clear.turns}</dd>
             </dl>
           )}
-          <VotoClear versionId={clear.version_id} score={clear.score} vote={spettatore.vote} modo={spettatore.modo} />
+          <VotoClear versionId={clear.version_id} clearId={clear.id} score={clear.score} />
         </div>
       </header>
 
@@ -111,17 +115,7 @@ export function Clear({ clear, eventId, spettatore, cambi, commenti }: Props) {
             </span>
           )}
         </p>
-        {spettatore.modo === 'own' && (
-          <div className="flex flex-wrap items-center gap-2">
-            <Link
-              href={`/events/${eventId}/clears/${clear.id}/edit`}
-              className="px-2 py-1 text-[12px] rounded-[var(--raggio)] border border-linea bg-superficie text-testo hover:text-inchiostro hover:border-linea-forte transition-colors"
-            >
-              Edit<span className="sr-only"> your clear</span>
-            </Link>
-            <EliminaClear clearId={clear.id} />
-          </div>
-        )}
+        <AzioniProprie eventId={eventId} clearId={clear.id} />
       </footer>
 
       <Commenti
@@ -129,8 +123,7 @@ export function Clear({ clear, eventId, spettatore, cambi, commenti }: Props) {
         idBase={titolo}
         commenti={commenti}
         totale={clear.comments}
-        modo={spettatore.modo}
-        accesso={spettatore.accesso}
+        ritorno={ritorno}
       />
     </article>
   )
