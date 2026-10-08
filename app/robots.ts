@@ -9,6 +9,9 @@ import { readAuthEnv } from '@/lib/auth/env'
 // /events/browse sono le viste filtrate della lista: dinamiche (una
 // funzione per vista) e in numero senza fine. Ogni evento e' gia' nella
 // sitemap, quindi ai motori non servono.
+//
+// /admin risponde 404 a chiunque non sia admin: niente da indicizzare, e
+// cosi' un bot non la prova a ogni giro.
 export default function robots(): MetadataRoute.Robots {
   const base = readAuthEnv().baseURL.replace(/\/$/, '')
   return {
@@ -23,6 +26,7 @@ export default function robots(): MetadataRoute.Robots {
         '/events/browse',
         '/events/*/submit',
         '/events/*/clears/*/edit',
+        '/admin',
       ],
     },
     sitemap: `${base}/sitemap.xml`,

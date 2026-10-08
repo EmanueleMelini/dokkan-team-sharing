@@ -33,6 +33,8 @@ type Interno = Root & {
 
 const RootContext = createContext<Interno | null>(null)
 const TierContext = createContext<ViewerTierData | null>(null)
+/** segna come suo un commento appena scritto: /api/me non lo sa ancora */
+const SegnaCommentoContext = createContext<(id: string) => void>(() => {})
 
 // L'indizio come store esterno: il server e l'idratazione vedono null
 // (sconosciuto), cosi' il primo render e' identico all'HTML statico.
@@ -109,8 +111,15 @@ export function useViewer(): Root {
   return ctx ?? { mode: 'anon', user: null, reload: () => {}, reset: () => {} }
 }
 
-/** Lo stato del tier mostrato (voti, propri clear, punteggi), o null. */
+/** Lo stato del tier mostrato (voti, propri clear e commenti, punteggi), o null. */
 export const useViewerTier = () => useContext(TierContext)
+
+/**
+ * Dopo un commento riuscito: la pagina si rigenera con il commento nuovo,
+ * ma lo stato del tier e' di prima. Senza questo il proprio commento
+ * avrebbe il bottone Report fino alla prossima pagina vista.
+ */
+export const useSegnaCommentoMio = () => useContext(SegnaCommentoContext)
 
 /**
  * Lo stato di chi guarda su un tier, per i clear della pagina. Il suo
@@ -145,6 +154,21 @@ export function ViewerTier({ tierId, children }: { tierId: string; children: Rea
     }
   }, [hint, tierId, beginScoped, endScoped, receive, reload])
 
-  const data = stato && stato.tier === tierId ? stato.data : null
-  return <TierContext.Provider value={data}>{children}</TierContext.Provider>
+  // i commenti scritti da questa pagina, per tier: si aggiungono a ownComments
+  const [nuovi, setNuovi] = useState<{ tier: string; ids: string[] }>({ tier: tierId, ids: [] })
+  const segna = useCallback((id: string) => {
+    setNuovi((n) => (n.tier === tierId ? { tier: tierId, ids: [...n.ids, id] } : { tier: tierId, ids: [id] }))
+  }, [tierId])
+
+  const data = useMemo(() => {
+    const base = stato && stato.tier === tierId ? stato.data : null
+    const extra = nuovi.tier === tierId ? nuovi.ids : []
+    if (!base || !extra.length) return base
+    return { ...base, ownComments: [...(base.ownComments ?? []), ...extra] }
+  }, [stato, nuovi, tierId])
+  return (
+    <TierContext.Provider value={data}>
+      <SegnaCommentoContext.Provider value={segna}>{children}</SegnaCommentoContext.Provider>
+    </TierContext.Provider>
+  )
 }

@@ -9,6 +9,13 @@ export type ViewerUser = {
   handle: string
   onboarded: boolean
   prefersAnimated: boolean
+  /** il link 'Moderation' nell'header (role = 'admin'); /admin ricontrolla da se' */
+  isAdmin?: boolean
+  /** solo se la sospensione e' in corso: una data ISO o 'infinity' (lib/moderation/sospensione.ts) */
+  suspendedUntil?: string | null
+  suspended?: boolean
+  /** il motivo, mostrato nel banner solo all'interessato */
+  suspensionReason?: string | null
 }
 
 export type ViewerTierData = {
@@ -18,6 +25,8 @@ export type ViewerTierData = {
   own: string[]
   /** version_id -> punteggio vivo: la copia della CDN puo' essere vecchia di un voto */
   scores: Record<string, number>
+  /** i commenti di chi guarda nel tier: su quelli non c'e' Report */
+  ownComments?: string[]
 }
 
 export type MeResponse = {
@@ -30,3 +39,7 @@ export type ViewerMode = 'unknown' | 'anon' | 'setup' | 'ready'
 
 export const modeOf = (user: ViewerUser | null | undefined): Exclude<ViewerMode, 'unknown'> =>
   !user ? 'anon' : user.onboarded ? 'ready' : 'setup'
+
+/** Chi puo' segnalare, votare e commentare: entrato, con l'handle, non sospeso. */
+export const canWrite = (user: ViewerUser | null | undefined): boolean =>
+  !!user && user.onboarded && user.suspended !== true

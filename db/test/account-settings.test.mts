@@ -58,17 +58,25 @@ async function cascate() {
                           'lineup_slot'::regclass, 'tip'::regclass)`)
   // clear.team_id -> team e' "set null" apposta (0001): la squadra si puo'
   // togliere senza perdere il clear. Con l'account se ne va anche il clear.
-  const nonCascata = fk.filter((f) => f.del !== 'c' && f.nome !== 'clear_team_id_fkey')
+  // Set null anche chi ha chiuso una segnalazione e le due persone del
+  // registro della moderazione (0024): il registro resta, con gli handle.
+  const SET_NULL = ['clear_team_id_fkey', 'report_resolved_by_fkey',
+    'moderation_action_moderator_id_fkey', 'moderation_action_target_author_id_fkey']
+  const nonCascata = fk.filter((f) => f.del !== 'c' && !SET_NULL.includes(f.nome))
   check('tutte le FK verso utenti, clear e squadre sono on delete cascade',
     fk.length >= 20 && nonCascata.length === 0, nonCascata.map((f) => `${f.figlia}.${f.nome}=${f.del}`).join(', '))
+  const setNull = fk.filter((f) => SET_NULL.includes(f.nome))
+  check('le eccezioni sono on delete set null', setNull.length === SET_NULL.length && setNull.every((f) => f.del === 'n'),
+    setNull.map((f) => `${f.nome}=${f.del}`).join(', '))
   const versoUtente = fk.filter((f) => f.madre === 'app_user').map((f) => f.figlia).sort()
   check('le tabelle che puntano a app_user sono quelle note',
-    versoUtente.join(',') === 'auth_account,auth_session,clear,clear_comment,clear_vote,clear_write_log,report,team,tip,tip_vote',
+    versoUtente.join(',') === 'auth_account,auth_session,clear,clear_comment,clear_vote,clear_write_log,' +
+      'moderation_action,moderation_action,report,report,team,tip,tip_vote',
     versoUtente.join(','))
   const trig = await num(
     `select count(*) from pg_trigger where tgname = 'report_target_gone'
-        and tgrelid in ('clear'::regclass, 'tip'::regclass, 'clear_proof'::regclass)`)
-  check('report (target polimorfico, senza FK) ha il trigger su clear, tip e prove', trig === 3)
+        and tgrelid in ('clear'::regclass, 'tip'::regclass, 'clear_proof'::regclass, 'clear_comment'::regclass)`)
+  check('report (target polimorfico, senza FK) ha il trigger su clear, tip, prove e commenti', trig === 4)
 }
 
 const UNLINK = 'select unlink_provider($1::uuid, $2)'
@@ -200,8 +208,9 @@ async function cancella() {
   const tipB = (await one<{ id: string }>(`insert into tip (author_id, stage_tier_id, body) values ($1, $2, 'Use items.') returning id::text`, [b, d.tier])).id
   await db.query('insert into tip_vote (tip_id, user_id, value) values ($1, $2, 1)', [tipB, a])
   const prova = (await one<{ id: string }>('select id::text from clear_proof where version_id = $1 limit 1', [vA])).id
-  await db.query(`insert into report (reporter_id, target_kind, target_id, reason) values
-    ($1, 'clear', $3, 'spam'), ($2, 'clear', $4, 'fake'), ($2, 'proof', $5, 'dead link'), ($2, 'tip', $6, 'rude')`,
+  await db.query(`insert into report (reporter_id, target_kind, target_id, reason, details) values
+    ($1, 'clear', $3, 'spam', null), ($2, 'clear', $4, 'fake_proof', null),
+    ($2, 'proof', $5, 'other', 'dead link'), ($2, 'tip', $6, 'offensive', null)`,
   [a, b, clearB, clearA, prova, tip])
 
   const prima = await residui(a, [clearA])
@@ -245,7 +254,7 @@ async function cancella() {
   check('b esiste ancora', await num('select count(*) from app_user where id = $1', [b]) === 1)
 
   // delete_clear passa dallo stesso trigger: la segnalazione se ne va col clear
-  await db.query(`insert into report (reporter_id, target_kind, target_id, reason) values ($1, 'clear', $2, 'x')`, [b, clearB])
+  await db.query(`insert into report (reporter_id, target_kind, target_id, reason) values ($1, 'clear', $2, 'spam')`, [b, clearB])
   await db.query('select delete_clear($1::uuid, $2::uuid)', [b, clearB])
   check('delete_clear porta via anche le segnalazioni sul clear',
     await num('select count(*) from report where target_id = $1', [clearB]) === 0)

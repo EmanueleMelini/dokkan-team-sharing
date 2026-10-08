@@ -95,6 +95,8 @@ export const TABLES = {
   tip: { class: 'user' },
   tip_vote: { class: 'user' },
   report: { class: 'user' },
+  // il registro della moderazione (0024): lo scrivono gli admin, mai un import
+  moderation_action: { class: 'user' },
 
   // ---- degli script
   schema_migrations: { class: 'system' },

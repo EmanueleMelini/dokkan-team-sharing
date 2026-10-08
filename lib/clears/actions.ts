@@ -132,6 +132,9 @@ export async function deleteClear(_prev: ClearActionState, form: FormData): Prom
     return dbError(e)
   }
   if (w) afterClearWrite('delete', { eventId: w.event_id, cardIds: carte, handles: [user.handle] })
+  // Dalla pagina di modifica (un clear nascosto non e' nella lista): si
+  // torna all'evento. Il form dice solo se tornare; dove, lo dice il database.
+  if (w && form.get('dopo') === 'evento') redirect(eventHref({ id: w.event_id, reg: w.reg, tier: w.tier_id }))
   return { ok: true }
 }
 

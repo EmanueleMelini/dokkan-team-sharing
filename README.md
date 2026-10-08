@@ -11,11 +11,11 @@ a questa conclusione sta in `docs/`.
 ## Stato
 
 Lo strato database è completo e verificato, con le carte, gli eventi e le
-missioni veri. Sopra c'è il sito: le pagine degli eventi, gli account e il
-builder con cui si inviano i clear. I numeri sono quelli di `dokkan_dev`
+missioni veri. Sopra c'è il sito: le pagine degli eventi, gli account, il
+builder con cui si inviano i clear e la moderazione (segnalazioni e `/admin`). I numeri sono quelli di `dokkan_dev`
 all'8 ottobre 2026.
 
-- **65 tabelle, 3 view, 11 trigger, 52 funzioni** su PostgreSQL 15, in 23
+- **66 tabelle, 3 view, 14 trigger, 67 funzioni** su PostgreSQL 15, in 24
   migrazioni
 - **2697 carte**: 2651 dal wiki, con link skill, categorie, statistiche e
   date di uscita separate per Japan e Global, più 46 che ha solo il gioco
@@ -34,8 +34,8 @@ all'8 ottobre 2026.
   sua regola su chi la monta: 1852 per tipo e classe, 5042 per categoria,
   1825 per lista di carte, 138 per nome
 - **6246 immagini** ospitate da noi
-- **1498 verifiche automatiche** in `db:test`: 33 passi, di cui 9
-  preparano il database e 24 sono suite di verifica, tutte verdi, su un
+- **1730 verifiche automatiche** in `db:test`: 36 passi, di cui 9
+  preparano il database e 27 sono suite di verifica, tutte verdi, su un
   database a parte che non è quello di sviluppo
 
 Tre regole recenti da sapere:
@@ -119,8 +119,8 @@ dopo `load-datamine` (`db/prod/pipeline.mjs`, spiegato in "Messa online").
    di `lib/parametri.ts` (`parametri.test.mts`, 42), gli **URL degli
    eventi** di `lib/urls.ts` (`urls.test.mts`) e i **tag della cache**
    (`cache-tags.test.mts`);
-5. poi le suite del builder, degli account, dei dati del gioco, dei testi
-   delle skill (`card-page.test.mts`) e, per ultima, dell'aggiornamento
+5. poi le suite del builder, degli account, della moderazione (SQL, area
+   admin, lato utente), dei dati del gioco, dei testi delle skill (`card-page.test.mts`) e, per ultima, dell'aggiornamento
    settimanale (`weekly-data.test.mts`).
 
 Un passo che prepara i dati, se fallisce, ferma tutto; una suite rossa non
@@ -252,6 +252,8 @@ database che finisce per `_test`.
 
 ```
 app/                        Next.js 16, App Router
+  admin/                    l'area dei moderatori: coda, nascosti, utenti, registro (404 per chi non e' admin)
+proxy.ts                    solo per /admin: senza cookie di sessione un 404 vero, senza database
 db/
   migrations/               NNNN_*.sql, applicate in ordine, mai modificate
     0001_schema.sql         tabelle, view, indici, trigger dei punteggi
@@ -263,6 +265,8 @@ db/
     0021_equipment_limits.sql  le Skill Orb esclusive: chi puo' montare quale sfera, controllato dal builder
     0022_card_skills.sql    card_skill: i testi completi delle skill, con EZA e Super EZA; set_prefers_animated
     0023_import_run.sql     import_run: un import alla volta, e l'ultimo riuscito per l'aggiornamento settimanale
+    0024_moderation.sql     segnalazioni con motivo, nascosti, sospensioni, moderation_action (solo in aggiunta)
+  admin/set-role.mjs        il ruolo di un utente, solo da script (db:role, prod:role)
   seed/                     demo-clears.mjs: tre clear dimostrativi su un evento vero (db:demo)
   queries/reference.sql     le query di lettura principali, documentate
   test/                     le verifiche: run.sh le mette in fila (npm run db:test)
@@ -305,6 +309,7 @@ lib/urls.ts                 gli URL degli eventi: /events/<id>[/japan][/t/<tier>
 lib/cache/                  'use cache' sopra le query pure, i tag, l'invalidazione, /api/revalidate
 lib/viewer/                 chi guarda: il tipo di /api/me e il cookie dts_signed_in
 lib/clears/                 le Server Action dei clear, i loro validatori e le frasi d'errore
+lib/moderation/             motivi, frasi d'errore, Report (report-actions), requireAdmin (guard), letture e azioni di /admin
 lib/clears.ts               le letture del builder e del clear: modifica, cambi, voti, commenti
 lib/cards.ts                la ricerca delle carte per il picker (anche GET /api/cards)
 lib/equipment.ts            la ricerca delle Skill Orb per le build (anche GET /api/equipment)
@@ -317,6 +322,7 @@ components/builder/         il builder dei clear: slot, picker delle carte, buil
 components/clears/          la scheda di un clear: squadre, cambi, voti, commenti, Delete
 components/evento/, eventi/ la pagina evento e la lista, uguali per tutti (stanno in cache)
 components/viewer/          ViewerProvider e useViewer(): le isole client che leggono /api/me
+components/moderation/      Report e il banner della sospensione (isole), la coda, i form e il registro di /admin
 test/cpu.sh                 la CPU per richiesta su next start (npm run test:cpu)
 ```
 
@@ -1232,7 +1238,10 @@ parte**, apposta.
   compare "Sign in again" (`components/auth/reauth-notice.tsx`), che porta a
   `/settings/sign-in`: lì si rientra con un modo di entrare di questo
   account (un provider collegato, o il link se l'email è verificata) senza
-  uscire, e si torna a Settings con una sessione nuova. `/login` non va bene
+  uscire, e si torna a Settings con una sessione nuova. Dalla moderazione
+  (sospendere chiede la stessa sessione fresca) il link porta
+  `?next=<pagina di /admin>` e si torna lì; ogni altro `next` vale
+  `/settings`. `/login` non va bene
   per questo: rimanda via chi ha già una sessione. Lo prova il passo
   "account" (`db/test/auth.test.mts`).
 - Il test è il passo "settings dell'account"
@@ -1413,6 +1422,113 @@ scritta solo nella descrizione.
 
 Le verifiche sono in `db/test/orbs.test.mts` (e `orbs-search.ts`).
 
+## Moderazione (migrazione 0024)
+
+Chi è collegato può segnalare un clear o un commento (un motivo dalla
+lista, al massimo 10 segnalazioni l'ora). Le segnalazioni finiscono nella
+coda di `/admin`, che vedono solo gli utenti con ruolo `admin` non sospesi:
+per chiunque altro ogni URL di `/admin` è un 404. `proxy.ts` dà un 404 vero
+a chi non ha il cookie di sessione. Per un membro collegato il 404 arriva
+nello stream (status 200 con noindex, senza nessun dato): il cancello vero è
+`requireAdmin` (`lib/moderation/guard.ts`), che apre ogni pagina e ogni
+Server Action di `lib/moderation/actions.ts`, e sotto `mod_assert` nel
+database. Nessuno viene nascosto in automatico: decide sempre un moderatore.
+
+- **Reports**: una riga per bersaglio, la più vecchia per prima. *Hide*
+  nasconde il clear o il commento e chiude le sue segnalazioni. *Dismiss*
+  le archivia senza toccare il post (chiede conferma). Nascondere un clear
+  chiude solo le sue: quelle sui suoi commenti restano in coda, segnate
+  "Its clear is hidden".
+- **Hidden**: i clear e i commenti nascosti, con *Unhide*. Un clear rimesso
+  torna con i voti che aveva.
+- **Users**: la ricerca per handle e i sospesi. La scheda di un utente
+  permette di sospenderlo per 1, 7 o 30 giorni o a tempo indeterminato, con
+  un motivo che l'utente vede, oppure di togliere la sospensione. Sospendere
+  chiede un accesso recente, come le azioni di Settings. Gli admin non si
+  possono sospendere.
+- **Log**: ogni azione dei moderatori, in `moderation_action`. È
+  append-only (i trigger rifiutano UPDATE, DELETE e TRUNCATE) e non tiene il
+  contenuto: solo id, handle e note.
+
+Ogni azione invalida per tag con `lib/cache/invalidate.ts`
+(`afterClearWrite`, `afterUserChanged`), con gli id presi dal database.
+
+### Dal lato di chi usa il sito
+
+Le pagine pubbliche restano le stesse per tutti: Report, il banner della
+sospensione e il link Moderation sono isole client che leggono GET /api/me.
+
+- **Report.** Lo vedono solo un utente entrato, con l'handle e non sospeso, e
+  solo sui post degli altri: clear fuori da `tier.own`, commenti fuori da
+  `tier.ownComments`. Il form (`components/moderation/segnala.tsx`) chiama la
+  Server Action `reportContent` (`lib/moderation/report-actions.ts`), che
+  passa da `report_content`. Un doppione e una segnalazione nuova danno lo
+  stesso grazie. Il limite è di 10 segnalazioni all'ora, e una segnalazione
+  aperta conta una volta sola.
+- **/api/me** aggiunge `user.isAdmin`, `user.suspended` e
+  `user.suspendedUntil` (una data ISO o `'infinity'`). `suspensionReason`
+  c'è solo per chi è sospeso. `tier.ownComments` elenca i propri commenti
+  pubblicati del tier. Il link Moderation nell'header compare solo con
+  `isAdmin`.
+- **Sospensione.** Il database ferma invio, revisione, voti, commenti e
+  segnalazioni (`builder_assert_author`, account_suspended). Restano
+  permessi l'accesso, la lettura, Settings, `delete_clear` e
+  `delete_account`. Il banner con la data e il motivo compare in Settings,
+  nella pagina di invio, in quella di modifica e sopra la lista dei clear.
+  Le sessioni non si revocano: senza cookie cache, un cambio vale dalla
+  richiesta dopo. Un sospeso non vede "Submit a clear" né Edit sui propri
+  clear, solo Delete (le isole leggono `user.suspended`).
+- **Clear nascosti.** Spariscono anche dalle liste del loro autore, che li
+  ritrova in Settings ("Hidden by a moderator"). Dalla pagina di modifica
+  li può ancora cambiare (restano nascosti) o cancellare.
+- **Le frasi d'errore** dei rifiuti di 0024 stanno in un posto solo,
+  `lib/moderation/errors.ts`; `friendlyClearError` ci ricade prima del suo
+  42501 generico, così un sospeso legge "Your account is suspended" anche
+  nei form del builder, dei voti e dei commenti.
+
+### Privacy e conservazione
+
+Le pagine `/privacy` e `/terms` (con `lib/legale.ts`) lo dicono a chi usa il
+sito:
+
+- una segnalazione tiene chi l'ha fatta, il bersaglio, il motivo, i
+  dettagli e l'ora. La vedono solo i moderatori; l'autore del post non sa
+  chi l'ha segnalato;
+- le segnalazioni chiuse restano 180 giorni (`LEGALE.giorniSegnalazioni`),
+  poi le cancella il cron giornaliero (`/api/cron/purge`,
+  `purge_resolved_reports`). Le aperte restano. Se ne vanno prima con
+  l'account di chi le ha fatte o con il post segnalato;
+- la data di fine e il motivo di una sospensione restano finché la si toglie
+  o l'account si cancella;
+- il registro resta senza limite di tempo, con gli id e l'handle del
+  moderatore, mai il testo del post. Cancellare un account mette a null il
+  suo id nel registro (FK `on delete set null`), l'handle del moderatore
+  resta.
+
+### Il primo admin
+
+Mai dall'interfaccia: il ruolo si cambia solo da script, e ogni cambio
+finisce nel registro (moderatore vuoto = script).
+
+    npm run db:role -- <handle> admin                 # su DATABASE_URL (sviluppo)
+    npm run prod:role -- <handle> admin --yes         # sul database di produzione
+
+`prod:role` passa da `db/prod/target.mjs` come gli altri script di
+produzione: rifiuta `dokkanteamsharing`, i database locali e quelli
+`_dev`/`_test`, e senza `--yes` non scrive. Per togliere il ruolo si usa
+`member`. Il ruolo nuovo vale dalla richiesta successiva: la sessione non
+tiene cache nel cookie.
+
+Le verifiche sono nei passi "moderazione" (`db/test/moderation.test.mts`:
+l'API SQL, i rifiuti, la sospensione, il registro, gli script dei ruoli),
+"moderazione (area admin)" (`moderation-admin.test.mts`: le letture di
+`/admin`) e "moderazione (lato utente)" (`moderation-app.test.mts`: la
+sospensione dalla sessione, /api/me, il form di Report), più
+`clears-lib.test.mts` e `auth.test.mts` (ownComments, hiddenClearsOf,
+input:false su role e suspendedUntil). `test:smoke` controlla che ogni URL
+di `/admin` sia un 404 senza sessione e che la pagina in cache non abbia
+niente di chi guarda.
+
 ## La produzione: Vercel, Supabase, Cloudflare
 
 Deciso: tutto sui piani gratuiti, senza carta da nessuna parte. Superare
@@ -1456,8 +1572,10 @@ per non arrivarci.
   quindi la fa **Vercel Cron** (`vercel.json`, ogni giorno alle 4 UTC, con
   un'ora di tolleranza su Hobby) chiamando `GET /api/cron/purge` con
   `Authorization: Bearer $CRON_SECRET`. Senza `CRON_SECRET` (almeno 16
-  caratteri) la rotta risponde sempre 401. In locale resta il timer di
-  `lib/auth/startup.ts`.
+  caratteri) la rotta risponde sempre 401. La stessa chiamata cancella le
+  segnalazioni chiuse da più di 180 giorni (`purge_resolved_reports`). In
+  locale resta il timer di `lib/auth/startup.ts`, che pulisce solo sessioni
+  e token.
 - Il limite per IP di better-auth legge l'IP da `x-vercel-forwarded-for`,
   scritto da Vercel: un header mandato dal client non lo sposta.
   `AUTH_IP_HEADERS` lo cambia (per esempio dietro un altro proxy).
@@ -1786,9 +1904,12 @@ I callback di produzione stanno **accanto** a quelli di sviluppo
       che legge `x-nextjs-cache` di `next start` e non l'header di Vercel).
 - [ ] **Il cron**: Settings → Cron Jobs mostra `/api/cron/purge` alle 4
       UTC; "Run" lo lancia subito, e nei log della funzione la risposta è
-      200 con `{"purged":n}`. Da fuori, `curl -i
+      200 con `{"purged":n,"reports":m}`. Da fuori, `curl -i
       https://dokkants.emanuelemelini.dev/api/cron/purge` deve dare 401.
 - [ ] Supabase → Table Editor: `app_user` ha solo gli account delle prove.
+- [ ] **Il primo admin**: dopo aver scelto l'handle sul sito,
+      `npm run prod:role -- <handle> admin --yes` (sezione "Moderazione").
+      Alla richiesta dopo l'header mostra Moderation e `/admin` risponde.
 
 ### i) La routine
 

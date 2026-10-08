@@ -14,9 +14,11 @@ type Props = {
  * entrato vede dove entrare: dopo l'accesso (e /welcome) torna al builder
  * di questo stesso livello. Chi guarda lo dice /api/me (useViewer): finché
  * non risponde vale la versione anonima, quella della pagina in cache.
+ * Chi e' sospeso non lo vede: il banner della pagina dice gia' perche'.
  */
 export function InviaClear({ invia }: Props) {
-  const { mode } = useViewer()
+  const { mode, user } = useViewer()
+  if (user?.suspended === true) return null
   const modo = mode === 'ready' || mode === 'setup' ? mode : 'anon'
   const href =
     modo === 'ready' ? invia

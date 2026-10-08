@@ -10,7 +10,12 @@ import { useViewer } from '@/components/viewer/provider'
  * qui, non al builder.
  */
 export function CommentoSpazio({ versionId, idBase, ritorno }: { versionId: string; idBase: string; ritorno: string }) {
-  const { mode } = useViewer()
+  const { mode, user } = useViewer()
+  // Sospeso: il database rifiuterebbe comunque (account_suspended). Il
+  // perche' e fino a quando lo dice il banner sopra la lista dei clear.
+  if (mode === 'ready' && user?.suspended) {
+    return <p className="mt-2 text-[12px] text-tenue">Your account is suspended, so you cannot comment.</p>
+  }
   if (mode === 'ready') return <CommentoForm versionId={versionId} idBase={idBase} />
   const next = encodeURIComponent(ritorno)
   return (

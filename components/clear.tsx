@@ -4,6 +4,7 @@ import { Cambi } from '@/components/clears/cambi'
 import { Commenti } from '@/components/clears/commenti'
 import { AzioniProprie } from '@/components/clears/azioni-proprie'
 import { VotoClear } from '@/components/clears/voto'
+import { SegnalaClear } from '@/components/moderation/segnala-isole'
 import { soloGiorno } from '@/lib/date'
 import type { ClearComment, VersionLineup } from '@/lib/clears'
 import type { ClearProof, ClearRow } from '@/lib/queries'
@@ -55,8 +56,8 @@ function Prova({ prova }: { prova: ClearProof }) {
 
 /**
  * Un clear nella pagina dell'evento. E' la versione anonima, la stessa per
- * tutti e quindi in cache: voto, Edit/Delete e il modulo dei commenti sono
- * isole client che leggono chi guarda da /api/me.
+ * tutti e quindi in cache: voto, Edit/Delete, Report e il modulo dei
+ * commenti sono isole client che leggono chi guarda da /api/me.
  */
 export function Clear({ clear, eventId, ritorno, cambi, commenti }: Props) {
   const titolo = `clear-${clear.id}`
@@ -115,7 +116,9 @@ export function Clear({ clear, eventId, ritorno, cambi, commenti }: Props) {
             </span>
           )}
         </p>
+        {/* l'uno o l'altro: Edit/Delete sui propri, Report su quelli degli altri */}
         <AzioniProprie eventId={eventId} clearId={clear.id} />
+        <SegnalaClear clearId={clear.id} />
       </footer>
 
       <Commenti

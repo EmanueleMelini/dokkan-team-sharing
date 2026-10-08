@@ -10,6 +10,8 @@
 #   -> build degli slot (0018, Skill Orb, /api/equipment) -> sfere
 #   esclusive (0021)
 #   -> settings dell'account (0019: scollegare, cancellare l'account)
+#   -> moderazione (0024: segnalazioni, nascosti, sospensioni, registro,
+#   letture di /admin, il lato di chi usa il sito)
 #   -> carte solo nel gioco (load-game-cards) -> skill delle carte (0022)
 #   -> finestre degli eventi dal
 #   gioco (load-windows) -> eventi creati dal gioco (load-game-events) ->
@@ -118,6 +120,21 @@ passo "sfere esclusive" verifica node_ts db/test/orbs.test.mts
 # FK verso app_user e i clear a cascata, le segnalazioni col bersaglio),
 # senza toccare gli altri. Crea solo utenti settingstest+ e li toglie.
 passo "settings dell'account" verifica node_ts db/test/account-settings.test.mts
+# La moderazione (0024): segnalare, il trigger sui commenti, chi modera,
+# nascondere e rimostrare con le letture vere di lib/queries.ts e
+# lib/clears.ts, archiviare, la sospensione (ferma le scritture, non
+# delete_clear e delete_account), il registro solo in aggiunta, i ruoli
+# da script (db:role, prod:role) e la conservazione. Crea solo utenti
+# modtest+ e li toglie; le righe del registro restano, per costruzione.
+passo "moderazione" verifica node_ts db/test/moderation.test.mts
+# Le letture di /admin (lib/moderation/queries.ts vero): la coda per
+# bersaglio, i nascosti, la ricerca degli handle, i sospesi, il registro.
+# Crea solo utenti modadm+ e li toglie.
+passo "moderazione (area admin)" verifica node_ts db/test/moderation-admin.test.mts
+# La moderazione dal lato di chi usa il sito: la sospensione letta dalla
+# sessione, la sezione user di /api/me, il form di Report e i rifiuti veri
+# di report_content come frasi. Crea solo utenti modapp+ e li toglie.
+passo "moderazione (lato utente)" verifica node_ts db/test/moderation-app.test.mts
 # Rilancia load-game-cards e load-datamine, e prova il passaggio al wiki
 # con una pagina finta su 1034200 (poi rimette la carta com'era).
 passo "carte dal gioco" verifica node_ts db/test/game-cards.test.mts

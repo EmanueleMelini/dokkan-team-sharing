@@ -1,6 +1,8 @@
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { BuilderAzzerabile } from '@/components/builder/builder-azzerabile'
+import { BannerSospeso } from '@/components/moderation/banner-sospeso'
+import { EliminaClear } from '@/components/clears/elimina'
 import { Intestazione } from '@/components/builder/intestazione'
 import { getClearForEdit } from '@/lib/clears'
 import { statoDaClear } from '@/lib/clears/builder-iniziale'
@@ -41,6 +43,21 @@ export default async function ModificaClear(props: PageProps<'/events/[id]/clear
   return (
     <div className="mx-auto max-w-4xl px-4 sm:px-5 py-8">
       <Intestazione titolo="Edit your clear" evento={dati.evento.name} livello={dati.nomeTier} indietro={indietro} />
+      {clear.status === 'hidden' && (
+        // Nessuna notifica e nessuna nota del moderatore: solo il fatto (spec)
+        <div role="status" className="mt-4 max-w-[70ch] text-[12px] leading-relaxed text-inchiostro bg-oro-tenue border border-oro-linea rounded-[var(--raggio)] px-3 py-2 space-y-2">
+          <p>
+            A moderator hid this clear. Other players cannot see it, and it stays hidden if you edit it.
+            You can still delete it here.
+          </p>
+          {/* nascosto vuol dire fuori dalla lista: il Delete della pagina dell'evento non c'e' */}
+          <EliminaClear clearId={clear.id} tornaAllEvento />
+        </div>
+      )}
+      {user.suspended && user.suspendedUntil ? (
+        <BannerSospeso until={user.suspendedUntil} reason={user.suspensionReason} className="mt-6" />
+      ) : (
+        <>
       <p className="mt-3 text-[12px] text-tenue max-w-[70ch]">
         Saving makes version {clear.version_seq + 1}. The current version keeps its votes and comments in the history.
       </p>
@@ -55,6 +72,8 @@ export default async function ModificaClear(props: PageProps<'/events/[id]/clear
         iniziale={statoDaClear(clear)}
         annulla={indietro}
       />
+        </>
+      )}
     </div>
   )
 }

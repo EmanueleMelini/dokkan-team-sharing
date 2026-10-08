@@ -25,7 +25,7 @@ const bottone =
  * CPU a ogni clic), quindi le props non cambiano.
  */
 export function VotoClear({ versionId, clearId, score: inCache }: Props) {
-  const { mode } = useViewer()
+  const { mode, user } = useViewer()
   const tier = useViewerTier()
   // legato alla versione: dopo una revisione il voto riparte da zero
   const [confermato, setConfermato] = useState<{ v: string; score: number; vote: Voto } | null>(null)
@@ -45,8 +45,8 @@ export function VotoClear({ versionId, clearId, score: inCache }: Props) {
     return r
   }, {})
 
-  // Sul proprio clear, da anonimi e finche' /api/me non risponde: solo il punteggio
-  if (mode !== 'ready' || tier?.own.includes(clearId)) {
+  // Sul proprio clear, da anonimi, da sospesi e finche' /api/me non risponde: solo il punteggio
+  if (mode !== 'ready' || user?.suspended || tier?.own.includes(clearId)) {
     return (
       <div className="flex items-baseline gap-1 text-[11px] text-tenue">
         <span>Votes</span>

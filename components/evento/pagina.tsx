@@ -14,6 +14,7 @@ import { AttesaLink } from '@/components/attesa-link'
 import { Clear } from '@/components/clear'
 import { InviaClear } from '@/components/clears/invia-cta'
 import { ViewerTier } from '@/components/viewer/provider'
+import { BannerSospesoIsola } from '@/components/moderation/banner-sospeso'
 import { extraClear } from '@/lib/clears/vista'
 import { DIFFICOLTA, nomeTier } from '@/lib/livelli'
 import { Missioni } from '@/components/missioni'
@@ -370,6 +371,9 @@ export async function EventPage({ id, view }: { id: string; view: EventView | nu
                 </dl>
               </div>
             )}
+
+            {/* chi e' sospeso lo sa da /api/me: nell'HTML in cache non c'e' */}
+            <BannerSospesoIsola className="mt-4" />
 
             {totaleClear === 0 ? (
               // Lo stato vuoto è il caso normale, non quello raro: quasi

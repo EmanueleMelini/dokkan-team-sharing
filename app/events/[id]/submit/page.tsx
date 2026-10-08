@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { BuilderAzzerabile } from '@/components/builder/builder-azzerabile'
+import { BannerSospeso } from '@/components/moderation/banner-sospeso'
 import { Intestazione } from '@/components/builder/intestazione'
 import { statoVuoto } from '@/lib/clears/builder-stato'
 import { datiBuilder } from '@/lib/clears/pagina-builder'
@@ -26,7 +27,7 @@ export default async function InviaClear(props: PageProps<'/events/[id]/submit'>
   if (!idValido(id) || !idValido(tier)) notFound()
   const reg = regione(sp)
   // Prima l'accesso: chi non è entrato torna qui dopo /login e /welcome
-  await requireOnboardedUser(submitHref(id, reg, tier))
+  const user = await requireOnboardedUser(submitHref(id, reg, tier))
 
   const dati = await datiBuilder(id, reg, tier)
   if (!dati) notFound()
@@ -35,7 +36,10 @@ export default async function InviaClear(props: PageProps<'/events/[id]/submit'>
   return (
     <div className="mx-auto max-w-4xl px-4 sm:px-5 py-8">
       <Intestazione titolo="Submit a clear" evento={dati.evento.name} livello={dati.nomeTier} indietro={indietro} />
-      {dati.runPredefinita ? (
+      {user.suspended && user.suspendedUntil ? (
+        // Il builder non serve: l'invio sarebbe rifiutato (account_suspended)
+        <BannerSospeso until={user.suspendedUntil} reason={user.suspensionReason} className="mt-8" />
+      ) : dati.runPredefinita ? (
         <BuilderAzzerabile
           modo="submit"
           eventId={id}

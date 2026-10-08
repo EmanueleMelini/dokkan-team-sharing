@@ -88,7 +88,11 @@ export type ClearComment = {
   by_author: boolean
 }
 
-/** I commenti di una versione, dal piu' vecchio: si leggono come un filo. */
+/**
+ * I commenti di una versione, dal piu' vecchio: si leggono come un filo.
+ * Solo quelli pubblicati di un clear pubblicato: un commento nascosto da
+ * un moderatore sparisce del tutto, senza segnaposto (0024).
+ */
 export async function getComments(versionId: string, { limit = 100, offset = 0 } = {}): Promise<ClearComment[]> {
   return sql<ClearComment>(
     `select m.id::text, u.handle::text, m.body, m.lang, m.created_at,
@@ -97,7 +101,7 @@ export async function getComments(versionId: string, { limit = 100, offset = 0 }
      join app_user u on u.id = m.author_id
      join clear_version v on v.id = m.version_id
      join clear c on c.id = v.clear_id
-     where m.version_id = $1::uuid
+     where m.version_id = $1::uuid and m.status = 'published' and c.status = 'published'
      order by m.created_at, m.id
      limit $2 offset $3`,
     [versionId, Math.min(limit, 200), offset],
@@ -112,7 +116,8 @@ export async function getVersionCounts(versionIds: string[]): Promise<Map<string
   const rows = await sql<VersionCounts>(
     `select v.id::text as version_id,
             (select count(*) from clear_vote x where x.version_id = v.id)::int as votes,
-            (select count(*) from clear_comment x where x.version_id = v.id)::int as comments,
+            (select count(*) from clear_comment x
+              where x.version_id = v.id and x.status = 'published')::int as comments,
             (select count(*) from clear_lineup x where x.version_id = v.id and x.seq > 1)::int as changes
      from clear_version v where v.id = any ($1::uuid[])`,
     [versionIds],
@@ -139,6 +144,8 @@ export type ClearForEdit = {
   reg: Region
   version_id: string
   version_seq: number
+  /** 'hidden' se un moderatore l'ha nascosto (0024): l'autore lo puo' ancora rivedere */
+  status: string
   /** Il modulo gia' pieno, nella forma che submit/revise accettano. */
   payload: BuilderPayload
   /** Gli stessi assetti con nomi e miniature, per mostrarli nel builder. */
@@ -155,7 +162,7 @@ export async function getClearForEdit(clearId: string, userId: string): Promise<
     lang: string | null; label: string | null; lineup_note: string | null
   }>(
     `select c.id::text, c.event_id::text, c.run_id::text, c.stage_tier_id::text as tier_id,
-            c.reg::text as reg, c.version_id::text, c.version_seq, c.no_items, c.deathless,
+            c.reg::text as reg, c.version_id::text, c.version_seq, c.status, c.no_items, c.deathless,
             c.turns, c.note, c.lang, c.lineup_snapshot->>'label' as label,
             c.lineup_snapshot->>'note' as lineup_note
      from clear_current c
@@ -182,7 +189,7 @@ export async function getClearForEdit(clearId: string, userId: string): Promise<
   const { no_items, deathless, turns, note, lang } = head
   return {
     id: head.id, event_id: head.event_id, run_id: head.run_id, tier_id: head.tier_id,
-    reg: head.reg, version_id: head.version_id, version_seq: head.version_seq,
+    reg: head.reg, version_id: head.version_id, version_seq: head.version_seq, status: head.status,
     lineups,
     payload: {
       lineups: lineups.map((l) => ({
@@ -246,6 +253,8 @@ export type ViewerTierState = {
   votes: Record<string, -1 | 1>
   own: string[]
   scores: Record<string, number>
+  /** i commenti pubblicati di chi guarda sulle versioni correnti del tier */
+  ownComments: string[]
 }
 
 /** Oltre questi clear per tier i punteggi vivi si fermano: la pagina ne mostra 20. */
@@ -258,7 +267,10 @@ const PUNTEGGI_MAX = 500
  * Gli id dell'autore non escono: si confrontano qui.
  */
 export async function viewerTierState(userId: string, tierId: string): Promise<ViewerTierState> {
-  const rows = await sql<{ version_id: string; clear_id: string; score: number; value: -1 | 1 | null; own: boolean }>(
+  // le due letture in parallelo: /api/me e' sul percorso di ogni pagina vista
+  const [rows, ownComments] = await Promise.all([sql<{
+    version_id: string; clear_id: string; score: number; value: -1 | 1 | null; own: boolean
+  }>(
     `select c.version_id::text, c.id::text as clear_id, c.score::int, v.value::int as value,
             (c.author_id = $1::uuid) as own
      from clear_current c
@@ -268,14 +280,52 @@ export async function viewerTierState(userId: string, tierId: string): Promise<V
               c.has_proof desc, c.score desc, c.turns nulls last, c.id
      limit $3`,
     [userId, tierId, PUNTEGGI_MAX],
-  )
-  const out: ViewerTierState = { votes: {}, own: [], scores: {} }
+  ), ownCommentsInTier(userId, tierId)])
+  const out: ViewerTierState = { votes: {}, own: [], scores: {}, ownComments }
   for (const r of rows) {
     out.scores[r.version_id] = r.score
     if (r.value === 1 || r.value === -1) out.votes[r.version_id] = r.value
     if (r.own) out.own.push(r.clear_id)
   }
   return out
+}
+
+/**
+ * I commenti di chi guarda che la pagina del tier puo' mostrare: quelli
+ * pubblicati, sulla versione corrente di un clear pubblicato (come
+ * getComments). Su questi il bottone Report non compare.
+ */
+async function ownCommentsInTier(userId: string, tierId: string): Promise<string[]> {
+  const rows = await sql<{ id: string }>(
+    `select m.id::text
+     from clear_comment m
+     join clear_current c on c.version_id = m.version_id
+     where m.author_id = $1::uuid and c.stage_tier_id = $2::bigint
+       and m.status = 'published' and c.status = 'published'
+     order by m.created_at desc
+     limit $3`,
+    [userId, tierId, PUNTEGGI_MAX],
+  )
+  return rows.map((r) => r.id)
+}
+
+export type HiddenClear = { id: string; event_id: string; event_name: string | null; created_at: Date }
+
+/**
+ * I clear dell'utente che un moderatore ha nascosto (0024), per Settings:
+ * fuori dalle liste, senza questo l'autore non saprebbe dove trovarli per
+ * cambiarli o cancellarli. Solo i suoi: userId viene dalla sessione.
+ */
+export async function hiddenClearsOf(userId: string): Promise<HiddenClear[]> {
+  return sql<HiddenClear>(
+    `select c.id::text, c.event_id::text, et.name as event_name, c.created_at
+     from clear c
+     left join event_text et on et.event_id = c.event_id and et.locale = 'en'
+     where c.author_id = $1::uuid and c.status = 'hidden'
+     order by c.created_at desc, c.id
+     limit 50`,
+    [userId],
+  )
 }
 
 /** Le carte di tutte le versioni di un clear, assetti a meta' evento compresi. */

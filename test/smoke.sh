@@ -103,6 +103,12 @@ echo "le pagine che non ci sono"
 verifica_404 "id non numerico" /events/abc
 verifica_404 "id che non esiste" /events/999999999999
 verifica_404 "percorso sconosciuto" /percorso-che-non-esiste
+# proxy.ts: senza il cookie di sessione ogni URL di /admin e' un 404 vero
+echo "l'area admin, senza sessione"
+verifica_404 "admin: la coda" /admin
+verifica_404 "admin: i nascosti" /admin/hidden
+verifica_404 "admin: un utente" /admin/users/qualcuno
+verifica_404 "admin: il registro" /admin/log
 
 echo "le pagine evento"
 EZA=${SMOKE_EZA_ID:-$(primo_evento '/events/browse?type=zbattle' '[0-9]+ levels')}
@@ -133,6 +139,7 @@ read -r codice dove < <(curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n'
 [ "$codice" = 307 ] && [ "$dove" = "$BASE/events" ] && pass "/ porta a /events (307)" || fail "/: $codice $dove"
 prendi /robots.txt
 grep -q 'Disallow: /events/browse' "$TMP/html" && pass "robots.txt esclude /events/browse" || fail "robots.txt senza /events/browse"
+grep -q 'Disallow: /admin' "$TMP/html" && pass "robots.txt esclude /admin" || fail "robots.txt senza /admin"
 
 echo "chi guarda (/api/me)"
 intestazioni=$(curl -s -D - -o "$TMP/html" --max-time 60 "$BASE/api/me" | tr -d '\r')
@@ -140,6 +147,15 @@ intestazioni=$(curl -s -D - -o "$TMP/html" --max-time 60 "$BASE/api/me" | tr -d 
   && pass "/api/me senza cookie: {\"user\":null}, no-store" || fail "/api/me senza cookie: $(head -c 80 "$TMP/html")"
 grep -qi '^access-control-allow-origin' <<<"$intestazioni" && fail "/api/me con un header CORS" \
   || pass "/api/me senza header CORS"
+grep -qi '^vary:.*cookie' <<<"$intestazioni" && pass "/api/me con Vary: Cookie" || fail "/api/me senza Vary: Cookie"
+# La pagina in cache e' la stessa per tutti: Report, il banner della
+# sospensione e il link Moderation arrivano solo dalle isole client.
+if [ -n "${STAGE:-}" ]; then
+  prendi "/events/$STAGE"
+  grep -qE 'Report(<span[^>]*>)? this (clear|comment)|Your account is suspended|>Moderation<' "$TMP/html" \
+    && fail "la pagina in cache contiene Report, il banner o il link Moderation" \
+    || pass "la pagina in cache non ha niente di chi guarda (Report, sospensione, Moderation)"
+fi
 
 # Contro next start (non next dev): le pagine pubbliche escono dalla cache
 if [ "${SMOKE_EXPECT_CACHE:-}" = 1 ]; then

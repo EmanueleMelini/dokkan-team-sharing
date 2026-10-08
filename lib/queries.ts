@@ -342,7 +342,7 @@ export async function listClears(
             (select count(*) from clear_lineup l
               where l.version_id = c.version_id and l.seq > 1)::int as changes,
             (select count(*) from clear_comment m
-              where m.version_id = c.version_id)::int as comments
+              where m.version_id = c.version_id and m.status = 'published')::int as comments
      from clear_current c
      join app_user u on u.id = c.author_id
      join clear_reputation rep on rep.clear_id = c.id

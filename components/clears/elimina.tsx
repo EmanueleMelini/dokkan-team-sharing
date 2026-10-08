@@ -10,7 +10,11 @@ const piccolo = 'px-2 py-1 text-[12px] rounded-[var(--raggio)] border transition
  * un dialogo modale. Il focus passa alla domanda e torna a Delete se si
  * annulla, così da tastiera non si perde il punto.
  */
-export function EliminaClear({ clearId }: { clearId: string }) {
+export function EliminaClear({ clearId, tornaAllEvento = false }: {
+  clearId: string
+  /** dalla pagina di modifica: dopo la cancellazione si torna all'evento */
+  tornaAllEvento?: boolean
+}) {
   const [chiede, setChiede] = useState(false)
   const [stato, azione, inCorso] = useActionState<ClearActionState, FormData>(deleteClear, {})
   const conferma = useRef<HTMLButtonElement>(null)
@@ -39,6 +43,7 @@ export function EliminaClear({ clearId }: { clearId: string }) {
   return (
     <form action={azione} className="flex flex-wrap items-center gap-2" aria-busy={inCorso}>
       <input type="hidden" name="clear" value={clearId} />
+      {tornaAllEvento && <input type="hidden" name="dopo" value="evento" />}
       <span className="text-[12px] text-inchiostro">Delete this clear, its votes and comments?</span>
       <button
         ref={conferma}

@@ -10,6 +10,7 @@ import { SESSION_DAYS, createAuth } from '@/lib/auth/config'
 import { readAuthEnv } from '@/lib/auth/env'
 import { FRESH_SESSION_SECONDS, isFreshSession } from '@/lib/auth/fresh'
 import { suggestHandle } from '@/lib/auth/handle'
+import { INDEFINITA, fineSospensione, isSospeso } from '@/lib/moderation/sospensione'
 import { safeNext } from '@/lib/auth/safe-next'
 import { db } from '@/lib/db'
 
@@ -258,6 +259,32 @@ try {
   }))
   const animata = await one<{ p: boolean }>('select prefers_animated as p from app_user where email = $1', [em])
   check('prefersAnimated non si scrive dal client (input: false)', animata.p === false, `${res.status}`)
+
+  // La moderazione (0024): ruolo e sospensione li scrivono solo le
+  // funzioni SQL (mod_suspend_user, set_user_role), mai il client.
+  check('suspendedUntil nella sessione, nullo per difetto', sess?.user.suspendedUntil == null &&
+    sess?.user.suspensionReason == null, String(sess?.user.suspendedUntil))
+  const domani = new Date(Date.now() + 86_400_000).toISOString()
+  res = await auth.handler(new Request(`${BASE}/api/auth/update-user`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', origin: BASE, cookie, 'x-forwarded-for': `10.9.1.${ip++}` },
+    body: JSON.stringify({ role: 'admin', suspendedUntil: domani, suspensionReason: 'x' }),
+  }))
+  const moderazione = await one<{ role: string; s: Date | null; r: string | null }>(
+    'select role, suspended_until as s, suspension_reason as r from app_user where email = $1', [em])
+  check('role, suspendedUntil e suspensionReason non si scrivono dal client (input: false)',
+    moderazione.role === 'member' && moderazione.s === null && moderazione.r === null,
+    `${res.status} ${JSON.stringify(moderazione)}`)
+  await q("update app_user set role = 'admin', suspended_until = now() + interval '1 day', suspension_reason = 'Spam' where email = $1", [em])
+  const poi = await auth.api.getSession({ headers: new Headers({ cookie }) })
+  check('un cambio di ruolo o di sospensione vale dalla richiesta dopo (niente cache nel cookie)',
+    poi?.user.role === 'admin' && poi.user.suspensionReason === 'Spam' &&
+    isSospeso(fineSospensione(poi.user.suspendedUntil)), `${poi?.user.role} ${String(poi?.user.suspendedUntil)}`)
+  await q("update app_user set suspended_until = 'infinity' where email = $1", [em])
+  const sempre = await auth.api.getSession({ headers: new Headers({ cookie }) })
+  check('\'infinity\' arriva come sospensione indefinita', fineSospensione(sempre?.user.suspendedUntil) === INDEFINITA,
+    String(sempre?.user.suspendedUntil))
+  await q("update app_user set role = 'member', suspended_until = null, suspension_reason = null where email = $1", [em])
 
   res = await apri(link!.url)
   check('lo stesso link una seconda volta: INVALID_TOKEN', res.status === 302

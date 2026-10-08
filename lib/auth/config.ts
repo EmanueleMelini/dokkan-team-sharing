@@ -75,6 +75,12 @@ export function createAuth({ env, sendMagicLink, plugins = [] }: Options) {
         prefersAnimated: {
           type: 'boolean', required: false, input: false, defaultValue: false, fieldName: 'prefers_animated',
         },
+        // La sospensione (0024): null, una data, o 'infinity'. La scrive solo
+        // mod_suspend_user; qui si legge per /api/me e per il banner.
+        suspendedUntil: { type: 'date', required: false, input: false, fieldName: 'suspended_until' },
+        // Il motivo lo vede solo l'interessato, nel banner. Le note dei
+        // moderatori invece restano nel registro e non escono mai.
+        suspensionReason: { type: 'string', required: false, input: false, fieldName: 'suspension_reason' },
       },
       // Un account nuovo solo con un'email che il provider dichiara
       // verificata (il magic link la verifica da se'). Senza questo, chi

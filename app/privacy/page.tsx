@@ -9,8 +9,8 @@ export const metadata: Metadata = {
 }
 
 // Ogni frase qui sotto descrive quello che il codice fa davvero (tabelle
-// app_user, auth_*, clear_*; lib/auth/config.ts): se cambia il codice,
-// va cambiata anche questa pagina.
+// app_user, auth_*, clear_*, report, moderation_action; lib/auth/config.ts):
+// se cambia il codice, va cambiata anche questa pagina.
 export default function Privacy() {
   const mail = `mailto:${LEGALE.contatto}`
   return (
@@ -38,6 +38,19 @@ export default function Privacy() {
           <strong>What you post.</strong> Clears (teams, builds, notes and proof links), comments
           and votes. Clears and comments are public together with your handle. Votes count toward
           public scores, but who voted is not shown. Same legal basis as above.
+        </li>
+        <li>
+          <strong>Reports and moderation.</strong> When you report a clear or a comment, the site
+          stores your account, the post, the reason you picked, the details you wrote, if any, and
+          the time. Only moderators (accounts the site owner gives the admin role) see reports;
+          the author of the post is not told who reported it. When a moderator hides or restores a
+          post, closes reports or suspends an account, an entry goes into a moderation log: the
+          moderator&apos;s account and handle, the action, the id of the post or account and of its
+          author, how many reports it closed, a private note of the moderator and, for a
+          suspension, its end and reason. The log never copies the text of the post. If your
+          account is suspended, the end date and the reason are stored with your account and shown
+          to you. This keeps the site safe and fair for its users (legitimate interest, GDPR Art.
+          6(1)(f)).
         </li>
         <li>
           <strong>Security.</strong> While you are signed in, your session is stored with the IP
@@ -78,10 +91,24 @@ export default function Privacy() {
         <li>Your account and what you post: until you delete them.</li>
         <li>Sessions: 30 days after your last visit, then removed.</li>
         <li>Sign-in links: 10 minutes. Sign-in counters: 1 hour. The sign-in email log: 1 day.</li>
+        <li>
+          Reports: until a moderator handles them, then {LEGALE.giorniSegnalazioni} more days. They
+          are deleted earlier if you delete your account, or when the reported post is deleted.
+        </li>
+        <li>
+          A suspension&apos;s end date and reason: until a moderator lifts it, or until you delete
+          your account.
+        </li>
+        <li>
+          The moderation log: kept without a time limit, so that every decision can be checked
+          and undone. When an account is deleted its entries stay, but only with ids that no
+          longer lead to any account; a moderator&apos;s entries also keep the handle they had.
+        </li>
       </ul>
       <p>
         Deleting your account from <Link href="/settings">Settings</Link> removes it immediately,
-        together with everything you posted: clears, comments and votes. Copies inside database
+        together with everything you posted: clears, comments, votes and the reports you sent.
+        Copies inside database
         backups disappear when those backups expire, within 30 days.
       </p>
 

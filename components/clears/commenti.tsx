@@ -1,5 +1,6 @@
 import { ChatCircle } from '@phosphor-icons/react/dist/ssr'
 import { CommentoSpazio } from '@/components/clears/commento-spazio'
+import { SegnalaCommento } from '@/components/moderation/segnala-isole'
 import { soloGiorno } from '@/lib/date'
 import type { ClearComment } from '@/lib/clears'
 
@@ -43,6 +44,10 @@ export function Commenti({ versionId, idBase, commenti, totale, ritorno }: Props
                 <p lang={m.lang ?? undefined} className="mt-0.5 text-[13px] leading-relaxed text-testo whitespace-pre-line break-words">
                   {m.body}
                 </p>
+                {/* Report sui commenti degli altri: quali sono i propri lo dice /api/me (tier.ownComments) */}
+                <div className="mt-1 flex flex-wrap empty:hidden">
+                  <SegnalaCommento commentId={m.id} />
+                </div>
               </li>
             ))}
           </ol>

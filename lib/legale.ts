@@ -10,4 +10,6 @@ export const LEGALE = {
   sito: 'dokkants.emanuelemelini.dev',
   aggiornato: 'October 8, 2026',
   etaMinima: 16,
+  /** dopo quanti giorni si cancellano le segnalazioni chiuse (purge_resolved_reports, 0024) */
+  giorniSegnalazioni: 180,
 } as const

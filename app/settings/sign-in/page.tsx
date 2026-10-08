@@ -4,6 +4,7 @@ import { EmailSignIn } from '@/components/auth/email-sign-in'
 import { ProviderButtons } from '@/components/auth/provider-buttons'
 import { providers } from '@/lib/auth/auth'
 import { authErrorMessage } from '@/lib/auth/messages'
+import { safeNext } from '@/lib/auth/safe-next'
 import { accountEmail, linkedProviderIds, requireOnboardedUser, sessionIsFresh } from '@/lib/dal'
 
 export const metadata: Metadata = { title: 'Sign in again', robots: { index: false } }
@@ -21,6 +22,14 @@ const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v)
 const NEXT = '/settings'
 const HERE = '/settings/sign-in'
 
+// Dove si torna: Settings, o la pagina di /admin da cui si e' partiti
+// (sospendere chiede la stessa sessione fresca). Altri percorsi no: questa
+// pagina non e' un rimbalzo generico.
+const ritorno = (v: string | undefined) => {
+  const s = safeNext(v, NEXT)
+  return /^\/admin(\/|\?|$)/.test(s) ? s : NEXT
+}
+
 /**
  * Rientrare restando dentro, per le azioni di Settings che chiedono una
  * sessione fresca (lib/auth/fresh.ts). /login non va bene: rimanda subito
@@ -32,6 +41,8 @@ const HERE = '/settings/sign-in'
 export default async function SignInAgainPage({ searchParams }: PageProps<'/settings/sign-in'>) {
   await requireOnboardedUser(NEXT)
   const sp = await searchParams
+  const back = ritorno(one(sp.next))
+  const admin = back !== NEXT
   const [linked, { email, verified }, fresh] = await Promise.all([linkedProviderIds(), accountEmail(), sessionIsFresh()])
   const mine = providers.filter((p) => linked.includes(p.id))
   const error = authErrorMessage(one(sp.error))
@@ -41,7 +52,9 @@ export default async function SignInAgainPage({ searchParams }: PageProps<'/sett
       <div className="max-w-sm mx-auto border border-linea rounded-[var(--raggio)] bg-superficie px-6 py-8">
         <h1 className="text-lg font-semibold tracking-tight text-inchiostro">Sign in again</h1>
         <p className="mt-1.5 text-[13px] leading-relaxed text-testo">
-          Changing how you sign in or deleting your account needs a sign-in from the last 15 minutes.
+          {admin
+            ? 'Suspending or reinstating an account needs a sign-in from the last 15 minutes.'
+            : 'Changing how you sign in or deleting your account needs a sign-in from the last 15 minutes.'}
           You stay signed in meanwhile.
         </p>
 
@@ -52,13 +65,13 @@ export default async function SignInAgainPage({ searchParams }: PageProps<'/sett
         )}
         {fresh && !error && (
           <p role="status" className="mt-5 text-[12px] leading-relaxed text-inchiostro bg-oro-tenue border border-oro-linea rounded-[var(--raggio)] px-3 py-2">
-            You signed in recently, so you can go straight back to Settings.
+            You signed in recently, so you can go straight back to {admin ? 'Moderation' : 'Settings'}.
           </p>
         )}
 
         {mine.length > 0 && (
           <div className="mt-6">
-            <ProviderButtons providers={mine} next={NEXT} errorPath={HERE} />
+            <ProviderButtons providers={mine} next={back} errorPath={HERE} />
           </div>
         )}
         {mine.length > 0 && verified && (
@@ -70,7 +83,7 @@ export default async function SignInAgainPage({ searchParams }: PageProps<'/sett
         )}
         {verified && (
           <div className={mine.length > 0 ? '' : 'mt-6'}>
-            <EmailSignIn next={NEXT} errorPath={HERE} defaultEmail={email} />
+            <EmailSignIn next={back} errorPath={HERE} defaultEmail={email} />
           </div>
         )}
         {mine.length === 0 && !verified && (
@@ -80,8 +93,8 @@ export default async function SignInAgainPage({ searchParams }: PageProps<'/sett
         )}
 
         <p className="mt-6 text-[12px]">
-          <Link href={NEXT} className="text-oro underline underline-offset-2">
-            Back to Settings
+          <Link href={back} className="text-oro underline underline-offset-2">
+            Back to {admin ? 'Moderation' : 'Settings'}
           </Link>
         </p>
       </div>

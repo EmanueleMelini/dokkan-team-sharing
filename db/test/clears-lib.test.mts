@@ -14,7 +14,7 @@ import {
 } from '@/lib/clears/validate'
 import {
   clearCardIds, getClearForEdit, getClearVersions, getComments, getVersionCounts, getVersionLineups, getViewerVotes,
-  listStartedRuns, userFootprint, viewerTierState,
+  hiddenClearsOf, listStartedRuns, userFootprint, viewerTierState,
 } from '@/lib/clears'
 import { searchCards } from '@/lib/cards'
 import { CLEAR_PER_PAGINA, clearPage, listClears } from '@/lib/queries'
@@ -77,6 +77,10 @@ function validatori(cards: number[]) {
     nomi.length > 25 && nomi.includes('builder_build_equipment_card') && senza.length === 0, senza.join(', '))
   check('nessuna frase con il trattino lungo', nomi.every((n) => !/—/.test(friendlyClearError({ constraint: n }) ?? '')))
   check('42501 senza nome e\' "non tuo"', /not yours/.test(friendlyClearError({ code: '42501' }) ?? ''))
+  check('42501 account_suspended (0024) dice "sospeso", non "non tuo"',
+    /suspended/.test(friendlyClearError({ code: '42501', constraint: 'account_suspended' }) ?? ''))
+  check('le frasi della moderazione passano da friendlyClearError (report_rate_limit)',
+    /reports in the last hour/.test(friendlyClearError({ code: '54000', constraint: 'report_rate_limit' }) ?? ''))
   check('un errore sconosciuto non si traduce', friendlyClearError({ code: '23505', constraint: 'altro' }) === null)
 }
 
@@ -154,12 +158,37 @@ async function cache({ d, autore, altro, clear, v2 }: {
     JSON.stringify(daAltro.votes))
   const punti = await one<{ s: number }>('select score::int as s from clear_current where id = $1', [clear])
   check('scores: uguali a clear_current.score', daAutore.scores[v2] === punti.s && daAltro.scores[v2] === punti.s)
+  // ownComments (0024): su questi la pagina non mostra Report
+  const commenti = await getComments(v2)
+  const diAltro = commenti.filter((m) => m.body === 'Thanks for the notes.').map((m) => m.id)
+  const diAutore = commenti.filter((m) => m.body === 'You are welcome.').map((m) => m.id)
+  check('ownComments: solo i commenti di chi guarda', diAltro.length === 1 && diAutore.length === 1 &&
+    daAltro.ownComments.join() === diAltro.join() && daAutore.ownComments.join() === diAutore.join(),
+    JSON.stringify({ a: daAutore.ownComments, b: daAltro.ownComments }))
+  await db.query("update clear_comment set status = 'hidden' where id = $1::uuid", [diAltro[0]])
+  const nascosto = await viewerTierState(altro, d.tier)
+  await db.query("update clear_comment set status = 'published' where id = $1::uuid", [diAltro[0]])
+  check('ownComments: un commento nascosto non c\'e\' (la pagina non lo mostra)', nascosto.ownComments.length === 0,
+    nascosto.ownComments.join())
+  await db.query("update clear set status = 'hidden' where id = $1::uuid", [clear])
+  const clearNascosto = await viewerTierState(altro, d.tier)
+  const edit = await getClearForEdit(clear, autore)
+  const [nascostiAutore, nascostiAltro] = await Promise.all([hiddenClearsOf(autore), hiddenClearsOf(altro)])
+  await db.query("update clear set status = 'published' where id = $1::uuid", [clear])
+  check('hiddenClearsOf: il clear nascosto, solo per il suo autore (Settings)',
+    nascostiAutore.length === 1 && nascostiAutore[0].id === clear && !!nascostiAutore[0].event_name &&
+    nascostiAltro.length === 0 && (await hiddenClearsOf(autore)).length === 0,
+    JSON.stringify({ a: nascostiAutore.map((c) => c.id), b: nascostiAltro.length }))
+  check('ownComments: niente sui clear nascosti', clearNascosto.ownComments.length === 0, clearNascosto.ownComments.join())
+  check('getClearForEdit: lo stato, per l\'avviso "A moderator hid this clear"', edit?.status === 'hidden' &&
+    (await getClearForEdit(clear, autore))?.status === 'published', String(edit?.status))
   const altroTier = await one<{ id: string } | null>(
     'select id::text from stage_tier where id <> $1::bigint and event_id = (select event_id from stage_tier where id = $1::bigint) limit 1',
     [d.tier])
   if (altroTier) {
     const vuoto = await viewerTierState(altro, altroTier.id)
-    check('un altro tier: niente di questo', !vuoto.own.includes(suo) && vuoto.votes[v2] === undefined && !(v2 in vuoto.scores))
+    check('un altro tier: niente di questo', !vuoto.own.includes(suo) && vuoto.votes[v2] === undefined && !(v2 in vuoto.scores) &&
+      !vuoto.ownComments.some((id) => diAltro.includes(id)))
   }
 
   console.log('\n  -- clearPage, clearCardIds, userFootprint')

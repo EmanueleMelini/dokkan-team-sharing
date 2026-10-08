@@ -3,6 +3,7 @@
 import { useActionState, useState } from 'react'
 import { addComment, type ClearActionState } from '@/lib/clears/actions'
 import { LIMITS } from '@/lib/clears/validate'
+import { useSegnaCommentoMio } from '@/components/viewer/provider'
 
 /**
  * Il modulo di un commento. Il testo è controllato: se il server rifiuta
@@ -11,9 +12,12 @@ import { LIMITS } from '@/lib/clears/validate'
  */
 export function CommentoForm({ versionId, idBase }: { versionId: string; idBase: string }) {
   const [testo, setTesto] = useState('')
+  const segnaMio = useSegnaCommentoMio()
   const [stato, azione, inCorso] = useActionState<ClearActionState, FormData>(async (prev, form) => {
     const r = await addComment(prev, form)
     if (r.ok) setTesto('')
+    // il proprio commento nuovo non deve avere Report
+    if (r.ok && r.commentId) segnaMio(r.commentId)
     return r
   }, {})
   const id = `${idBase}-nuovo`

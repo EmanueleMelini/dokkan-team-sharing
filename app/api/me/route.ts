@@ -7,9 +7,11 @@ import { readAuthEnv } from '@/lib/auth/env'
 import { SESSION_DAYS } from '@/lib/auth/config'
 import { HINT_COOKIE, hintOptions } from '@/lib/viewer/hint'
 import type { MeResponse } from '@/lib/viewer/types'
+import { viewerUserOf } from '@/lib/viewer/utente'
 
 // Chi guarda, per le isole client delle pagine in cache: l'utente e, con
-// ?tier=<id>, i suoi voti, i suoi clear e i punteggi vivi di quel tier.
+// ?tier=<id>, i suoi voti, i suoi clear, i suoi commenti e i punteggi vivi
+// di quel tier.
 // Una richiesta per pagina vista, e solo da chi ha l'indizio dts_signed_in.
 //
 // private, no-store e Vary: Cookie: nessuna cache condivisa la tiene.
@@ -30,9 +32,9 @@ export async function GET(request: NextRequest) {
   // Rinnovato a ogni visita: la sessione scorre (updateAge), l'indizio con lei.
   jar.set(HINT_COOKIE, '1', opzioni)
 
-  const body: MeResponse = {
-    user: { handle: user.handle, onboarded: user.onboarded, prefersAnimated: user.prefersAnimated },
-  }
+  // isAdmin e la sospensione li legge la sessione: niente cache nel cookie
+  // (config.ts), quindi un cambio di ruolo vale dalla richiesta dopo.
+  const body: MeResponse = { user: viewerUserOf(user) }
   const tier = parseBigintId(request.nextUrl.searchParams.get('tier'))
   // Senza handle non si vota e non si invia: niente da dire sul tier.
   if (tier && user.onboarded) body.tier = await viewerTierState(user.id, tier)

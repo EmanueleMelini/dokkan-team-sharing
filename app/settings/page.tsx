@@ -1,5 +1,7 @@
 import type { Metadata } from 'next'
+import Link from 'next/link'
 import { DeleteAccount } from '@/components/auth/delete-account'
+import { BannerSospeso } from '@/components/moderation/banner-sospeso'
 import { LinkProvider } from '@/components/auth/link-provider'
 import { SignOutButton } from '@/components/auth/sign-out-button'
 import { UnlinkProvider } from '@/components/auth/unlink-provider'
@@ -8,6 +10,9 @@ import { PROVIDERS } from '@/lib/auth/env'
 import { providers } from '@/lib/auth/auth'
 import { authErrorMessage } from '@/lib/auth/messages'
 import { accountEmail, linkedProviderIds, requireOnboardedUser, sessionIsFresh } from '@/lib/dal'
+import { hiddenClearsOf } from '@/lib/clears'
+import { soloGiorno } from '@/lib/date'
+import { editClearHref } from '@/lib/urls'
 
 export const metadata: Metadata = { title: 'Settings', robots: { index: false } }
 
@@ -24,7 +29,9 @@ export default async function SettingsPage({ searchParams }: PageProps<'/setting
   const sp = await searchParams
   // fresh decide solo cosa mostrare al clic: lo ricontrollano le Server
   // Action e l'hook di /link-social, perche' la pagina puo' restare aperta.
-  const [linked, { email, verified }, fresh] = await Promise.all([linkedProviderIds(), accountEmail(), sessionIsFresh()])
+  const [linked, { email, verified }, fresh, nascosti] = await Promise.all([
+    linkedProviderIds(), accountEmail(), sessionIsFresh(), hiddenClearsOf(user.id),
+  ])
   const error = authErrorMessage(one(sp.error))
   const justLinked = PROVIDERS.find((p) => p.id === one(sp.linked) && linked.includes(p.id))
   const justUnlinked = PROVIDERS.find((p) => p.id === one(sp.unlinked) && !linked.includes(p.id))
@@ -47,6 +54,9 @@ export default async function SettingsPage({ searchParams }: PageProps<'/setting
       <p className="mt-1.5 text-sm text-testo">
         Signed in as <span className="font-medium text-inchiostro">{user.handle}</span>.
       </p>
+      {user.suspended && user.suspendedUntil && (
+        <BannerSospeso until={user.suspendedUntil} reason={user.suspensionReason} className="mt-6 max-w-lg" />
+      )}
 
       <section className="mt-8 max-w-lg" aria-labelledby="accounts">
         <h2 id="accounts" className="text-[13px] font-semibold text-inchiostro">
@@ -92,6 +102,31 @@ export default async function SettingsPage({ searchParams }: PageProps<'/setting
           ))}
         </ul>
       </section>
+
+      {nascosti.length > 0 && (
+        // Fuori dalle liste: da qui l'autore li ritrova per cambiarli o cancellarli
+        <section className="mt-8 max-w-lg" aria-labelledby="nascosti">
+          <h2 id="nascosti" className="text-[13px] font-semibold text-inchiostro">
+            Hidden by a moderator
+          </h2>
+          <p className="mt-1 text-[12px] leading-relaxed text-tenue">
+            Other players cannot see these clears. You can still edit or delete them.
+          </p>
+          <ul className="mt-3 border border-linea rounded-[var(--raggio)] bg-superficie divide-y divide-linea">
+            {nascosti.map((c) => (
+              <li key={c.id} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-4 py-3">
+                <p className="text-[13px] text-inchiostro">
+                  {c.event_name ?? `Event ${c.event_id}`}
+                  <span className="ml-2 text-[12px] text-tenue">{soloGiorno(c.created_at)}</span>
+                </p>
+                <Link href={editClearHref(c.event_id, c.id)} prefetch={false} className="text-[12px] text-testo underline decoration-oro-linea underline-offset-2 hover:text-inchiostro">
+                  Open<span className="sr-only"> this clear</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <section className="mt-8 max-w-lg">
         <SignOutButton className="px-3 py-1.5 text-[13px] font-medium rounded-[var(--raggio)] border border-campo bg-superficie text-inchiostro hover:bg-superficie-2 transition-colors" />

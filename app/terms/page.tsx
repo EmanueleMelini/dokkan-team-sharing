@@ -51,6 +51,27 @@ export default function Terms() {
       </ul>
       <p>Content that breaks these rules can be removed, and accounts that keep doing it suspended.</p>
 
+      <h2>Reports and moderation</h2>
+      <p>
+        If a clear or a comment breaks these rules, use its Report button. Moderators read every
+        report; nothing is hidden automatically, however many reports a post gets.
+      </p>
+      <ul>
+        <li>
+          A moderator can hide a clear or a comment. Other players no longer see it. The author of
+          a hidden clear finds it in Settings and can still change it or delete it.
+        </li>
+        <li>
+          A moderator can suspend an account for a set time or indefinitely, with a reason that the
+          account owner sees. While suspended you can still sign in, read the site, change your
+          settings and delete your posts or your account, but you cannot post, revise, vote,
+          comment or report.
+        </li>
+        <li>
+          If you think a decision was wrong, write to <a href={mail}>{LEGALE.contatto}</a>.
+        </li>
+      </ul>
+
       <h2>The service</h2>
       <p>
         The site is offered as it is, for free. It can change, be unavailable at times or stop,

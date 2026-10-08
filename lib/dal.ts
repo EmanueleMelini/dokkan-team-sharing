@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation'
 import { auth } from '@/lib/auth/auth'
 import { isFreshSession } from '@/lib/auth/fresh'
 import { safeNext } from '@/lib/auth/safe-next'
+import { fineSospensione, isSospeso } from '@/lib/moderation/sospensione'
 
 // Il livello di accesso ai dati per l'identita' (guida authentication di
 // Next): ogni pagina protetta e ogni Server Action chiede qui chi e'
@@ -24,6 +25,15 @@ export type CurrentUser = {
   onboarded: boolean
   /** l'animazione delle carte per difetto (app_user.prefers_animated) */
   prefersAnimated: boolean
+  /**
+   * La fine della sospensione (0024): una data ISO, 'infinity' o null. Puo'
+   * essere passata: conta suspended. Le scritture le ferma comunque il
+   * database (builder_assert_author); qui serve a dirlo prima.
+   */
+  suspendedUntil: string | null
+  suspended: boolean
+  /** il motivo scritto dal moderatore, mostrato solo all'interessato */
+  suspensionReason: string | null
 }
 
 /** La sessione della richiesta, letta una volta per render (React cache). */
@@ -36,6 +46,8 @@ export const currentUser = cache(async (): Promise<CurrentUser | null> => {
   const s = await getSession()
   if (!s) return null
   const u = s.user
+  const suspendedUntil = fineSospensione(u.suspendedUntil)
+  const suspended = isSospeso(suspendedUntil)
   return {
     id: u.id,
     handle: String(u.handle ?? ''),
@@ -45,6 +57,9 @@ export const currentUser = cache(async (): Promise<CurrentUser | null> => {
     displayName: u.name ?? '',
     onboarded: u.onboardedAt != null,
     prefersAnimated: u.prefersAnimated === true,
+    suspendedUntil,
+    suspended,
+    suspensionReason: suspended ? (u.suspensionReason ?? null) : null,
   }
 })
 

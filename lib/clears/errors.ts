@@ -2,7 +2,9 @@
 // mette un nome in CONSTRAINT su ogni rifiuto: si traduce il nome, mai il
 // testo del messaggio, che e' italiano e puo' cambiare.
 
-export type DbErrorLike = { code?: string; constraint?: string }
+import { friendlyModerationError, type DbErrorLike } from '@/lib/moderation/errors'
+
+export type { DbErrorLike }
 
 const BY_CONSTRAINT: Record<string, string> = {
   builder_payload: 'The clear could not be read. Reload the page.',
@@ -48,6 +50,10 @@ const BY_CONSTRAINT: Record<string, string> = {
  */
 export function friendlyClearError(e: DbErrorLike): string | null {
   if (e.constraint && BY_CONSTRAINT[e.constraint]) return BY_CONSTRAINT[e.constraint]
+  // Prima del 42501 generico: account_suspended (0024) e' anche lui 42501,
+  // e nel builder, nei voti e nei commenti deve dire "sospeso", non "non tuo".
+  const mod = friendlyModerationError(e)
+  if (mod) return mod
   // delete_clear e revise_clear (0002) non danno un nome: 42501 e' "non tuo"
   if (e.code === '42501') return 'This clear does not exist or is not yours.'
   return null

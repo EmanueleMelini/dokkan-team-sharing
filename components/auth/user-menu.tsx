@@ -41,6 +41,12 @@ export function UserMenu() {
 
   return (
     <div className="flex items-center gap-4">
+      {/* Solo agli admin; /admin ricontrolla il ruolo dal server e per gli altri e' un 404 */}
+      {user.isAdmin && (
+        <Link href="/admin" prefetch={false} className={piccolo}>
+          Moderation
+        </Link>
+      )}
       <Link
         href="/settings"
         prefetch={false}
