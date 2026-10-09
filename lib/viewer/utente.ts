@@ -15,6 +15,8 @@ export function viewerUserOf(u: CurrentUser): ViewerUser {
     isAdmin: u.role === 'admin',
     suspended: u.suspended,
     suspendedUntil: u.suspended ? u.suspendedUntil : null,
+    // anche a chi e' sospeso: le notifiche sui suoi contenuti gli arrivano
+    unread: u.unread,
   }
   if (u.suspended && u.suspensionReason) out.suspensionReason = u.suspensionReason
   return out

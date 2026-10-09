@@ -26,6 +26,9 @@ const UTENTI = [
 
 try {
   await c.query('begin')
+  // I dati dimostrativi non avvisano nessuno (0028): i trigger delle
+  // notifiche escono con dts.silent, che vale solo in questa transazione.
+  await c.query(`set local dts.silent = 'on'`)
 
   if (PULISCI) {
     const { rowCount } = await c.query(

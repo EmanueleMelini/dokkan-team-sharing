@@ -11,6 +11,7 @@ import { readAuthEnv } from '@/lib/auth/env'
 import { FRESH_SESSION_SECONDS, isFreshSession } from '@/lib/auth/fresh'
 import { suggestHandle } from '@/lib/auth/handle'
 import { INDEFINITA, fineSospensione, isSospeso } from '@/lib/moderation/sospensione'
+import { hasUnread } from '@/lib/notify/kinds'
 import { safeNext } from '@/lib/auth/safe-next'
 import { db } from '@/lib/db'
 
@@ -296,6 +297,29 @@ try {
   check('\'infinity\' arriva come sospensione indefinita', fineSospensione(sempre?.user.suspendedUntil) === INDEFINITA,
     String(sempre?.user.suspendedUntil))
   await q("update app_user set role = 'member', suspended_until = null, suspension_reason = null where email = $1", [em])
+
+  // Il pallino delle notifiche (0028): le due date nella sessione, cosi'
+  // /api/me non fa query in piu'. Le scrivono solo le funzioni SQL.
+  check('notifLastAt e notifSeenAt nella sessione, nulli per difetto: niente pallino',
+    sempre?.user.notifLastAt == null && sempre?.user.notifSeenAt == null &&
+    !hasUnread(sempre?.user.notifLastAt, sempre?.user.notifSeenAt), String(sempre?.user.notifLastAt))
+  res = await auth.handler(new Request(`${BASE}/api/auth/update-user`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', origin: BASE, cookie, 'x-forwarded-for': `10.9.1.${ip++}` },
+    body: JSON.stringify({ notifLastAt: new Date().toISOString(), notifSeenAt: domani }),
+  }))
+  const date = await one<{ l: Date | null; v: Date | null }>(
+    'select notif_last_at as l, notif_seen_at as v from app_user where email = $1', [em])
+  check('notifLastAt e notifSeenAt non si scrivono dal client (input: false)', date.l === null && date.v === null,
+    `${res.status} ${JSON.stringify(date)}`)
+  await q("update app_user set notif_last_at = now(), notif_seen_at = now() - interval '1 minute' where email = $1", [em])
+  const acceso = await auth.api.getSession({ headers: new Headers({ cookie }) })
+  check('una notifica dopo l\'ultima visita accende il pallino dalla richiesta dopo',
+    hasUnread(acceso?.user.notifLastAt, acceso?.user.notifSeenAt), String(acceso?.user.notifLastAt))
+  await q("update app_user set notif_seen_at = notif_last_at where email = $1", [em])
+  const spento = await auth.api.getSession({ headers: new Headers({ cookie }) })
+  check('e lo spegne quando la lista e\' vista', !hasUnread(spento?.user.notifLastAt, spento?.user.notifSeenAt))
+  await q('update app_user set notif_last_at = null, notif_seen_at = null where email = $1', [em])
 
   res = await apri(link!.url)
   check('lo stesso link una seconda volta: INVALID_TOKEN', res.status === 302

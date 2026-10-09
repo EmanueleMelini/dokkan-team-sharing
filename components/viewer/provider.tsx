@@ -35,6 +35,8 @@ type Interno = Root & {
   /** un salvataggio del tema parte o finisce: intanto /api/me puo' dire ancora quello vecchio */
   beginTema: () => void
   endTema: () => void
+  /** il pallino delle notifiche, aggiornato da /notifications senza chiedere /api/me */
+  setUnread: (unread: boolean) => void
 }
 
 const RootContext = createContext<Interno | null>(null)
@@ -119,6 +121,12 @@ export function ViewerProvider({ children }: { children: ReactNode }) {
   }, [temaAccount, completo])
 
   const reload = useCallback(() => { avvisa(); setGiro((n) => n + 1) }, [])
+  // La lista ha appena segnato lette le notifiche mostrate: l'header e' nel
+  // layout e non si rimonta con la navigazione, quindi il pallino si spegne
+  // qui, senza un'altra richiesta a /api/me.
+  const setUnread = useCallback((unread: boolean) => {
+    setUser((u) => (u && u.unread !== unread ? { ...u, unread } : u))
+  }, [])
   const reset = useCallback(() => {
     document.cookie = `${HINT_COOKIE}=; Max-Age=0; Path=/; SameSite=Lax`
     setUser(null)
@@ -129,9 +137,9 @@ export function ViewerProvider({ children }: { children: ReactNode }) {
     const mode: ViewerMode = hint === null ? 'unknown' : !hint ? 'anon' : user === undefined ? 'unknown' : modeOf(user)
     return {
       mode, user: hint ? (user ?? null) : null, reload, reset, hint, beginScoped, endScoped, receive: setUser,
-      beginTema, endTema,
+      beginTema, endTema, setUnread,
     }
-  }, [hint, user, reload, reset, beginScoped, endScoped, beginTema, endTema])
+  }, [hint, user, reload, reset, beginScoped, endScoped, beginTema, endTema, setUnread])
 
   return <RootContext.Provider value={value}>{children}</RootContext.Provider>
 }
@@ -159,6 +167,13 @@ export function useCambiaTema(): (id: TemaId) => void {
     setThemeAction(id).catch(() => {}).finally(endTema)
   }, [pronto, beginTema, endTema])
 }
+
+/** Accende o spegne il pallino delle notifiche nell'header (solo in questa scheda). */
+export function useSetUnread(): (unread: boolean) => void {
+  const ctx = useContext(RootContext)
+  return ctx?.setUnread ?? nessuno
+}
+const nessuno = () => {}
 
 /** Lo stato del tier mostrato (voti, propri clear e commenti, punteggi), o null. */
 export const useViewerTier = () => useContext(TierContext)

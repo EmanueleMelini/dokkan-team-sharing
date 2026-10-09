@@ -1725,6 +1725,33 @@ Prove:
 - `npm run test:smoke`: manifest (content type e campi), icone (dimensioni dall'IHDR), header di `/sw.js`, `/offline.html` con noindex, `rel="manifest"` nell'HTML, l'invito assente dall'HTML del server.
 - A mano su un build di produzione (`next build && next start`, perché in dev il worker non si registra): DevTools, Application, Manifest (Installability senza errori) e Service workers; Cache storage deve avere solo `dts-offline-<versione>` con `/offline.html`. Fermando il server, una navigazione mostra la pagina offline. Lighthouse 12 non ha più la categoria PWA. Su un telefono vero: installazione su Android (splash e icona maskable) e Aggiungi a Home su iPhone (titolo `dokkants`).
 
+## Notifiche (migrazione 0028)
+
+Fase 2 del piano PWA e notifiche: la lista nel sito, sempre accesa, con un pallino nel menu. Push ed email arrivano con le fasi 3 e 4.
+
+Cosa si notifica in v1 (lo ha deciso il proprietario):
+
+- **un commento sul mio clear** (`clear_comment`), all'autore del clear, se è pubblicato e il commento non è suo. I commenti sullo stesso clear si accorpano finché la notifica non è letta: "3 new comments on your clear";
+- **la moderazione dei miei contenuti**: clear, commento o tip nascosti o ripristinati (`content_hidden`, `content_unhidden`), la sospensione e la sua fine (`suspended`, `suspension_lifted`). Arrivano anche a chi è sospeso;
+- **le segnalazioni aperte**, solo agli admin (`reports_open`, un gruppo solo: "3 open reports to review"). Mai a chi ha segnalato, e chi è segnalato non riceve **mai** niente, nemmeno se è admin.
+
+Voti e Helpful **non** scrivono notifiche: il digest email della fase 3 li conterà da `clear_vote.voted_at` e `tip_vote.voted_at`. Così un voto non tocca mai `app_user`, e il pallino resta gratis.
+
+Come funziona:
+
+- **Le righe le scrivono solo i trigger** della migrazione (su `clear_comment`, `moderation_action` e `report`), nella stessa transazione della scrittura: l'app non crea mai notifiche. `set local dts.silent = 'on'` le spegne: lo usano il seed demo, la fixture di `db/reset.mjs` e qualsiasi import che scriva dati della community.
+- **Nessun testo dei post** nelle notifiche: né commenti, né il motivo della sospensione, né la nota del moderatore. `notification_render(p_user, p_id)` e `notification_list(p_user, p_limit)` ricalcolano tutto adesso dalle tabelle vere (conteggio, handle attuale, evento, se il contenuto è ancora pubblicato). L'handle del moderatore e di chi segnala non esce mai.
+- **Il pallino**: `app_user.notif_last_at > notif_seen_at`. Le due colonne sono negli `additionalFields` di better-auth (`notifLastAt`, `notifSeenAt`, `input: false`), quindi la sessione le legge già e `/api/me` risponde `user.unread` (un sì o un no, mai un numero) senza query in più. Lo mostra `components/notifiche/campanella.tsx` dentro `user-menu.tsx`, solo dopo `/api/me`: nell'HTML in cache non c'è mai.
+- **`/notifications`** (per utente come `/settings`: `instant = false`, noindex, esclusa da `robots.txt`): le ultime 50, divise in New ed Earlier. Aprirla segna lette quelle mostrate (`mark_notifications_read`), e il pallino si spegne quando non resta nessuna non letta; `components/notifiche/segna-viste.tsx` lo spegne anche nell'header, che è nel layout e non rilegge `/api/me` a ogni navigazione. Il link della campanella ha `prefetch={false}`: un prefetch segnerebbe lette le notifiche senza che l'utente le abbia viste.
+- **`/notifications/<id>`** (`app/notifications/[id]/route.ts`) è l'unico link di una notifica, anche per push ed email: segna letta quella sola e fa un 307 all'href calcolato in quel momento (`lib/notify/vista.ts`, con `eventHref` + `clearAnchor`, `editClearHref` per un clear nascosto, `/settings`, `/admin`). Un id sconosciuto o di un altro torna alla lista; senza sessione si passa da `/login?next=`. Le righe della lista sono `<a>` semplici, non `<Link>`, perché la rotta scrive.
+- **I tipi** stanno in `lib/notify/kinds.ts` e devono coincidere con `notification_kinds()` e con i check delle tabelle `notification` e `notification_pref`: un tipo nuovo va aggiunto con una migrazione e nei testi di `lib/notify/vista.ts`.
+- **Preferenze**: `notification_pref(user_id, kind, channel)` e `set_notification_pref` ci sono già, ma le usano le fasi 3 e 4 (le righe Browser ed Email di Settings arriveranno con loro). Per ora la sezione Notifications di Settings spiega solo cosa arriva nella lista.
+- **Conservazione**: il cron giornaliero (`/api/cron/purge`) chiama `purge_notifications()`: le lette dopo 30 giorni dalla lettura, le non lette dopo 90 senza novità. Gli stessi giorni sono in `lib/legale.ts` per la privacy. Cancellare l'account porta via le sue notifiche e preferenze; cancellare un clear, un commento o una tip porta via le notifiche che li riguardano.
+
+Prove: il passo "notifiche" di `npm run db:test` (`db/test/notifiche.test.mts`: trigger, destinatari, accorpamento, `dts.silent`, cascate, conservazione) e il passo "notifiche (app)" (`db/test/notifiche-app.test.mts`: i tipi uguali alla migrazione, il pallino, href e testi su righe vere senza il testo dei post, le guardie su robots, pagina, rotta e menu). `npm run test:smoke` controlla che `/notifications` senza sessione porti a `/login` e che il pallino non sia nell'HTML delle pagine in cache.
+
+In produzione la migrazione 0028 deve arrivare **prima** del codice: la sessione di better-auth legge `notif_last_at` e `notif_seen_at`, e senza le colonne l'accesso si rompe.
+
 ## La produzione: Vercel, Supabase, Cloudflare
 
 Deciso: tutto sui piani gratuiti, senza carta da nessuna parte. Superare

@@ -8,10 +8,14 @@ export const LEGALE = {
   paese: 'Italy',
   contatto: 'privacy@emanuelemelini.dev',
   sito: 'dokkants.emanuelemelini.dev',
-  aggiornato: 'October 8, 2026',
+  aggiornato: 'October 10, 2026',
   etaMinima: 16,
   /** dopo quanti giorni si cancellano le segnalazioni chiuse (purge_resolved_reports, 0024) */
   giorniSegnalazioni: 180,
+  /** dopo quanti giorni dalla lettura si cancella una notifica (purge_notifications, 0028) */
+  giorniNotificheLette: 30,
+  /** dopo quanti giorni senza novita' si cancella una notifica mai letta (purge_notifications, 0028) */
+  giorniNotificheNonLette: 90,
 } as const
 
 /**

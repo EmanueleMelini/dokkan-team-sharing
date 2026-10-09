@@ -72,6 +72,9 @@ await client.connect()
 for (const f of seeds) {
   await client.query('begin')
   try {
+    // I dati finti non avvisano nessuno (0028): i trigger delle notifiche
+    // escono con dts.silent, che vale solo dentro questa transazione.
+    await client.query(`set local dts.silent = 'on'`)
     await client.query(readFileSync(join(seedDir, f), 'utf8'))
     await client.query('commit')
     console.log(`  caricato   ${f}`)

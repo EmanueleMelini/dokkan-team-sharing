@@ -9,7 +9,8 @@ export const metadata: Metadata = {
 }
 
 // Ogni frase qui sotto descrive quello che il codice fa davvero (tabelle
-// app_user, auth_*, clear_*, report, moderation_action; lib/auth/config.ts):
+// app_user, auth_*, clear_*, report, moderation_action, notification;
+// lib/auth/config.ts):
 // se cambia il codice, va cambiata anche questa pagina.
 export default function Privacy() {
   const mail = `mailto:${LEGALE.contatto}`
@@ -68,6 +69,16 @@ export default function Privacy() {
           6(1)(f)).
         </li>
         <li>
+          <strong>Notifications.</strong> When someone comments on one of your clears, or a moderator
+          hides or restores one of your posts or suspends your account or lifts a suspension, the site
+          stores a notification for you: its type, the post it is about, the account that caused it
+          (for a comment, the commenter; for moderation, the moderator, whose handle is never shown to
+          you), when it arrived and when you read it. Moderators also get one when a new report is
+          waiting, without saying who sent it. A notification never copies the text of a post, and
+          nobody is told who reported their post. Only you can see your notifications. Same legal
+          basis as your account.
+        </li>
+        <li>
           <strong>Security.</strong> While you are signed in, your session is stored with the IP
           address and browser identifier it started from, and short-lived counters by IP address
           and email address limit sign-in attempts and sign-in emails. This protects the site and
@@ -120,6 +131,11 @@ export default function Privacy() {
           are deleted earlier if you delete your account, or when the reported post is deleted.
         </li>
         <li>
+          Notifications: {LEGALE.giorniNotificheLette} days after you read them, or{' '}
+          {LEGALE.giorniNotificheNonLette} days after the last update if you never do. They are deleted
+          earlier with your account or with the post they are about.
+        </li>
+        <li>
           A suspension&apos;s end date and reason: until a moderator lifts it, or until you delete
           your account.
         </li>
@@ -131,8 +147,8 @@ export default function Privacy() {
       </ul>
       <p>
         Deleting your account from <Link href="/settings">Settings</Link> removes it immediately,
-        together with everything you posted: clears, comments, tips, votes and the reports you
-        sent.
+        together with everything you posted: clears, comments, tips, votes, the reports you
+        sent and your notifications.
         Copies inside database
         backups disappear when those backups expire, within 30 days.
       </p>

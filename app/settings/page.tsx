@@ -97,6 +97,34 @@ export default async function SettingsPage({ searchParams }: PageProps<'/setting
         </div>
       </section>
 
+      {/* Cosa arriva nella lista. Le righe Browser ed Email (push e digest)
+          arrivano con le fasi 3 e 4, insieme a notification_pref. */}
+      <section className="mt-8 max-w-lg" aria-labelledby="notifications">
+        <h2 id="notifications" className="scroll-mt-6 text-[13px] font-semibold text-inchiostro">
+          Notifications
+        </h2>
+        <p className="mt-1 text-[12px] leading-relaxed text-tenue">
+          Your <Link href="/notifications" prefetch={false} className="underline decoration-oro-linea underline-offset-2 hover:text-inchiostro">notifications</Link> list
+          is always on. A dot next to the bell in the header means something new arrived.
+        </p>
+        <ul className="mt-3 border border-linea rounded-[var(--raggio)] bg-superficie divide-y divide-linea">
+          <li className="px-4 py-3">
+            <p className="text-[13px] text-inchiostro">Comments on your clears</p>
+            <p className="text-[12px] text-tenue">Several comments on the same clear are grouped until you read them.</p>
+          </li>
+          <li className="px-4 py-3">
+            <p className="text-[13px] text-inchiostro">Moderation of your posts and account</p>
+            <p className="text-[12px] text-tenue">When a moderator hides or restores one of your posts, or suspends your account or lifts a suspension.</p>
+          </li>
+          {user.role === 'admin' && (
+            <li className="px-4 py-3">
+              <p className="text-[13px] text-inchiostro">New reports</p>
+              <p className="text-[12px] text-tenue">Only for moderators. Reports you send, or reports about your own posts, are left out.</p>
+            </li>
+          )}
+        </ul>
+      </section>
+
       <section className="mt-8 max-w-lg" aria-labelledby="accounts">
         <h2 id="accounts" className="text-[13px] font-semibold text-inchiostro">
           Sign-in methods

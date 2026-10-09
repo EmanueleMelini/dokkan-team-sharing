@@ -99,6 +99,10 @@ export const TABLES = {
   moderation_action: { class: 'user' },
   // gli handle lasciati (0026): li scrive solo change_handle
   handle_history: { class: 'user' },
+  // le notifiche e le preferenze di push ed email (0028): le scrivono i
+  // trigger delle scritture della community e Settings, mai un import
+  notification: { class: 'user' },
+  notification_pref: { class: 'user' },
 
   // ---- degli script
   schema_migrations: { class: 'system' },

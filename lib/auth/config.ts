@@ -84,6 +84,11 @@ export function createAuth({ env, sendMagicLink, plugins = [] }: Options) {
         // Il motivo lo vede solo l'interessato, nel banner. Le note dei
         // moderatori invece restano nel registro e non escono mai.
         suspensionReason: { type: 'string', required: false, input: false, fieldName: 'suspension_reason' },
+        // Il pallino delle notifiche (0028): notif_last_at lo scrive il trigger
+        // della notifica, notif_seen_at mark_notifications_read. Letti qui,
+        // con la sessione che /api/me legge gia', il pallino non costa query.
+        notifLastAt: { type: 'date', required: false, input: false, fieldName: 'notif_last_at' },
+        notifSeenAt: { type: 'date', required: false, input: false, fieldName: 'notif_seen_at' },
       },
       // Un account nuovo solo con un'email che il provider dichiara
       // verificata (il magic link la verifica da se'). Senza questo, chi

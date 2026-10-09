@@ -6,6 +6,7 @@ import { auth } from '@/lib/auth/auth'
 import { isFreshSession } from '@/lib/auth/fresh'
 import { safeNext } from '@/lib/auth/safe-next'
 import { fineSospensione, isSospeso } from '@/lib/moderation/sospensione'
+import { hasUnread } from '@/lib/notify/kinds'
 
 // Il livello di accesso ai dati per l'identita' (guida authentication di
 // Next): ogni pagina protetta e ogni Server Action chiede qui chi e'
@@ -36,6 +37,8 @@ export type CurrentUser = {
   suspended: boolean
   /** il motivo scritto dal moderatore, mostrato solo all'interessato */
   suspensionReason: string | null
+  /** il pallino delle notifiche: notif_last_at > notif_seen_at (0028), dalla sessione */
+  unread: boolean
 }
 
 /** La sessione della richiesta, letta una volta per render (React cache). */
@@ -63,6 +66,7 @@ export const currentUser = cache(async (): Promise<CurrentUser | null> => {
     suspendedUntil,
     suspended,
     suspensionReason: suspended ? (u.suspensionReason ?? null) : null,
+    unread: hasUnread(u.notifLastAt, u.notifSeenAt),
   }
 })
 

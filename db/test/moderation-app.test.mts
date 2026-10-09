@@ -46,7 +46,7 @@ function utenteApi() {
   const base: CurrentUser = {
     id: '00000000-0000-4000-8000-000000000001', handle: 'Someone', image: 'https://cdn.example.invalid/a.png',
     role: 'member', reg: 'global', displayName: 'Real Name', onboarded: true, prefersAnimated: false,
-    theme: null, suspendedUntil: null, suspended: false, suspensionReason: null,
+    theme: null, suspendedUntil: null, suspended: false, suspensionReason: null, unread: false,
   }
   const membro = viewerUserOf(base)
   check('member: isAdmin falso, non sospeso', membro.isAdmin === false && membro.suspended === false &&

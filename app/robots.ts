@@ -16,6 +16,9 @@ import { readAuthEnv } from '@/lib/auth/env'
 //
 // /admin risponde 404 a chiunque non sia admin: niente da indicizzare, e
 // cosi' un bot non la prova a ogni giro.
+//
+// /notifications e /notifications/<id> sono per utente (0028): senza
+// sessione portano a /login. La regola per prefisso copre tutte e due.
 export default function robots(): MetadataRoute.Robots {
   const base = readAuthEnv().baseURL.replace(/\/$/, '')
   return {
@@ -32,6 +35,7 @@ export default function robots(): MetadataRoute.Robots {
         '/events/*/clears',
         '/events/*/clears/*/edit',
         '/admin',
+        '/notifications',
       ],
     },
     sitemap: `${base}/sitemap.xml`,

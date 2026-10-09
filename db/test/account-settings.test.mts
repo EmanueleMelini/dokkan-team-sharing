@@ -60,8 +60,11 @@ async function cascate() {
   // togliere senza perdere il clear. Con l'account se ne va anche il clear.
   // Set null anche chi ha chiuso una segnalazione e le due persone del
   // registro della moderazione (0024): il registro resta, con gli handle.
+  // E l'attore di una notifica (0028): la notifica e' di chi la riceve, e
+  // resta finche' non si legge o scade.
   const SET_NULL = ['clear_team_id_fkey', 'report_resolved_by_fkey',
-    'moderation_action_moderator_id_fkey', 'moderation_action_target_author_id_fkey']
+    'moderation_action_moderator_id_fkey', 'moderation_action_target_author_id_fkey',
+    'notification_actor_id_fkey']
   const nonCascata = fk.filter((f) => f.del !== 'c' && !SET_NULL.includes(f.nome))
   check('tutte le FK verso utenti, clear e squadre sono on delete cascade',
     fk.length >= 20 && nonCascata.length === 0, nonCascata.map((f) => `${f.figlia}.${f.nome}=${f.del}`).join(', '))
@@ -71,7 +74,8 @@ async function cascate() {
   const versoUtente = fk.filter((f) => f.madre === 'app_user').map((f) => f.figlia).sort()
   check('le tabelle che puntano a app_user sono quelle note',
     versoUtente.join(',') === 'auth_account,auth_session,clear,clear_comment,clear_vote,clear_write_log,' +
-      'handle_history,moderation_action,moderation_action,report,report,team,tip,tip_vote',
+      'handle_history,moderation_action,moderation_action,notification,notification,notification_pref,' +
+      'report,report,team,tip,tip_vote',
     versoUtente.join(','))
   const trig = await num(
     `select count(*) from pg_trigger where tgname = 'report_target_gone'

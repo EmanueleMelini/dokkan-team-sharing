@@ -201,9 +201,15 @@ prendi /robots.txt
 grep -q 'Disallow: /events/browse' "$TMP/html" && pass "robots.txt esclude /events/browse" || fail "robots.txt senza /events/browse"
 grep -q 'Disallow: /admin' "$TMP/html" && pass "robots.txt esclude /admin" || fail "robots.txt senza /admin"
 grep -qx 'Disallow: /events/\*/clears' "$TMP/html" && pass "robots.txt esclude /events/*/clears" || fail "robots.txt senza /events/*/clears"
+grep -qx 'Disallow: /notifications' "$TMP/html" && pass "robots.txt esclude /notifications" || fail "robots.txt senza /notifications"
 prendi /sitemap.xml
 grep -q '/cards/1032310</loc>' "$TMP/html" && pass "la sitemap ha le carte" || fail "la sitemap non ha /cards/1032310"
 rimanda "Settings senza sessione porta a /login" /settings 307 '/login?next=%2Fsettings'
+# Le notifiche (0028) sono per utente: la lista e la rotta di un link.
+# La rotta e' un Route Handler, quindi il 307 e' vero anche con next start.
+rimanda "Notifications senza sessione porta a /login" /notifications 307 '/login?next=%2Fnotifications'
+rimanda "il link di una notifica senza sessione porta a /login e poi li'" /notifications/123 307 \
+  '/login?next=%2Fnotifications%2F123'
 
 echo "chi guarda (/api/me)"
 intestazioni=$(curl -s -D - -o "$TMP/html" --max-time 60 "$BASE/api/me" | tr -d '\r')
@@ -220,6 +226,13 @@ if [ -n "${STAGE:-}" ]; then
     && fail "la pagina in cache contiene Report, il banner o il link Moderation" \
     || pass "la pagina in cache non ha niente di chi guarda (Report, sospensione, Moderation)"
 fi
+# Il pallino delle notifiche arriva solo da /api/me: mai nell'HTML del server.
+for pagina in /events ${STAGE:+/events/$STAGE}; do
+  prendi "$pagina"
+  grep -qE 'aria-label="Notifications|data-pallino' "$TMP/html" \
+    && fail "$pagina contiene la campanella o il pallino delle notifiche" \
+    || pass "$pagina senza campanella ne' pallino nell'HTML del server"
+done
 
 # /users/<handle> (lib/profiles.ts): pubblico e in cache. Le maiuscole
 # diverse portano all'handle salvato con un 308; un handle che non c'e',

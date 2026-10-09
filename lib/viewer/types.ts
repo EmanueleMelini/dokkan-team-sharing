@@ -21,6 +21,11 @@ export type ViewerUser = {
   suspended?: boolean
   /** il motivo, mostrato nel banner solo all'interessato */
   suspensionReason?: string | null
+  /**
+   * il pallino del menu: c'e' qualcosa di nuovo in /notifications (0028).
+   * Solo un si' o un no, mai un numero. Opzionale: un client vecchio lo ignora.
+   */
+  unread?: boolean
 }
 
 export type ViewerTierData = {

@@ -15,6 +15,7 @@
 #   -> moderazione (0024: segnalazioni, nascosti, sospensioni, registro,
 #   letture di /admin, il lato di chi usa il sito) -> tip (0025)
 #   -> profili pubblici e cambio di handle (0026) -> temi (0027)
+#   -> notifiche nel sito (0028) e il loro lato app (lib/notify)
 #   -> carte solo nel gioco (load-game-cards) -> skill delle carte (0022)
 #   e la pagina della carta -> filtri dei clear
 #   -> finestre degli eventi dal
@@ -173,6 +174,20 @@ passo "profili pubblici" verifica node_ts db/test/profiles.test.mts
 # script del <head> su un document finto, e set_theme. Crea solo utenti
 # themetest+ e li toglie.
 passo "temi" verifica node_ts db/test/temi.test.mts
+# Le notifiche nel sito (0028): i trigger su commenti, registro della
+# moderazione e segnalazioni (il destinatario giusto e nessun altro, mai a
+# se stessi, mai a chi segnala ne' a chi e' segnalato, il sospeso che
+# riceve ancora le sue), l'accorpamento finche' non e' letta, render con il
+# contenuto nascosto, il pallino (notif_last_at > notif_seen_at),
+# dts.silent in seed, fixture e import, le preferenze, le cascate e la
+# conservazione. Crea solo utenti notiftest+ e li toglie.
+passo "notifiche" verifica node_ts db/test/notifiche.test.mts
+# Il lato app delle notifiche (fase 2): lib/notify/kinds.ts uguale a
+# notification_kinds(), il pallino (hasUnread, /api/me), gli href e i
+# testi della lista su righe vere (mai il testo dei post), lib/notify/
+# queries.ts, i giorni della privacy e le guardie su robots, pagina, rotta
+# e menu. Crea solo utenti notifapp+ e li toglie.
+passo "notifiche (app)" verifica node_ts db/test/notifiche-app.test.mts
 # Rilancia load-game-cards e load-datamine, e prova il passaggio al wiki
 # con una pagina finta su 1034200 (poi rimette la carta com'era).
 passo "carte dal gioco" verifica node_ts db/test/game-cards.test.mts
