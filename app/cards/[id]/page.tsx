@@ -43,7 +43,10 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     title,
     description,
     alternates: { canonical: cardHref(card.id) },
-    openGraph: { title, description, ...(arte ? { images: [arte] } : {}) },
+    // openGraph sostituisce in blocco quello ereditato: senza arte niente
+    // openGraph, cosi' restano l'anteprima del sito (app/opengraph-image.png)
+    // e titolo e descrizione, che Next ricopia da quelli della pagina.
+    ...(arte ? { openGraph: { title, description, images: [arte] } } : {}),
   }
 }
 

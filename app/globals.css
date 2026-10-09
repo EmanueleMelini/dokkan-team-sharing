@@ -4,9 +4,23 @@
  * I cinque tipi di Dokkan sono la dimensione con cui si scorre il gioco:
  * qui il colore è funzionale, non decorativo. Il resto della tavolozza
  * resta neutro e volutamente spento, così i tipi restano l'unica cosa
- * che salta all'occhio.
+ * che salta all'occhio. Il colore non è mai l'unico segnale: le etichette
+ * AGL, TEQ, INT, STR e PHY restano sempre scritte (in alcuni temi, con la
+ * deuteranopia, AGL e INT sono quasi uguali).
+ *
+ * I temi (lib/tema/temi.ts) sono l'attributo data-theme su <html>, messo
+ * dallo script del <head> prima del primo paint: l'HTML del server resta
+ * uguale per tutti. Senza attributo è System, che segue il sistema
+ * operativo. Ogni tema ridefinisce gli stessi 17 token e color-scheme
+ * (scrollbar, select e date picker nativi lo seguono); i contrasti li
+ * controlla db/test/temi.test.mts.
+ *
+ * I selettori sono [data-theme] senza :root: così anche i campioni del
+ * selettore (un <span data-theme>) mostrano i colori del loro tema.
  */
-:root {
+:root,
+[data-theme="light"] {
+  color-scheme: light;
   --sfondo: #f3f4f8;
   --superficie: #ffffff;
   --superficie-2: #e8eaf1;
@@ -20,15 +34,19 @@
   --oro-linea: #d3ac5c;
   --oro-tenue: #f7eed8;
 
-  --agl: #2f6fc4;
-  --teq: #2e7d5b;
+  /* tutti almeno 4.5:1 anche su superficie-2: AGL, TEQ e PHY ci stavano
+     sotto (4.17, 4.16, 4.43) e sono stati scuriti il minimo */
+  --agl: #2969be;
+  --teq: #287756;
   --int: #6b4b9e;
   --str: #b03a2e;
-  --phy: #a85414;          /* 5.3:1 su superficie, dove sta l'etichetta del tipo */
+  --phy: #a65211;
 }
 
+/* System su un sistema scuro: solo senza un tema scelto. */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme]) {
+    color-scheme: dark;
     --sfondo: #0f111d;
     --superficie: #171a2a;
     --superficie-2: #1f2335;
@@ -48,6 +66,211 @@
     --str: #e8836f;
     --phy: #e0a651;
   }
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+  --sfondo: #0f111d;
+  --superficie: #171a2a;
+  --superficie-2: #1f2335;
+  --inchiostro: #eceef7;
+  --testo: #c6cbdf;
+  --tenue: #8b93b1;
+  --linea: #2a2f47;
+  --linea-forte: #4a5171;
+  --campo: #6a7294;
+  --oro: #e2b667;
+  --oro-linea: #7e6224;
+  --oro-tenue: #2a2311;
+
+  --agl: #6fa8e8;
+  --teq: #5fc79a;
+  --int: #a98bdb;
+  --str: #e8836f;
+  --phy: #e0a651;
+}
+
+[data-theme="notte-agl"] {
+  color-scheme: dark;
+  --sfondo: #0b1424;
+  --superficie: #111d33;
+  --superficie-2: #182640;
+  --inchiostro: #e8f0fc;
+  --testo: #bfcde6;
+  --tenue: #8597b8;
+  --linea: #22324f;
+  --linea-forte: #3e5275;
+  --campo: #5d7299;
+  --oro: #ecc46c;
+  --oro-linea: #806226;
+  --oro-tenue: #2a2414;
+
+  --agl: #6cb6f4;
+  --teq: #5fcb9c;
+  --int: #c094ec;
+  --str: #f4847e;
+  --phy: #eda04c;
+}
+
+[data-theme="giada-teq"] {
+  color-scheme: light;
+  --sfondo: #eef5f1;
+  --superficie: #ffffff;
+  --superficie-2: #e0ece5;
+  --inchiostro: #10241b;
+  --testo: #2e4a3d;
+  --tenue: #4f6a5d;
+  --linea: #cfe0d6;
+  --linea-forte: #9fb9ab;
+  --campo: #6f8a7d;
+  --oro: #735a06;
+  --oro-linea: #c9a457;
+  --oro-tenue: #f5ecd4;
+
+  --agl: #2a66b8;
+  --teq: #237252;
+  --int: #6e3fa4;
+  --str: #b0283a;
+  --phy: #9a5200;
+}
+
+[data-theme="nebulosa-int"] {
+  color-scheme: dark;
+  --sfondo: #130f22;
+  --superficie: #1b1630;
+  --superficie-2: #241d3d;
+  --inchiostro: #f0ecfb;
+  --testo: #cfc6e8;
+  --tenue: #9a8fbd;
+  --linea: #2f2750;
+  --linea-forte: #51467a;
+  --campo: #74699c;
+  --oro: #eec66e;
+  --oro-linea: #85662a;
+  --oro-tenue: #2c2414;
+
+  --agl: #70b6f4;
+  --teq: #62cc9e;
+  --int: #c79cf4;
+  --str: #f4867e;
+  --phy: #eea24e;
+}
+
+[data-theme="brace-str"] {
+  color-scheme: dark;
+  --sfondo: #1a0f0f;
+  --superficie: #241515;
+  --superficie-2: #2e1c1b;
+  --inchiostro: #f9ecea;
+  --testo: #e3cbc7;
+  --tenue: #b19590;
+  --linea: #3d2725;
+  --linea-forte: #634440;
+  --campo: #86645f;
+  --oro: #f2c870;
+  --oro-linea: #8a6a2c;
+  --oro-tenue: #2f2414;
+
+  --agl: #78b8f4;
+  --teq: #64cfa0;
+  --int: #c4a0f2;
+  --str: #ff8a84;
+  --phy: #f0a650;
+}
+
+[data-theme="sabbia-phy"] {
+  color-scheme: light;
+  --sfondo: #f8f3ea;
+  --superficie: #fffdf8;
+  --superficie-2: #efe6d6;
+  --inchiostro: #2a1d0e;
+  --testo: #4d3b26;
+  --tenue: #6e5a42;
+  --linea: #e5d9c4;
+  --linea-forte: #c2ae8e;
+  --campo: #8f7a5c;
+  --oro: #725806;
+  --oro-linea: #cfa452;
+  --oro-tenue: #f6e9c8;
+
+  --agl: #2b64b3;
+  --teq: #23704f;
+  --int: #6c3fa2;
+  --str: #ad2639;
+  --phy: #965000;
+}
+
+/* Su uno sfondo quasi nero la superficie non si stacca (1.06:1): il bordo
+   delle card (linea) e' alzato a 1.56:1 sullo sfondo, cosi' si vede. */
+[data-theme="lr-oro"] {
+  color-scheme: dark;
+  --sfondo: #0e0c08;
+  --superficie: #17140d;
+  --superficie-2: #211c12;
+  --inchiostro: #f7f0de;
+  --testo: #ddd2b8;
+  --tenue: #a89a7c;
+  --linea: #3a3322;
+  --linea-forte: #554830;
+  --campo: #7a6b4c;
+  --oro: #f2ca5e;
+  --oro-linea: #9a7a2c;
+  --oro-tenue: #2d2410;
+
+  --agl: #6cb4f2;
+  --teq: #5fc99a;
+  --int: #c098ec;
+  --str: #f2847c;
+  --phy: #ec9e4c;
+}
+
+/* Come LR Gold: linea a 1.56:1 sul nero per i bordi delle card, e
+   linea-forte alzata con lei perche' resti piu' forte. */
+[data-theme="oled"] {
+  color-scheme: dark;
+  --sfondo: #000000;
+  --superficie: #0a0a0c;
+  --superficie-2: #141418;
+  --inchiostro: #f2f2f5;
+  --testo: #c8c8d0;
+  --tenue: #8e8e9a;
+  --linea: #2e2e34;
+  --linea-forte: #464650;
+  --campo: #63636f;
+  --oro: #e8c26a;
+  --oro-linea: #6e5520;
+  --oro-tenue: #1c170b;
+
+  --agl: #6cb2f0;
+  --teq: #5fc79a;
+  --int: #bc94ea;
+  --str: #f0827a;
+  --phy: #e89c4a;
+}
+
+/* Mai applicato da prefers-contrast: e' un tema chiaro, e sopra un
+   sistema scuro abbaglierebbe. PHY e' scurito verso il marrone: con la
+   deuteranopia restava quasi uguale a STR. */
+[data-theme="alto-contrasto"] {
+  color-scheme: light;
+  --sfondo: #ffffff;
+  --superficie: #ffffff;
+  --superficie-2: #ececf0;
+  --inchiostro: #000000;
+  --testo: #111111;
+  --tenue: #3b3b46;
+  --linea: #8a8a96;
+  --linea-forte: #4a4a55;
+  --campo: #3b3b46;
+  --oro: #5a4800;
+  --oro-linea: #7a6200;
+  --oro-tenue: #fff1c9;
+
+  --agl: #0b4ea8;
+  --teq: #0b6040;
+  --int: #5a1f96;
+  --str: #a3102a;
+  --phy: #5d2f0d;
 }
 
 @theme inline {
@@ -85,7 +308,7 @@ body {
  * Contenitori, controlli e immagini usano --raggio. Le righe dense non
  * sono scatole: sono separate da linee, quindi niente raggio.
  */
-:root { --raggio: 0.375rem; color-scheme: light dark; }
+:root { --raggio: 0.375rem; }
 
 /*
  * Un solo indicatore di focus per tutta l'applicazione, al posto degli

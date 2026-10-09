@@ -244,7 +244,7 @@ jobs:
           rc=0
           node db/migrate.mjs --check || rc=$?
           if [ "$rc" = 4 ]; then
-            echo "::error::production is behind the repository's migrations: run npm run prod:setup -- --yes first (CI never migrates)"
+            echo "::error::production is behind the repository's migrations: run npm run prod:migrate -- --yes first (CI never migrates)"
           fi
           exit "$rc"
 

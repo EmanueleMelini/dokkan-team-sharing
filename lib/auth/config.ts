@@ -75,6 +75,9 @@ export function createAuth({ env, sendMagicLink, plugins = [] }: Options) {
         prefersAnimated: {
           type: 'boolean', required: false, input: false, defaultValue: false, fieldName: 'prefers_animated',
         },
+        // Il tema del sito (0027): null = System. Lo scrive solo set_theme
+        // (setThemeAction); /api/me lo restituisce per gli altri dispositivi.
+        theme: { type: 'string', required: false, input: false },
         // La sospensione (0024): null, una data, o 'infinity'. La scrive solo
         // mod_suspend_user; qui si legge per /api/me e per il banner.
         suspendedUntil: { type: 'date', required: false, input: false, fieldName: 'suspended_until' },

@@ -25,6 +25,8 @@ export type CurrentUser = {
   onboarded: boolean
   /** l'animazione delle carte per difetto (app_user.prefers_animated) */
   prefersAnimated: boolean
+  /** il tema del sito (app_user.theme, 0027); null = System */
+  theme: string | null
   /**
    * La fine della sospensione (0024): una data ISO, 'infinity' o null. Puo'
    * essere passata: conta suspended. Le scritture le ferma comunque il
@@ -57,6 +59,7 @@ export const currentUser = cache(async (): Promise<CurrentUser | null> => {
     displayName: u.name ?? '',
     onboarded: u.onboardedAt != null,
     prefersAnimated: u.prefersAnimated === true,
+    theme: typeof u.theme === 'string' ? u.theme : null,
     suspendedUntil,
     suspended,
     suspensionReason: suspended ? (u.suspensionReason ?? null) : null,

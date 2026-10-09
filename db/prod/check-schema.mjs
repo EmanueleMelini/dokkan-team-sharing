@@ -19,7 +19,7 @@ await c.end()
 const pending = files.filter((v) => !applied.has(v))
 if (pending.length) {
   console.error(`\n  migrazioni non applicate: ${pending.join(', ')}`)
-  console.error('  lancia prima npm run prod:setup (applica solo le pendenti)\n')
+  console.error('  lancia prima npm run prod:migrate -- --yes (applica solo le pendenti, senza import)\n')
   process.exit(1)
 }
 console.log(`  schema aggiornato (${files.length} migrazioni)`)

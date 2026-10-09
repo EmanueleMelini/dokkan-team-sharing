@@ -11,6 +11,7 @@ export function viewerUserOf(u: CurrentUser): ViewerUser {
     handle: u.handle,
     onboarded: u.onboarded,
     prefersAnimated: u.prefersAnimated,
+    theme: u.theme,
     isAdmin: u.role === 'admin',
     suspended: u.suspended,
     suspendedUntil: u.suspended ? u.suspendedUntil : null,

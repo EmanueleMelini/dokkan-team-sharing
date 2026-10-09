@@ -7,6 +7,9 @@ import {
 import { usePathname } from 'next/navigation'
 import { HINT_COOKIE, hasHint } from '@/lib/viewer/hint'
 import { modeOf, type MeResponse, type ViewerMode, type ViewerTierData, type ViewerUser } from '@/lib/viewer/types'
+import { setThemeAction } from '@/lib/auth/actions'
+import { applicaTema, temaAttuale, temaLocale } from '@/lib/tema/client'
+import { riconciliaTema, temaDaAccount, type TemaId } from '@/lib/tema/temi'
 
 // Chi guarda, lato client. Le pagine pubbliche arrivano dalla CDN uguali
 // per tutti, nella versione anonima; dopo l'idratazione, se c'e'
@@ -29,6 +32,9 @@ type Interno = Root & {
   beginScoped: () => void
   endScoped: () => void
   receive: (user: ViewerUser | null) => void
+  /** un salvataggio del tema parte o finisce: intanto /api/me puo' dire ancora quello vecchio */
+  beginTema: () => void
+  endTema: () => void
 }
 
 const RootContext = createContext<Interno | null>(null)
@@ -92,6 +98,26 @@ export function ViewerProvider({ children }: { children: ReactNode }) {
     return () => ctrl.abort()
   }, [pathname, inSetup])
 
+  // Il tema dell'account (0027) vince su quello di questo dispositivo: se
+  // /api/me ne porta uno diverso lo si applica e lo si ricorda, cosi' dal
+  // caricamento dopo lo script del <head> lo mette gia' prima del paint.
+  // Tranne un account ancora su System davanti a una scelta fatta qui prima
+  // di entrare: quella resta e va sull'account (riconciliaTema).
+  // Non mentre un salvataggio e' in corso: la risposta puo' essere di prima.
+  const salvataggiTema = useRef(0)
+  const beginTema = useCallback(() => { salvataggiTema.current++ }, [])
+  const endTema = useCallback(() => { salvataggiTema.current-- }, [])
+  const temaAccount = hint && user ? temaDaAccount(user.theme) : undefined
+  const completo = user?.onboarded === true
+  useEffect(() => {
+    if (salvataggiTema.current > 0) return
+    const passo = riconciliaTema(temaAccount, temaLocale(), temaAttuale(), completo)
+    if (passo && 'salva' in passo) {
+      salvataggiTema.current++
+      setThemeAction(passo.salva).catch(() => {}).finally(() => { salvataggiTema.current-- })
+    } else if (passo) applicaTema(passo.applica)
+  }, [temaAccount, completo])
+
   const reload = useCallback(() => { avvisa(); setGiro((n) => n + 1) }, [])
   const reset = useCallback(() => {
     document.cookie = `${HINT_COOKIE}=; Max-Age=0; Path=/; SameSite=Lax`
@@ -101,8 +127,11 @@ export function ViewerProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<Interno>(() => {
     const mode: ViewerMode = hint === null ? 'unknown' : !hint ? 'anon' : user === undefined ? 'unknown' : modeOf(user)
-    return { mode, user: hint ? (user ?? null) : null, reload, reset, hint, beginScoped, endScoped, receive: setUser }
-  }, [hint, user, reload, reset, beginScoped, endScoped])
+    return {
+      mode, user: hint ? (user ?? null) : null, reload, reset, hint, beginScoped, endScoped, receive: setUser,
+      beginTema, endTema,
+    }
+  }, [hint, user, reload, reset, beginScoped, endScoped, beginTema, endTema])
 
   return <RootContext.Provider value={value}>{children}</RootContext.Provider>
 }
@@ -111,6 +140,24 @@ export function ViewerProvider({ children }: { children: ReactNode }) {
 export function useViewer(): Root {
   const ctx = useContext(RootContext)
   return ctx ?? { mode: 'anon', user: null, reload: () => {}, reset: () => {} }
+}
+
+/**
+ * Cambia il tema: subito nel browser (attributo e localStorage), poi, per
+ * chi ha un account completo, sull'account senza aspettare la risposta.
+ * Un salvataggio fallito lascia il tema su questo dispositivo.
+ */
+export function useCambiaTema(): (id: TemaId) => void {
+  const ctx = useContext(RootContext)
+  const pronto = ctx?.mode === 'ready'
+  const beginTema = ctx?.beginTema
+  const endTema = ctx?.endTema
+  return useCallback((id: TemaId) => {
+    applicaTema(id)
+    if (!pronto || !beginTema || !endTema) return
+    beginTema()
+    setThemeAction(id).catch(() => {}).finally(endTema)
+  }, [pronto, beginTema, endTema])
 }
 
 /** Lo stato del tier mostrato (voti, propri clear e commenti, punteggi), o null. */

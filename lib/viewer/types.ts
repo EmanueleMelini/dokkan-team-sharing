@@ -9,6 +9,11 @@ export type ViewerUser = {
   handle: string
   onboarded: boolean
   prefersAnimated: boolean
+  /**
+   * il tema dell'account (0027); null = System. Opzionale: un client vecchio
+   * lo ignora, e ViewerProvider lo applica solo se c'e'.
+   */
+  theme?: string | null
   /** il link 'Moderation' nell'header (role = 'admin'); /admin ricontrolla da se' */
   isAdmin?: boolean
   /** solo se la sospensione e' in corso: una data ISO o 'infinity' (lib/moderation/sospensione.ts) */

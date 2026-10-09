@@ -261,6 +261,16 @@ try {
   const animata = await one<{ p: boolean }>('select prefers_animated as p from app_user where email = $1', [em])
   check('prefersAnimated non si scrive dal client (input: false)', animata.p === false, `${res.status}`)
 
+  // Il tema (0027): lo scrive solo set_theme, dalla Server Action.
+  check('theme nella sessione, nullo per difetto (System)', sess?.user.theme == null, String(sess?.user.theme))
+  res = await auth.handler(new Request(`${BASE}/api/auth/update-user`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', origin: BASE, cookie, 'x-forwarded-for': `10.9.1.${ip++}` },
+    body: JSON.stringify({ theme: 'oled' }),
+  }))
+  const tema = await one<{ t: string | null }>('select theme as t from app_user where email = $1', [em])
+  check('theme non si scrive dal client (input: false)', tema.t === null, `${res.status}`)
+
   // La moderazione (0024): ruolo e sospensione li scrivono solo le
   // funzioni SQL (mod_suspend_user, set_user_role), mai il client.
   check('suspendedUntil nella sessione, nullo per difetto', sess?.user.suspendedUntil == null &&

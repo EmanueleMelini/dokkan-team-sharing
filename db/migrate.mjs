@@ -14,7 +14,7 @@
 //
 // --check serve alla CI settimanale, che non migra mai da sola: se la
 // produzione e' indietro rispetto al codice si ferma e lo dice, e le DDL
-// restano un gesto a mano (npm run prod:setup).
+// restano un gesto a mano (npm run prod:migrate).
 import { createHash } from 'node:crypto'
 import { readFileSync, readdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -86,7 +86,7 @@ if (READ_ONLY) {
   console.log(`\n  ${files.length} migrazioni, ${pending.length} da applicare`)
   await client.end()
   if (check && pending.length) {
-    console.error('  il database e\' indietro rispetto al codice: lancia prima npm run prod:setup -- --yes')
+    console.error('  il database e\' indietro rispetto al codice: lancia prima npm run prod:migrate -- --yes')
     process.exit(4)
   }
   process.exit(0)

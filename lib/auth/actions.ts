@@ -9,12 +9,13 @@ import { auth } from '@/lib/auth/auth'
 import { friendlyAccountError, handleMatches } from '@/lib/auth/account'
 import { PROVIDERS } from '@/lib/auth/env'
 import { safeNext } from '@/lib/auth/safe-next'
-import { requireFreshUser, requireOnboardedUser, requireUser } from '@/lib/dal'
+import { currentUser, requireFreshUser, requireOnboardedUser, requireUser } from '@/lib/dal'
 import { afterUserChanged, collectUserFootprint, invalidateProfiles, invalidateUser } from '@/lib/cache/invalidate'
 import { friendlyHandleError, nextHandleChange } from '@/lib/auth/handle-change'
 import { handleChangedAt } from '@/lib/auth/handle-state'
 import { soloGiorno } from '@/lib/date'
 import { HINT_COOKIE } from '@/lib/viewer/hint'
+import { isTemaId, temaPerAccount } from '@/lib/tema/temi'
 
 // Le Server Action dell'accesso. Ognuna si comporta come un endpoint
 // pubblico (una POST diretta la raggiunge): rilegge la sessione da sola
@@ -183,6 +184,36 @@ export async function setArtPreferenceAction(_prev: ArtPreferenceState, form: Fo
   // nella cache del router, cosi' tornandoci si vede il valore nuovo.
   revalidatePath('/settings')
   return { saved: v }
+}
+
+// ---------------------------------------------------------------------
+//  Il tema del sito (0027)
+// ---------------------------------------------------------------------
+
+export type ThemeState = { saved?: boolean; error?: string }
+
+/**
+ * Salva sull'account il tema gia' applicato nel browser, per gli altri
+ * dispositivi. Il selettore non aspetta la risposta: il tema vale subito
+ * grazie a localStorage. Per questo niente redirect: con una sessione
+ * scaduta un clic sul tema non deve portare a /login, e chi non ha un
+ * account (o l'handle) resta col tema solo su questo dispositivo. Nessuna
+ * pagina da invalidare: il tema lo restituisce /api/me, e l'HTML del
+ * server non lo contiene.
+ */
+export async function setThemeAction(theme: string): Promise<ThemeState> {
+  if (!isTemaId(theme)) return { error: 'Unknown theme.' }
+  const user = await currentUser()
+  if (!user || !user.onboarded) return { error: 'Sign in to keep your theme on every device.' }
+  try {
+    await sql('select set_theme($1::uuid, $2)', [user.id, temaPerAccount(theme)])
+  } catch (e) {
+    if (e instanceof DatabaseError && (e.constraint === 'user_not_found' || e.constraint === 'app_user_theme')) {
+      return { error: 'Your theme could not be saved.' }
+    }
+    throw e
+  }
+  return { saved: true }
 }
 
 // ---------------------------------------------------------------------

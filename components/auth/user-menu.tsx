@@ -8,7 +8,7 @@ import { SignOutButton } from '@/components/auth/sign-out-button'
 import { useViewer } from '@/components/viewer/provider'
 import { profileHref } from '@/lib/urls'
 
-const piccolo = 'text-sm text-tenue hover:text-inchiostro transition-colors'
+const piccolo = 'text-sm text-tenue hover:text-inchiostro transition-colors whitespace-nowrap'
 
 /**
  * La parte dell'header che dipende da chi guarda. L'header e' nel layout

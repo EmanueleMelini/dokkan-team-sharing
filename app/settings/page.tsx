@@ -8,6 +8,7 @@ import { BannerSospeso } from '@/components/moderation/banner-sospeso'
 import { LinkProvider } from '@/components/auth/link-provider'
 import { ProviderLogo } from '@/components/auth/provider-logo'
 import { SignOutButton } from '@/components/auth/sign-out-button'
+import { SceltaTema } from '@/components/tema/scelta-tema'
 import { UnlinkProvider } from '@/components/auth/unlink-provider'
 import { canUnlink } from '@/lib/auth/account'
 import { PROVIDERS } from '@/lib/auth/env'
@@ -87,6 +88,11 @@ export default async function SettingsPage({ searchParams }: PageProps<'/setting
         <p className="mt-0.5 text-[12px] leading-relaxed text-tenue">What card pages show first.</p>
         <div className="mt-3 border border-linea rounded-[var(--raggio)] bg-superficie px-4 py-3">
           <ArtPreference animated={user.prefersAnimated} />
+        </div>
+        <h3 className="mt-5 text-[12px] font-medium text-inchiostro">Theme</h3>
+        <p className="mt-0.5 text-[12px] leading-relaxed text-tenue">The colors of the whole site.</p>
+        <div className="mt-3 border border-linea rounded-[var(--raggio)] bg-superficie px-4 py-3">
+          <SceltaTema />
         </div>
       </section>
 

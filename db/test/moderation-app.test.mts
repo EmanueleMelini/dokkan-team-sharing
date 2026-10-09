@@ -46,13 +46,15 @@ function utenteApi() {
   const base: CurrentUser = {
     id: '00000000-0000-4000-8000-000000000001', handle: 'Someone', image: 'https://cdn.example.invalid/a.png',
     role: 'member', reg: 'global', displayName: 'Real Name', onboarded: true, prefersAnimated: false,
-    suspendedUntil: null, suspended: false, suspensionReason: null,
+    theme: null, suspendedUntil: null, suspended: false, suspensionReason: null,
   }
   const membro = viewerUserOf(base)
   check('member: isAdmin falso, non sospeso', membro.isAdmin === false && membro.suspended === false &&
     membro.suspendedUntil === null && !('suspensionReason' in membro), JSON.stringify(membro))
   check('niente id, email, immagine, nome del provider o ruolo', ['id', 'image', 'displayName', 'role', 'email', 'reg']
     .every((k) => !(k in membro)), Object.keys(membro).join())
+  check('il tema dell\'account passa (null = System)', membro.theme === null &&
+    viewerUserOf({ ...base, theme: 'oled' }).theme === 'oled')
   check('admin: isAdmin vero', viewerUserOf({ ...base, role: 'admin' }).isAdmin === true)
   check('editor: non e\' admin', viewerUserOf({ ...base, role: 'editor' }).isAdmin === false)
   const fine = new Date(Date.now() + 3_600_000).toISOString()

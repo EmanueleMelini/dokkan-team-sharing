@@ -15,12 +15,12 @@ missioni veri. Sopra c'è il sito, pronto per la messa online: le pagine
 degli eventi (con le missioni e i filtri della lista dei clear), gli
 account, il builder con cui si inviano i clear, la moderazione
 (segnalazioni e `/admin`), le tip dei giocatori nella pagina evento, la
-pagina di ogni carta (`/cards/<id>`) e il profilo pubblico di ogni
-giocatore (`/users/<handle>`). Manca solo quello che va fatto a mano
-(sezione "Cosa manca, in ordine"). I numeri sono quelli di `dokkan_dev`
-all'8 ottobre 2026; schema e verifiche anche di `dokkan_test`.
+pagina di ogni carta (`/cards/<id>`), il profilo pubblico di ogni
+giocatore (`/users/<handle>`), il marchio con le icone e undici temi.
+Manca solo quello che va fatto a mano (sezione "Cosa manca, in ordine").
+I numeri sono quelli di `dokkan_dev` al 9 ottobre 2026; schema e verifiche anche di `dokkan_test`.
 
-- **68 tabelle, 4 view, 15 trigger, 80 funzioni** su PostgreSQL 15, in 26
+- **68 tabelle, 4 view, 15 trigger, 81 funzioni** su PostgreSQL 15, in 27
   migrazioni
 - **2697 carte**: 2651 dal wiki, con link skill, categorie, statistiche e
   date di uscita separate per Japan e Global, più 46 che ha solo il gioco
@@ -39,8 +39,8 @@ all'8 ottobre 2026; schema e verifiche anche di `dokkan_test`.
   sua regola su chi la monta: 1852 per tipo e classe, 5042 per categoria,
   1825 per lista di carte, 138 per nome
 - **6246 immagini** ospitate da noi
-- **2183 verifiche automatiche** in `db:test`: 41 passi, di cui 9
-  preparano il database e 32 sono suite di verifica, tutte verdi, su un
+- **2267 verifiche automatiche** in `db:test`: 42 passi, di cui 9
+  preparano il database e 33 sono suite di verifica, tutte verdi, su un
   database a parte che non è quello di sviluppo. In più `test:smoke` (57
   controlli contro `next start`) e `test:auth-smoke` sul sito che gira
 
@@ -287,6 +287,8 @@ app/                          Next.js 16, App Router
   api/                        auth/ (better-auth), me/ (chi guarda), cards/ e equipment/ (i picker),
                               revalidate/ (dopo un import), cron/purge/ (la pulizia giornaliera)
   robots.ts, sitemap.ts       cosa indicizzare: eventi e carte, mai le viste filtrate
+  icon.svg, favicon.ico, apple-icon.png, opengraph-image.png, twitter-image.png
+                              le icone e l'anteprima dei link, file statici generati da scripts/brand/
 proxy.ts                      solo per /admin: senza cookie di sessione un 404 vero, senza database
 instrumentation.ts            all'avvio: controlla la configurazione dell'accesso, pulizia delle sessioni
 components/
@@ -299,6 +301,8 @@ components/
   moderation/                 Report e il banner della sospensione (isole), la coda, i form e il registro di /admin
   auth/                       accesso, /welcome, Settings (handle, provider, artwork, cancellazione), l'utente nell'header
   viewer/                     ViewerProvider e useViewer(): le isole client che leggono /api/me
+  brand/marchio.tsx           il marchio dell'header: SVG con colori fissi, chiaro o scuro solo dal CSS
+  tema/                       il selettore del tema: nel footer e in Settings
   missioni.tsx                le missioni di un evento, con i premi
 lib/
   queries.ts                  le letture delle pagine evento (pure): eventi, stage, clear, filtri, faccette
@@ -310,6 +314,7 @@ lib/
   parametri.ts, urls.ts       la query string letta con difesa, e tutti gli URL interni
   cache/                      'use cache' sopra le query pure, i tag, l'invalidazione, /api/revalidate
   viewer/                     chi guarda: il tipo di /api/me e il cookie dts_signed_in
+  tema/                       i temi: id e nomi, lo script del <head> (temi.ts, puro), applicarli nel browser (client.ts)
   auth/                       better-auth: configurazione, mittente del link, Server Action, regole di Settings e dell'handle
   dal.ts                      chi e' l'utente: requireUser / requireOnboardedUser / requireFreshUser (mai nelle pagine pubbliche)
   moderation/                 motivi, frasi d'errore, Report, requireAdmin, letture e azioni di /admin
@@ -317,7 +322,7 @@ lib/
   db.ts, db-config.ts         la pool (una per processo) e le sue impostazioni: dimensioni, TLS
   cron.ts                     l'autenticazione delle rotte di Vercel Cron
 db/
-  migrations/                 NNNN_*.sql, applicate in ordine, mai modificate (0001-0026, elenco sotto)
+  migrations/                 NNNN_*.sql, applicate in ordine, mai modificate (0001-0027, elenco sotto)
   migrate.mjs                 runner: applica le pendenti, una transazione ciascuna (--check per sapere se e' indietro)
   reset.mjs                   ricostruisce un database da zero (--fixture per i test)
   env.mjs                     la sorgente unica di DATABASE_URL per gli script
@@ -335,7 +340,7 @@ db/
     load-equipment.mjs, equipment-limits.mjs   le Skill Orb e le loro regole
     fetch-assets.mjs          le immagini (--offline: solo dal disco; --missing: solo quelle senza riga)
     .cache/                   wikitext e CSV scaricati (non versionati)
-  prod/                       gli script contro la produzione (prod:setup, prod:update, prod:backup, ...)
+  prod/                       gli script contro la produzione (prod:setup, prod:migrate, prod:update, prod:backup, ...)
     target.mjs                il bersaglio: PROD_DATABASE_URL, i rifiuti, il TLS, la conferma --yes
     pipeline.mjs              l'ordine dell'import, uguale per setup e update
     harden.mjs                toglie i privilegi su public ai ruoli della Data API di Supabase
@@ -353,6 +358,7 @@ test/
   cpu.sh                      la CPU per richiesta su next start (npm run test:cpu)
 .github/workflows/weekly-data.yml   l'aggiornamento settimanale automatico
 scripts/assets-deploy.mjs     public/assets su Cloudflare Pages, con _headers (assets:deploy)
+scripts/brand/                il marchio: geometria, SVG sorgente (svg/) e il generatore delle icone (npm run brand)
 vercel.json                   regione fra1, il cron della pulizia giornaliera, anteprime saltate (ignoreCommand)
 public/assets/                le immagini ospitate da noi (non versionate)
 backups/                      le copie di prod:backup (non versionate)
@@ -374,6 +380,7 @@ Le migrazioni che contano per il sito, oltre allo schema dei dati (0001-0013, 00
 | `0024_moderation.sql` | segnalazioni con motivo, nascosti, sospensioni, `moderation_action` |
 | `0025_tips.sql` | le tip: bersaglio, limiti, link senza accorciatori, voto Helpful, Report |
 | `0026_public_profiles.sql` | `public_profile`, `handle_history`, `change_handle`, gli indici per autore |
+| `0027_theme.sql` | `app_user.theme` (null = System) e `set_theme` |
 
 ### Sulle migrazioni
 
@@ -1669,6 +1676,35 @@ L'handle si cambia da Settings > Handle, con un accesso recente (15 minuti, come
 
 Ogni presa di un handle (/welcome e Settings) passa da `handle_assert_free`, sotto un lock consultivo per handle: due richieste per lo stesso nome passano una alla volta, e la seconda riceve `handle_taken`. Cancellare l'account porta via `handle_history` (cascata), quindi i vecchi nomi tornano liberi: scelta accettata. Dopo un cambio, `afterUserChanged(userId, { extraHandles: [vecchio] })` invalida le pagine degli eventi e delle carte con i suoi clear, commenti, tip e voti, e i profili vecchio e nuovo. `userFootprint` mette nel conto anche tutti i nomi di `handle_history`: così sospensione, fine sospensione e cancellazione dell'account rinfrescano anche `/users/<vecchio>` (un 404 in cache visto durante una sospensione porta solo il tag del vecchio nome). I rifiuti hanno un nome tradotto da `lib/auth/handle-change.ts`, la stessa tabella che usa /welcome. Le verifiche sono nel passo "profili pubblici" (`db/test/profiles.test.mts`) e in `test:smoke` (un profilo, il 308 delle maiuscole, i 404).
 
+## Logo e icone
+
+Il marchio è l'"Anello Ki": cinque settori, uno per tipo (AGL, TEQ, INT, STR, PHY in senso orario dall'alto), con al centro il disco oro del leader. I colori sono fissi e non seguono i temi: un tema colorato potrebbe rendere due settori uguali, o un settore uguale allo sfondo. C'è una variante per i fondi chiari e una per quelli scuri: `components/brand/marchio.tsx` sceglie con il solo CSS (`data-theme` su `<html>`, oppure il tema del sistema), quindi l'HTML resta uguale per tutti. Un tema scuro nuovo va aggiunto a `TEMI_SCURI` in quel file; un id sconosciuto resta chiaro.
+
+Gli SVG sorgente stanno in `scripts/brand/svg/`. Da lì si generano le icone e l'anteprima dei link:
+
+```bash
+npm run brand    # node --disable-warning=ExperimentalWarning scripts/brand/genera.mjs
+```
+
+Lo script scrive `app/icon.svg`, `app/favicon.ico` (16, 32 e 48 px), `app/apple-icon.png`, `app/opengraph-image.png`, `app/twitter-image.png` e i due `.alt.txt`. Next li trova per nome: sono file statici, quindi niente codice al build e niente query. `metadataBase` in `app/layout.tsx` (da `BETTER_AUTH_URL`) rende assoluti gli URL di og:image e twitter:image.
+
+Per cambiare la forma o un colore si modifica `scripts/brand/sorgenti.mjs` (la geometria è in `anello.mjs`). Poi si lancia `node scripts/brand/sorgenti.mjs` e si ricopiano i `d` e i colori in `marchio.tsx`: `genera.mjs` si ferma se non coincidono.
+
+Il testo dell'anteprima usa Geist Regular (SIL OFL 1.1), preso dalla copia inclusa in next.
+
+## Temi
+
+Il sito ha undici temi: **System** (per difetto: segue il chiaro o lo scuro del sistema operativo), **Light**, **Dark** e otto temi colorati: AGL Night, TEQ Jade, INT Nebula, STR Ember, PHY Sand, LR Gold, OLED Black e High contrast. Si sceglie dal selettore nel footer (anche senza account) o da Settings, sezione Display.
+
+Come funziona:
+
+- **Solo nel browser.** Il tema è l'attributo `data-theme` su `<html>`. Lo mette uno script sincrono nel `<head>` di `app/layout.tsx` prima del primo paint, leggendo `localStorage['dts:tema']`, quindi la pagina non lampeggia. L'HTML del server resta identico per tutti, e le pagine pubbliche restano in cache. Senza attributo vale System.
+- **I colori** stanno in `app/globals.css`: un blocco `[data-theme="..."]` per tema, ognuno con gli stessi 17 token e `color-scheme`. Gli id e i nomi stanno in `lib/tema/temi.ts`.
+- **Sull'account.** Chi ha un account salva il tema anche in `app_user.theme` (migrazione 0027, `set_theme`; null = System). `/api/me` lo restituisce, e se è diverso da quello del dispositivo `ViewerProvider` lo applica e lo ricorda. Il tema dell'account vince su quello del dispositivo.
+- **Accessibilità.** Testo, oro e tipi stanno ad almeno 4.5:1 su sfondo, superficie e superficie-2, e il bordo dei campi ad almeno 3:1. Il colore non è mai l'unico segnale: le etichette AGL/TEQ/INT/STR/PHY restano scritte. High contrast non si attiva mai da solo con `prefers-contrast`, perché è un tema chiaro.
+- **Test.** `db/test/temi.test.mts` (il passo "temi" di `npm run db:test`) legge `app/globals.css` e controlla tutti i contrasti. Un tema nuovo va aggiunto in tre posti: `lib/tema/temi.ts`, `app/globals.css` e il vincolo `app_user_theme`, con una migrazione (più `TEMI_SCURI` del marchio, se è scuro). Il test fallisce se le tre liste non coincidono.
+- **In produzione** la migrazione 0027 deve arrivare prima del codice: la sessione di better-auth legge `app_user.theme`, e senza la colonna l'accesso si rompe.
+
 ## La produzione: Vercel, Supabase, Cloudflare
 
 Deciso: tutto sui piani gratuiti, senza carta da nessuna parte. Superare
@@ -1785,6 +1821,9 @@ Per un fork, in breve:
    Supabase sullo schema pubblico e importa i dati, senza fixture né demo.
    Gli script di `db/prod` rifiutano i database locali e quelli di
    sviluppo o di test, e senza `--yes` stampano il bersaglio e si fermano.
+   Le migrazioni che arrivano dopo si portano online con
+   `npm run prod:migrate -- --yes` (migrazioni e permessi, senza rifare
+   l'import), **prima** del deploy del codice che le usa.
 2. Le immagini di `public/assets` su un host statico
    (`npm run assets:deploy` le pubblica su Cloudflare Pages) e
    `ASSET_BASE_URL` che punta lì.
@@ -1870,6 +1909,9 @@ può fare, e poi il lavoro sui dati e sulle pagine.
    - A 375 px l'header è stretto (titolo e Sign out vanno a capo, senza
      scroll orizzontale); i menu Leader e Category dei filtri tagliano i
      nomi lunghi oltre 16rem.
+   - Il marchio: prima del lancio, una ricerca di marchi e per immagini
+     (Google Immagini, icone di Chrome e Google Foto) per escludere forme
+     troppo vicine.
 
 ## Nota su Next.js
 

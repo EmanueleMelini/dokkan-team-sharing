@@ -13,7 +13,7 @@
 #   -> settings dell'account (0019: scollegare, cancellare l'account)
 #   -> moderazione (0024: segnalazioni, nascosti, sospensioni, registro,
 #   letture di /admin, il lato di chi usa il sito) -> tip (0025)
-#   -> profili pubblici e cambio di handle (0026)
+#   -> profili pubblici e cambio di handle (0026) -> temi (0027)
 #   -> carte solo nel gioco (load-game-cards) -> skill delle carte (0022)
 #   e la pagina della carta -> filtri dei clear
 #   -> finestre degli eventi dal
@@ -159,6 +159,13 @@ passo "tip" verifica node_ts db/test/tips.test.mts
 # cancellazione che libera i nomi, e le letture vere di lib/profiles.ts
 # (conteggi, lista, pagina del tier). Crea solo utenti profiletest+ e li toglie.
 passo "profili pubblici" verifica node_ts db/test/profiles.test.mts
+# I temi (0027): i blocchi [data-theme] di app/globals.css (17 token,
+# color-scheme, contrasti WCAG: testo e tipi 4.5:1, campo 3:1, i bordi
+# delle card sui neri, STR e PHY con la deuteranopia in Alto contrasto),
+# che coincidano con lib/tema/temi.ts e col vincolo app_user_theme, lo
+# script del <head> su un document finto, e set_theme. Crea solo utenti
+# themetest+ e li toglie.
+passo "temi" verifica node_ts db/test/temi.test.mts
 # Rilancia load-game-cards e load-datamine, e prova il passaggio al wiki
 # con una pagina finta su 1034200 (poi rimette la carta com'era).
 passo "carte dal gioco" verifica node_ts db/test/game-cards.test.mts
