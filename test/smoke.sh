@@ -253,6 +253,42 @@ verifica_404 "profilo: handle che non c'e'" /users/nessuno_xyz_404
 verifica_404 "profilo: handle malformato" /users/a-b
 verifica_404 "profilo: nome riservato" /users/users
 
+# La PWA (fase 1): manifest, icone con la misura vera (dall'IHDR), il
+# service worker senza cache lunga e la pagina offline. L'invito a
+# installare e' un'isola: nell'HTML del server non c'e'.
+echo "la PWA"
+intestazioni=$(curl -s -D - -o "$TMP/manifest" --max-time 60 "$BASE/manifest.webmanifest" | tr -d '\r')
+if grep -qiE '^HTTP/[0-9.]+ 200' <<<"$intestazioni" && grep -qi '^content-type: application/manifest+json' <<<"$intestazioni"; then
+  pass "/manifest.webmanifest (200, application/manifest+json)"
+else fail "/manifest.webmanifest: $(head -1 <<<"$intestazioni"), $(grep -i '^content-type' <<<"$intestazioni")"
+fi
+campi=$(node -e '
+  const m = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"))
+  const png = (m.icons || []).filter((i) => i.type === "image/png").map((i) => i.purpose + " " + i.sizes).sort().join(",")
+  console.log([m.id, m.short_name, m.start_url, m.scope, m.display, png].join("|"))
+  for (const i of m.icons || []) if (i.type === "image/png") console.error(i.src + " " + i.sizes)
+' "$TMP/manifest" 2>"$TMP/icone") || campi=''
+[ "$campi" = '/|dokkants|/events|/|standalone|any 192x192,any 512x512,maskable 192x192,maskable 512x512' ] \
+  && pass "manifest: id, short_name, start_url, scope, display, icone" || fail "manifest: $campi"
+while read -r src misura; do
+  codice=$(curl -s -o "$TMP/icona" -w '%{http_code} %{content_type}' --max-time 60 "$BASE$src")
+  vera=$(node -e 'const b = require("fs").readFileSync(process.argv[1]); console.log(b.readUInt32BE(16) + "x" + b.readUInt32BE(20))' "$TMP/icona" 2>/dev/null)
+  [ "$codice" = '200 image/png' ] && [ "$vera" = "$misura" ] && pass "$src ($misura)" || fail "$src: $codice, $vera invece di $misura"
+done < "$TMP/icone"
+intestazioni=$(curl -s -D - -o /dev/null --max-time 60 "$BASE/sw.js" | tr -d '\r')
+grep -qiE '^HTTP/[0-9.]+ 200' <<<"$intestazioni" && grep -qiE '^content-type: (application|text)/javascript' <<<"$intestazioni" \
+  && grep -qiE '^cache-control:.*max-age=0' <<<"$intestazioni" \
+  && pass "/sw.js (200, javascript, max-age=0)" || fail "/sw.js: $(head -1 <<<"$intestazioni"), $(grep -iE '^(content-type|cache-control)' <<<"$intestazioni" | tr '\n' ' ')"
+intestazioni=$(curl -s -D - -o "$TMP/html" --max-time 60 "$BASE/offline.html" | tr -d '\r')
+grep -qiE '^HTTP/[0-9.]+ 200' <<<"$intestazioni" && grep -qi '^content-type: text/html' <<<"$intestazioni" \
+  && grep -qi '^x-robots-tag: noindex' <<<"$intestazioni" && grep -qF "You're offline" "$TMP/html" \
+  && pass "/offline.html (200, html, noindex)" || fail "/offline.html: $(head -1 <<<"$intestazioni")"
+prendi /events
+grep -q '<link rel="manifest" href="/manifest.webmanifest"' "$TMP/html" && grep -q 'name="apple-mobile-web-app-title" content="dokkants"' "$TMP/html" \
+  && pass "/events con il manifest e il titolo per iOS" || fail "/events senza rel=manifest o apple-mobile-web-app-title"
+grep -qE 'Install dokkants|Add to Home Screen' "$TMP/testo" && fail "l'invito a installare e' nell'HTML del server" \
+  || pass "l'invito a installare non e' nell'HTML del server"
+
 # Contro next start o Vercel (non next dev): le pagine pubbliche escono
 # dalla cache. next start scrive x-nextjs-cache, Vercel x-vercel-cache (HIT,
 # STALE o PRERENDER vengono tutti dalla cache).

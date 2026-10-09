@@ -44,9 +44,37 @@ const cacheLife = {
   community: { stale: 60, revalidate: 86_400, expire: 604_800 },
 }
 
+// La PWA (public/sw.js, public/offline.html). sw.js ha un URL fisso: con
+// una cache HTTP lunga un worker sbagliato resterebbe sui dispositivi per
+// giorni, quindi max-age=0 (il browser lo riconvalida a ogni controllo).
+// La pagina offline la rilegge solo il worker quando si installa.
+const pwaHeaders = [
+  {
+    source: '/sw.js',
+    headers: [
+      { key: 'Cache-Control', value: 'public, max-age=0, must-revalidate' },
+      { key: 'Content-Type', value: 'application/javascript; charset=utf-8' },
+    ],
+  },
+  {
+    source: '/offline.html',
+    headers: [
+      { key: 'Cache-Control', value: 'public, max-age=0, must-revalidate' },
+      { key: 'X-Robots-Tag', value: 'noindex' },
+    ],
+  },
+]
+
+// La versione del service worker: un ?v= diverso a ogni deploy fa
+// installare un worker nuovo, che riprende la pagina offline aggiornata e
+// cancella le cache della versione prima. Su Vercel e' il commit; in locale
+// cambia a ogni build.
+const swVersion = (process.env.VERCEL_GIT_COMMIT_SHA ?? `b${Date.now().toString(36)}`).slice(0, 12)
+
 const nextConfig: NextConfig = {
   images: { unoptimized: true },
   poweredByHeader: false,
+  env: { NEXT_PUBLIC_SW_VERSION: swVersion },
   cacheComponents: true,
   partialPrefetching: true,
   cacheLife,
@@ -58,7 +86,7 @@ const nextConfig: NextConfig = {
     return [{ source: '/', destination: '/events', permanent: false }]
   },
   async headers() {
-    return [{ source: '/:path*', headers: securityHeaders }]
+    return [{ source: '/:path*', headers: securityHeaders }, ...pwaHeaders]
   },
 }
 

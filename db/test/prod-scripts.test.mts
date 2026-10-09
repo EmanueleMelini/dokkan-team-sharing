@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { gunzipSync } from 'node:zlib'
 import pg from 'pg'
-import { hardenSql } from '../prod/harden.mjs'
+import { funzioniNostreSql, hardenSql } from '../prod/harden.mjs'
 import { childEnv, describe, resolveTarget } from '../prod/target.mjs'
 
 let fails = 0
@@ -118,6 +118,25 @@ if (TEST) {
   await c.query('rollback')
   await c.end()
   check('le revoche sono SQL valido', e === '', e)
+
+  // Un ruolo finto al posto di anon, in una transazione annullata: dopo
+  // harden non esegue piu' i nostri verbi, ma le funzioni di citext si
+  // (sono di un'estensione, e senza il sito non confronta gli handle).
+  const d = new pg.Client({ connectionString: TEST })
+  await d.connect()
+  await d.query('begin')
+  await d.query('create role dts_finto_anon nologin')
+  const puo = async (firma: string) => (await d.query('select has_function_privilege($1, $2, $3) as ok', ['dts_finto_anon', firma, 'execute'])).rows[0].ok as boolean
+  const prima = await puo('set_user_role(citext,text)')
+  for (const s2 of [...hardenSql(['dts_finto_anon']), ...funzioniNostreSql()]) await d.query(s2)
+  const dopo = await puo('set_user_role(citext,text)')
+  const tema = await puo('set_theme(uuid,text)')
+  const citext = await puo('citext_eq(citext,citext)')
+  await d.query('rollback')
+  await d.end()
+  check('prima di harden il ruolo finto eseguiva set_user_role (via PUBLIC)', prima)
+  check('dopo harden non esegue piu\' i nostri verbi', !dopo && !tema)
+  check('le funzioni delle estensioni restano eseguibili', citext)
 }
 
 console.log('prod:backup su dokkan_test')

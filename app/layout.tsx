@@ -5,6 +5,7 @@ import { UserMenu } from '@/components/auth/user-menu'
 import { ViewerProvider } from '@/components/viewer/provider'
 import { SceltaTemaFooter } from '@/components/tema/scelta-tema-footer'
 import { Marchio } from '@/components/brand/marchio'
+import { InvitoInstalla } from '@/components/pwa/invito-installa'
 import { readAuthEnv } from '@/lib/auth/env'
 import { BARRA_SISTEMA, scriptTema } from '@/lib/tema/temi'
 import './globals.css'
@@ -19,6 +20,9 @@ export const metadata: Metadata = {
   title: { default: 'Dokkan Team Sharing', template: '%s · Dokkan Team Sharing' },
   description:
     'For every Dokkan Battle event, the teams that actually cleared it, with their rotations and proof.',
+  // L'app aggiunta alla Home di iOS: il nome sotto l'icona e la barra di
+  // stato. L'icona e' app/apple-icon.png, il manifest e' app/manifest.ts.
+  appleWebApp: { title: 'dokkants', statusBarStyle: 'default' },
 }
 
 // La barra del browser mobile con System. Con un tema scelto lo script del
@@ -105,6 +109,8 @@ export default function RootLayout({ children }: LayoutProps<'/'>) {
             </div>
           </div>
         </footer>
+        {/* Un'isola: solo su telefoni e tablet, mai nell'HTML del server. */}
+        <InvitoInstalla />
         </ViewerProvider>
       </body>
     </html>

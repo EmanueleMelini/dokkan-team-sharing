@@ -37,6 +37,8 @@ const MARCHIO = { c: 32, R: 30, r: 17, taglio: 3.2, inclinazione: 14, nucleo: 8 
 // largo: provato a occhio, sotto 2.4 due tagli su cinque spariscono.
 const FAVICON = { c: 16, R: 13.5, r: 7, taglio: 2, inclinazione: 14, nucleo: 3.5 }
 const FAVICON_16 = { ...FAVICON, taglio: 2.4 }
+// Per il badge: un colore solo, conta la forma (i tagli restano vuoti).
+const BIANCO = { tipi: Array(5).fill('#ffffff'), nucleo: '#ffffff' }
 const tessera = `<rect width="32" height="32" rx="7" fill="${FONDO}"/>`
 
 const forme = (g, colori) =>
@@ -59,6 +61,23 @@ const file = {
     64,
     `<rect width="64" height="64" fill="${FONDO}"/><g transform="translate(9.6 9.6) scale(0.7)">${forme(MARCHIO, SCURO)}</g>`,
   ),
+  // L'icona "any" dell'app installata (manifest, 192 e 512): la tessera
+  // del favicon ma con la geometria grande. favicon.svg ha i tagli
+  // allargati per i 16 px, che a 512 sembrano grossolani.
+  'app.svg': svg(
+    64,
+    `<rect width="64" height="64" rx="14" fill="${FONDO}"/><g transform="translate(6.4 6.4) scale(0.8)">${forme(MARCHIO, SCURO)}</g>`,
+  ),
+  // Maskable: Android ritaglia un cerchio o un quadrato arrotondato, e la
+  // zona sicura e' il cerchio centrale dell'80%. Fondo pieno e marchio a
+  // scala 0.6: il raggio esterno diventa 18 su 32, il 56%, dentro la zona.
+  'maskable.svg': svg(
+    64,
+    `<rect width="64" height="64" fill="${FONDO}"/><g transform="translate(12.8 12.8) scale(0.6)">${forme(MARCHIO, SCURO)}</g>`,
+  ),
+  // Il badge della barra di stato di Android (fase 4, notifiche push): il
+  // sistema usa solo il canale alfa, quindi forme bianche su trasparente.
+  'badge.svg': svg(64, forme(MARCHIO, BIANCO)),
   // L'anteprima dei link (1200x630): fondo e marchio. Il nome e la frase li
   // aggiunge genera.mjs, perche' il testo va disegnato con il font.
   'og.svg':

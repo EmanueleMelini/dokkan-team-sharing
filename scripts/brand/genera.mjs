@@ -7,8 +7,15 @@
 //   app/opengraph-image.png              1200x630, anteprima dei link
 //   app/twitter-image.png                la stessa, per le card di X
 //   app/*-image.alt.txt                  il testo alternativo delle due
+//   public/pwa/icon-192.png, icon-512.png  icone "any" del manifest
+//   public/pwa/maskable-192.png, -512.png  icone maskable (Android le ritaglia)
+//   public/pwa/badge-96.png              badge delle notifiche (fase 4)
+//   public/offline.html                  la pagina offline del service worker
 //
-//   node --disable-warning=ExperimentalWarning scripts/brand/genera.mjs
+//   npm run brand
+//
+// Le icone della PWA vanno in public/pwa/ e non in app/: li' Next aggiungerebbe
+// un <link rel=icon> per ognuna. Non in public/assets, che va su Cloudflare.
 //
 // Sono file statici: Next li trova per nome (metadata file conventions) e
 // li serve cosi' come sono, senza codice al build ne' query.
@@ -18,15 +25,17 @@
 // ogni macchina. Il font e' Geist Regular (SIL Open Font License 1.1), lo
 // stesso del sito, preso dalla copia dentro next: il font non finisce nel
 // repository, nell'immagine restano solo i pixel.
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import sharp from 'sharp'
+import { paginaOffline } from './offline.mjs'
 
 const ROOT = join(fileURLToPath(new URL('.', import.meta.url)), '..', '..')
 const SVG = join(ROOT, 'scripts', 'brand', 'svg')
 const APP = join(ROOT, 'app')
+const PUBLIC = join(ROOT, 'public')
 const FONT = join(ROOT, 'node_modules', 'next', 'dist', 'compiled', '@vercel', 'og', 'Geist-Regular.ttf')
 const FONDO = '#0f111d'
 
@@ -165,3 +174,21 @@ scrivi('twitter-image.png', og)
 const alt = 'Dokkan Team Sharing: find and share the teams that cleared every Dokkan Battle event.'
 scrivi('opengraph-image.alt.txt', alt)
 scrivi('twitter-image.alt.txt', alt)
+
+// La PWA. Le icone "any" tengono gli angoli arrotondati trasparenti della
+// tessera: su desktop (Dock, menu Start) il sistema le mostra cosi' come
+// sono. Le maskable sono opache: Android le ritaglia e sotto non mette niente.
+const scriviPublic = (nome, dati) => {
+  mkdirSync(join(PUBLIC, nome, '..'), { recursive: true })
+  writeFileSync(join(PUBLIC, nome), dati)
+  console.log(`public/${nome}  ${dati.length} byte`)
+}
+const opaca = async (svg, lato) =>
+  sharp(await png(svg, lato)).flatten({ background: FONDO }).png({ compressionLevel: 9 }).toBuffer()
+for (const lato of [192, 512]) {
+  scriviPublic(`pwa/icon-${lato}.png`, await png(sorgente('app.svg'), lato))
+  scriviPublic(`pwa/maskable-${lato}.png`, await opaca(sorgente('maskable.svg'), lato))
+}
+// Il badge resta trasparente: Android ne usa solo il canale alfa.
+scriviPublic('pwa/badge-96.png', await png(sorgente('badge.svg'), 96))
+scriviPublic('offline.html', paginaOffline(ROOT))

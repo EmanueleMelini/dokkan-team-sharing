@@ -6,6 +6,7 @@
 #   import dei dati veri (carte del wiki, poi quelle solo nel gioco) -> query
 #   delle pagine (lib/queries.ts vero) -> parametri dell'URL (lib/parametri.ts)
 #   -> URL degli eventi (lib/urls.ts) -> filtri dei clear (parametri)
+#   -> PWA (public/sw.js, offline.html, manifest)
 #   -> tag della cache (lib/cache/*)
 #   -> builder dei clear (0016, lib/clears*, lib/cards.ts, /api/cards)
 #   -> build degli slot (0018, Skill Orb, /api/equipment) -> sfere
@@ -99,6 +100,12 @@ passo "URL degli eventi" verifica node_ts db/test/urls.test.mts
 # valgono "non impostato", l'URL canonico, la guardia dei moduli puri.
 # Funzioni pure, niente database.
 passo "filtri dei clear (parametri)" verifica node_ts db/test/filtri.test.mts
+# La PWA (fase 1): public/sw.js in node:vm (quali richieste intercetta,
+# la pagina offline senza rete, install e activate, niente in cache oltre
+# /offline.html), la pagina offline uguale a quella generata e autonoma,
+# il manifest con le misure vere delle icone, gli header di sw.js e chi
+# vede l'invito a installare. Funzioni pure e file, niente database.
+passo "PWA" verifica node_ts db/test/pwa.test.mts
 # La cache (lib/cache/*): i tag di ogni scrittura, i tag ammessi,
 # /api/revalidate con una funzione finta al posto di next/cache, e la
 # guardia che tiene lib/queries.ts, lib/clears.ts, lib/cards.ts,

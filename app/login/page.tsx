@@ -3,6 +3,7 @@ import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
 import { EmailSignIn } from '@/components/auth/email-sign-in'
 import { ProviderButtons } from '@/components/auth/provider-buttons'
+import { AvvisoIOS } from '@/components/pwa/avviso-ios'
 import { providers } from '@/lib/auth/auth'
 import { authErrorMessage } from '@/lib/auth/messages'
 import { safeNext } from '@/lib/auth/safe-next'
@@ -39,6 +40,9 @@ export default async function LoginPage({ searchParams }: PageProps<'/login'>) {
             {error}
           </p>
         )}
+
+        {/* Solo nell'app installata su iOS: il magic link si aprirebbe in Safari */}
+        <AvvisoIOS providers={providers.map((p) => p.label)} dove="login" className="mt-5" />
 
         {providers.length > 0 && (
           <div className="mt-6">

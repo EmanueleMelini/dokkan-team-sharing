@@ -8,6 +8,7 @@ import { BannerSospeso } from '@/components/moderation/banner-sospeso'
 import { LinkProvider } from '@/components/auth/link-provider'
 import { ProviderLogo } from '@/components/auth/provider-logo'
 import { SignOutButton } from '@/components/auth/sign-out-button'
+import { AvvisoIOS } from '@/components/pwa/avviso-ios'
 import { SceltaTema } from '@/components/tema/scelta-tema'
 import { UnlinkProvider } from '@/components/auth/unlink-provider'
 import { canUnlink } from '@/lib/auth/account'
@@ -104,6 +105,8 @@ export default async function SettingsPage({ searchParams }: PageProps<'/setting
           Link another account to sign in with it too. Only accounts you link here are connected.
         </p>
 
+        {/* Solo nell'app installata su iOS: il magic link si aprirebbe in Safari */}
+        <AvvisoIOS providers={providers.map((p) => p.label)} dove="settings" className="mt-3" />
         {error && (
           <p role="alert" className="mt-3 text-[12px] text-inchiostro bg-oro-tenue border border-oro-linea rounded-[var(--raggio)] px-3 py-2">
             {error}

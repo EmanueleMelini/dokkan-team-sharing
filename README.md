@@ -1683,10 +1683,10 @@ Il marchio è l'"Anello Ki": cinque settori, uno per tipo (AGL, TEQ, INT, STR, P
 Gli SVG sorgente stanno in `scripts/brand/svg/`. Da lì si generano le icone e l'anteprima dei link:
 
 ```bash
-npm run brand    # node --disable-warning=ExperimentalWarning scripts/brand/genera.mjs
+npm run brand    # node --experimental-strip-types ... scripts/brand/genera.mjs
 ```
 
-Lo script scrive `app/icon.svg`, `app/favicon.ico` (16, 32 e 48 px), `app/apple-icon.png`, `app/opengraph-image.png`, `app/twitter-image.png` e i due `.alt.txt`. Next li trova per nome: sono file statici, quindi niente codice al build e niente query. `metadataBase` in `app/layout.tsx` (da `BETTER_AUTH_URL`) rende assoluti gli URL di og:image e twitter:image.
+Lo script scrive `app/icon.svg`, `app/favicon.ico` (16, 32 e 48 px), `app/apple-icon.png`, `app/opengraph-image.png`, `app/twitter-image.png` e i due `.alt.txt`. Per la PWA scrive anche `public/pwa/` (icone 192 e 512, maskable 192 e 512, badge 96) e `public/offline.html` (vedi la sezione PWA). Il flag `--experimental-strip-types` serve perché la pagina offline riusa `lib/tema/temi.ts`. Next li trova per nome: sono file statici, quindi niente codice al build e niente query. `metadataBase` in `app/layout.tsx` (da `BETTER_AUTH_URL`) rende assoluti gli URL di og:image e twitter:image.
 
 Per cambiare la forma o un colore si modifica `scripts/brand/sorgenti.mjs` (la geometria è in `anello.mjs`). Poi si lancia `node scripts/brand/sorgenti.mjs` e si ricopiano i `d` e i colori in `marchio.tsx`: `genera.mjs` si ferma se non coincidono.
 
@@ -1704,6 +1704,26 @@ Come funziona:
 - **Accessibilità.** Testo, oro e tipi stanno ad almeno 4.5:1 su sfondo, superficie e superficie-2, e il bordo dei campi ad almeno 3:1. Il colore non è mai l'unico segnale: le etichette AGL/TEQ/INT/STR/PHY restano scritte. High contrast non si attiva mai da solo con `prefers-contrast`, perché è un tema chiaro.
 - **Test.** `db/test/temi.test.mts` (il passo "temi" di `npm run db:test`) legge `app/globals.css` e controlla tutti i contrasti. Un tema nuovo va aggiunto in tre posti: `lib/tema/temi.ts`, `app/globals.css` e il vincolo `app_user_theme`, con una migrazione (più `TEMI_SCURI` del marchio, se è scuro). Il test fallisce se le tre liste non coincidono.
 - **In produzione** la migrazione 0027 deve arrivare prima del codice: la sessione di better-auth legge `app_user.theme`, e senza la colonna l'accesso si rompe.
+
+## PWA
+
+Il sito si installa come app (Android, iPhone e iPad, desktop Chromium). Fase 1 del piano PWA e notifiche: niente push per ora.
+
+- **Manifest**: `app/manifest.ts`, servito statico a `/manifest.webmanifest`. `start_url` è `/events` (non `/`, che è un 307), `short_name` è `dokkants`, colori `#0f111d` (il fondo del marchio: contano solo per lo splash di Android, poi vince il `theme-color` del tema scelto). Le icone PNG stanno in `public/pwa/` e le genera `npm run brand`; non in `app/`, dove Next aggiungerebbe un `<link rel=icon>` per ognuna, e non in `public/assets`, che va su Cloudflare.
+- **iOS**: `metadata.appleWebApp` in `app/layout.tsx` (titolo `dokkants`, barra di stato `default`); l'icona è `app/apple-icon.png`. Nell'app installata il link dell'email si apre in Safari, non nell'app: `/login` e `/settings` lo dicono (solo lì, `components/pwa/avviso-ios.tsx`) e suggeriscono Discord, Google o Twitch.
+- **Service worker**: `public/sw.js`, scritto a mano, URL fisso `/sw.js`, scope `/`. Fa una cosa sola: se una navigazione GET dello stesso sito non raggiunge la rete, mostra `public/offline.html`. Non intercetta `/api/` (callback OAuth e magic link comprese), `/admin`, le richieste non GET, le fetch del router (RSC), i chunk e le immagini. **Non mette in cache nient'altro**: né pagine, né chunk, né API, né immagini. Le pagine per utente non finiscono mai su un dispositivo, e dopo un deploy non resta niente di vecchio. Niente navigation preload: per una navigazione non intercettata (una callback OAuth) il browser potrebbe fare la richiesta due volte.
+- **Registrazione**: `instrumentation-client.ts`, solo nei build di produzione, dopo il `load` e quando il browser è libero (`lib/pwa/registra.ts`). In `next dev` non si registra, e se trova il nostro worker (per esempio lasciato da un `next start` di prova su localhost:3000) lo toglie con le sue cache `dts-*`.
+- **Versione**: `NEXT_PUBLIC_SW_VERSION` in `next.config.ts` (il commit su Vercel, un valore nuovo a ogni build in locale) va nell'URL, `/sw.js?v=...`. A ogni deploy si installa un worker nuovo che riprende la pagina offline e cancella le cache `dts-*` delle versioni prima (`skipWaiting` e `clients.claim`, senza chiedere niente). `sw.js` e `offline.html` hanno `Cache-Control: public, max-age=0, must-revalidate` (`next.config.ts`).
+- **Kill switch**: se il worker va spento, si pubblica al suo posto un `sw.js` che all'install chiama `skipWaiting()` e all'activate cancella le cache `dts-*` e chiama `self.registration.unregister()`. L'URL è fisso e senza cache, quindi arriva a tutti al primo controllo. Togliere solo la registrazione non basta: i worker già installati resterebbero.
+- **La pagina offline** la genera `scripts/brand/offline.mjs` (con `npm run brand`): tutto in linea, i colori dei temi presi da `app/globals.css`, lo script del tema di `lib/tema/temi.ts` (legge `dts:tema`), il marchio, "You're offline" e un bottone Try again che ricarica l'URL voluto. Si riprova anche da sola quando torna la rete. Dopo un cambio ai temi va rigenerata: il test lo controlla.
+- **L'invito a installare** (`components/pwa/invito-installa.tsx`, un'isola in fondo allo schermo): solo su telefoni e tablet, mai nell'app già installata, mai su `/login`, `/welcome` e `/admin`, mai nell'HTML del server. Su Android (Chromium) compare solo dopo `beforeinstallprompt`, con un bottone Install; su Safari per iOS spiega "tap Share, then Add to Home Screen". Gli altri browser di iOS non lo mostrano. La X lo chiude per sempre su quel dispositivo (`localStorage['dts:installa-chiuso']`). Su desktop decide il browser (l'icona di installazione nella barra degli indirizzi).
+- **Le notifiche push** (fase 4) andranno in `public/sw.js`, dove i commenti segnano il posto: `push`, `notificationclick`, `pushsubscriptionchange`. Il badge `public/pwa/badge-96.png` è già pronto.
+
+Prove:
+
+- `npm run test:pwa` (anche il passo "PWA" di `npm run db:test`, senza database): `public/sw.js` vero in `node:vm` con `self`, `caches` e `fetch` finti. Controlla quali richieste intercetta, la pagina offline senza rete, install e activate, che con la rete non scriva niente in cache; poi la pagina offline uguale a quella generata e senza risorse esterne, il manifest con le misure vere delle icone, gli header di `next.config.ts`, il riconoscimento di iPhone, iPad, Android e desktop.
+- `npm run test:smoke`: manifest (content type e campi), icone (dimensioni dall'IHDR), header di `/sw.js`, `/offline.html` con noindex, `rel="manifest"` nell'HTML, l'invito assente dall'HTML del server.
+- A mano su un build di produzione (`next build && next start`, perché in dev il worker non si registra): DevTools, Application, Manifest (Installability senza errori) e Service workers; Cache storage deve avere solo `dts-offline-<versione>` con `/offline.html`. Fermando il server, una navigazione mostra la pagina offline. Lighthouse 12 non ha più la categoria PWA. Su un telefono vero: installazione su Android (splash e icona maskable) e Aggiungi a Home su iPhone (titolo `dokkants`).
 
 ## La produzione: Vercel, Supabase, Cloudflare
 
