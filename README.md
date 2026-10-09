@@ -109,7 +109,7 @@ rilegge a ogni giro il template degli oggetti premio (e chiede solo i file
 che sul disco non trova).
 
 In produzione la fila è la stessa con `fetch-assets --offline` spostato
-dopo `load-datamine` (`db/prod/pipeline.mjs`, spiegato in "Messa online").
+dopo `load-datamine` (`db/prod/pipeline.mjs`).
 
 ### I test, e perché girano su un database a parte
 
@@ -351,7 +351,7 @@ test/
   smoke.sh                    prova di fumo sul sito che gira (npm run test:smoke)
   auth-smoke.sh               il giro del magic link sul sito che gira (npm run test:auth-smoke)
   cpu.sh                      la CPU per richiesta su next start (npm run test:cpu)
-.github/workflows/weekly-data.yml   l'aggiornamento settimanale automatico (Messa online, punto j)
+.github/workflows/weekly-data.yml   l'aggiornamento settimanale automatico
 scripts/assets-deploy.mjs     public/assets su Cloudflare Pages, con _headers (assets:deploy)
 vercel.json                   regione fra1 e il cron della pulizia giornaliera
 public/assets/                le immagini ospitate da noi (non versionate)
@@ -1252,9 +1252,9 @@ poi better-auth vero su `dokkan_test` con un mittente che cattura i link.
 I bottoni Discord, Google e Twitch partono già in locale se le variabili ci
 sono, ma il giro completo va provato a mano con un account vero.
 
-**Per la produzione** i passi (callback presso i provider, Google "In
-production", Resend, le variabili su Vercel) sono in "Messa online", in
-fondo. Senza `RESEND_API_KEY` o `EMAIL_FROM` il server di produzione **non
+**Per la produzione** servono le callback presso i provider, Google "In
+production", Resend e le variabili sull'host (sezione "Messa online").
+Senza `RESEND_API_KEY` o `EMAIL_FROM` il server di produzione **non
 parte**, apposta.
 
 **Settings: scollegare e cancellare (migrazione 0019).**
@@ -1744,7 +1744,7 @@ Vercel Hobby dà 4 ore di CPU attiva al mese, senza extra. Per questo le pagine 
 - **Dati**: `lib/cache/*.ts` (`'use cache'` con `cacheLife` e `cacheTag`: `data.ts`, `cards.ts`, `tips.ts`, `filters.ts`, `profiles.ts`) avvolge i moduli di query (`lib/queries.ts`, `lib/clears.ts`, `lib/card-page.ts`, `lib/tips.ts`, `lib/profiles.ts`), che restano senza cache perché i test li importano fuori da Next (lo controlla una guardia in `cache-tags.test.mts`). eslint vieta a `lib/cache/*` di importare `lib/dal`, `lib/auth` e `next/headers`. Tag: `catalog`, `events-list`, `community`, `event:<id>`, `card:<id>`, `profile:<handle>`. Lo stato degli eventi (Ongoing/Ended) scade al prossimo inizio o fine di una run (minimo 5 minuti).
 - **Invalidazione** (`lib/cache/invalidate.ts`): invio, revisione, cancellazione e commento rigenerano subito l'evento (`updateTag`), e invio, revisione e cancellazione anche le carte del clear e il profilo dell'autore; il voto lo segna vecchio senza rigenerare (`revalidateTag` `'max'`): gli altri vedono il voto dopo una visita, chi vota lo vede subito da `/api/me`. Cambio di handle, cancellazione dell'account e sospensione passano da `afterUserChanged`, che raccoglie dal database eventi, carte e handle toccati (sopra 300 id invalida tutto `community`). Mai `revalidatePath('/', 'layout')`.
 - **Chi guarda**: il cookie `dts_signed_in=1` (non segreto, non httpOnly) lo mette better-auth a ogni accesso e lo toglie l'uscita; solo con lui il browser chiama `/api/me` (private, no-store). Header, voto, Edit/Delete, commenti e invio sono isole client (`components/viewer`).
-- **Import**: in produzione `db/prod/update.mjs` chiama `POST /api/revalidate` (Bearer `CRON_SECRET`, la stessa variabile del cron; serve anche `PROD_SITE_URL`, da mettere in `~/.config/dokkants/prod.env` per la routine a mano). In locale `db:import`, `db:refresh` e `db:demo` finiscono con `npm run cache:clear`; dopo una modifica a mano con psql lancialo tu, altrimenti `next dev` mostra i dati vecchi fino al riavvio. In `next dev` senza `CRON_SECRET` la rotta è aperta.
+- **Import**: in produzione `db/prod/update.mjs` chiama `POST /api/revalidate` (Bearer `CRON_SECRET`, la stessa variabile del cron; serve anche `PROD_SITE_URL`, da mettere nell'ambiente degli script di produzione per la routine a mano). In locale `db:import`, `db:refresh` e `db:demo` finiscono con `npm run cache:clear`; dopo una modifica a mano con psql lancialo tu, altrimenti `next dev` mostra i dati vecchi fino al riavvio. In `next dev` senza `CRON_SECRET` la rotta è aperta.
 - **Build**: legge il database (solo SELECT): fino a 100 eventi Global in corso o in arrivo, fino a 100 carte (le più usate nei clear), i 20 profili con più clear, `/events` e la sitemap (tutti gli eventi e le carte uscite su Global). Sulla macchina di sviluppo dura pochi secondi (6-9 s con la cache di Turbopack, 167 pagine generate). Se Supabase Free è in pausa, il build fallisce. Ogni deploy riparte con la cache vuota.
 - **Misure** (`test/cpu.sh` su `next start` locale, 200 richieste per classe, ms di CPU per richiesta). "Prima" è la base di partenza, con ogni pagina dinamica; "fase 1" è dopo la cache; "fase 4" è la misura finale prima della messa online, l'8 ottobre 2026, con filtri e profili (stesso metodo, `next build` e `next start -p 3550` su `dokkan_dev`, `CPU_PROFILE_HANDLE=demo_rotation`):
 
@@ -1762,419 +1762,46 @@ Vercel Hobby dà 4 ore di CPU attiva al mese, senza extra. Per questo le pagine 
   In fase 4 nessuna classe ha rifatto dati (`dati MISS` 0) né rigenerato pagine (`ISR` 0) durante le 200 richieste. Le due classi dinamiche, `/events/browse` e la lista filtrata, sono le sole che su Vercel invocano una funzione a ogni vista: per questo sono noindex, fuori da `robots.txt` e raggiungibili solo dal form o da link `nofollow`. In locale anche una pagina in cache passa da Node (circa 1 ms); su Vercel esce dalla CDN e costa zero. La colonna NEXT_CACHE_MEMORY=0 è il caso peggiore: in locale le pagine generate a richiesta non restano, su Vercel stanno nella cache ISR durevole. Dopo il deploy: Vercel Observability → Functions (CPU attiva per rotta) e la pagina Usage (invocazioni, scritture ISR).
 - **Come misurare**: `npm run build`; `NODE_ENV=production NEXT_PRIVATE_DEBUG_CACHE=1 npx next start -p 3100 > /tmp/next.log 2>&1 &`; `CPU_URL=http://localhost:3100 CPU_LOG=/tmp/next.log npm run test:cpu`. Le classi carte, filtri e profili prendono gli URL dalla sitemap e dalle pagine dei tier; `CPU_PROFILE_HANDLE` aggiunge un profilo. In locale servono anche `RESEND_API_KEY` ed `EMAIL_FROM` finti, e `VERCEL=1` per non fare la pulizia delle sessioni su `dokkan_dev`.
 
-**Con `next start` (e su Vercel) una pagina dinamica risponde 200 anche quando finisce in un 404 o in un redirect.** Il layout è un prerender, quindi lo shell parte subito con 200, e `notFound()` o `redirect()` arrivano nello stream (con noindex, o con il redirect che il browser segue). Vale per `/settings` e `/welcome` senza sessione, per `/events/<id>/clears?tier=abc` e per la prima visita a un URL pubblico non prerenderizzato; dalla seconda visita quest'ultimo è un 404 o un 308 vero, dalla cache. Il 308 servito dalla cache locale non ha l'header Location (il redirect sta nel corpo): da controllare su Vercel al primo deploy (Messa online, punto h). `next dev` invece risponde con i codici veri.
+**Con `next start` (e su Vercel) una pagina dinamica risponde 200 anche quando finisce in un 404 o in un redirect.** Il layout è un prerender, quindi lo shell parte subito con 200, e `notFound()` o `redirect()` arrivano nello stream (con noindex, o con il redirect che il browser segue). Vale per `/settings` e `/welcome` senza sessione, per `/events/<id>/clears?tier=abc` e per la prima visita a un URL pubblico non prerenderizzato; dalla seconda visita quest'ultimo è un 404 o un 308 vero, dalla cache. Il 308 servito dalla cache locale non ha l'header Location (il redirect sta nel corpo): da controllare su Vercel al primo deploy. `next dev` invece risponde con i codici veri.
 
-**In locale su macOS non provare le maiuscole diverse di un profilo contro `next start`.** La cache ISR locale sta su file, e APFS non distingue le maiuscole: il 308 di `/users/DEMO_ROTATION` prende il posto della voce di `/users/demo_rotation`, che poi risponde con un redirect a se stessa fino al build dopo. Su Vercel la cache ISR non sta su un file system locale, ma va provato al primo deploy (Messa online, punto h); `test:smoke` con `SMOKE_EXPECT_CACHE=1` salta quella verifica.
+**In locale su macOS non provare le maiuscole diverse di un profilo contro `next start`.** La cache ISR locale sta su file, e APFS non distingue le maiuscole: il 308 di `/users/DEMO_ROTATION` prende il posto della voce di `/users/demo_rotation`, che poi risponde con un redirect a se stessa fino al build dopo. Su Vercel la cache ISR non sta su un file system locale, ma va provato al primo deploy; `test:smoke` con `SMOKE_EXPECT_CACHE=1` salta quella verifica.
 
 Le prove: `npm run db:test` (passi "URL degli eventi" e "cache: tag e /api/revalidate") e `npm run test:smoke`, che con `SMOKE_EXPECT_CACHE=1` contro `next start` controlla anche che la seconda visita a `/events`, a un evento, a una carta e a un profilo sia un `x-nextjs-cache: HIT`.
 
 ## Messa online
 
-La prima volta, in quest'ordine: ogni passo usa qualcosa del precedente.
-Tutto si fa dal tuo Mac; nessuno script crea account o pubblica da solo.
-Gli script contro la produzione chiedono sempre `--yes`: senza, stampano
-il bersaglio (host, database, utente, mai la password) e si fermano.
+L'istanza ufficiale gira su Vercel Hobby, Supabase Free e Cloudflare Pages
+(sezione "La produzione"). La guida passo passo per metterla online e
+tenerla aggiornata (account, domini, chiavi, la routine e il workflow
+settimanale) non sta in questo repository: è in un repository privato del
+proprietario.
 
-**Prima di cominciare.** Committa il lavoro e porta il branch su `main`:
-Vercel pubblica in produzione da lì. Le cache dell'import
-(`db/import/.cache`) e le immagini (`public/assets`) devono essere sul
-disco: `npm run db:fetch` e `npm run db:assets` se mancano.
+Per un fork, in breve:
 
-### a) Git: il repository non ha ancora un remote
-
-**Opzione A, consigliata: GitHub privato + integrazione Git di Vercel.**
-Ogni push su `main` diventa un deploy di produzione, con lo storico e il
-rollback a un clic.
-
-1. Su github.com crea un repository **privato** vuoto (niente README né
-   .gitignore), per esempio `DokkanTeamSharing`.
-2. Dal progetto:
-   ```bash
-   git remote add origin git@github.com:EmanueleMelini/DokkanTeamSharing.git
-   git push -u origin main
-   ```
-   `public/assets`, `.env*`, le cache e `backups/` sono in `.gitignore`:
-   controlla con `git status` che non ci sia niente di segreto prima del
-   primo push.
-3. Su Vercel (piano Hobby, account personale: un team Hobby non si collega
-   ai repository di un'organizzazione GitHub) **Add New → Project → Import
-   Git Repository**, e dai all'app GitHub di Vercel accesso **solo** a quel
-   repository. Il progetto lo finisci al passo (f): al primo import il build
-   fallisce perché mancano le variabili, ed è normale.
-4. In **Settings → Git → Ignored Build Step** scegli "Only build
-   production". Senza, ogni branch fa un deploy di anteprima: consuma la
-   quota di build e, con le variabili di produzione, parlerebbe con il
-   database vero.
-
-**Opzione B: deploy dalla CLI di Vercel, senza remote.** Va bene per
-provare; non c'è storico dei deploy legato ai commit.
-
-```bash
-npx vercel login
-npx vercel link            # crea o collega il progetto (cartella .vercel/, ignorata)
-npx vercel --prod          # build su Vercel e pubblicazione
-```
-
-La CLI carica la cartella del progetto: `.vercelignore` lascia fuori
-`public/assets` e le cache, altrimenti si fermerebbe al limite di 100 MB e
-15.000 file. Ogni nuova versione è un altro `npx vercel --prod`.
-
-### b) Supabase: il database
-
-1. Su supabase.com crea un'organizzazione (piano Free) e un progetto:
-   nome `dokkants`, regione **Central EU (Frankfurt)**, `eu-central-1`.
-   La password del database generala lunga e salvala nel password manager.
-   Se il modulo chiede quali connessioni userai, scegli **solo la
-   connection string**: la Data API non ci serve (sotto il perché).
-2. **Spegni la Data API** se è accesa (Project Settings → Data API). Supabase
-   espone lo schema `public` via REST ai ruoli `anon` e `authenticated`, e
-   la chiave anon è pubblica per definizione: senza RLS chiunque leggerebbe
-   `auth_session` e le email. Il sito non la usa. `prod:setup` toglie
-   comunque ogni privilegio su `public` a quei ruoli (`db/prod/harden.mjs`).
-   Il Security Advisor continuerà a segnalare "RLS disabled": è atteso, le
-   tabelle non sono raggiungibili da lì.
-3. In **Project Settings → Database → SSL Configuration** scarica il
-   certificato (`prod-ca-2021.crt`) e attiva "Enforce SSL". Tienilo **fuori
-   dal repository**, per esempio in `~/.config/dokkants/prod-ca-2021.crt`.
-4. Dal bottone **Connect** in alto prendi due stringhe (la password al posto
-   di `[YOUR-PASSWORD]`; se contiene caratteri come `@` `/` `:` va
-   percent-encoded):
-   - **Transaction pooler**, porta **6543**
-     (`postgresql://postgres.<ref>:<password>@aws-…-eu-central-1.pooler.supabase.com:6543/postgres`):
-     è il `DATABASE_URL` dell'app su Vercel. Le funzioni serverless aprono
-     e chiudono connessioni di continuo, e il pooler le regge.
-   - **Session pooler**, porta **5432**, stesso host: è il
-     `PROD_DATABASE_URL` degli script sul tuo Mac (migrazioni, import,
-     backup). Le migrazioni e `pg_dump` vogliono una sessione vera, e gli
-     script rifiutano la porta 6543. La connessione **diretta**
-     (`db.<ref>.supabase.co`) sul piano Free è solo IPv6: va bene al suo
-     posto solo se la tua rete ha IPv6.
-5. Prepara un file con le variabili, fuori dal repository e leggibile solo
-   da te, così la password non finisce nella history della shell:
-   ```bash
-   mkdir -p ~/.config/dokkants && chmod 700 ~/.config/dokkants
-   cat > ~/.config/dokkants/prod.env <<'X'
-   PROD_DATABASE_URL='postgresql://postgres.<ref>:<password>@aws-…-eu-central-1.pooler.supabase.com:5432/postgres'
-   PROD_DATABASE_CA_CERT="$HOME/.config/dokkants/prod-ca-2021.crt"
-   PROD_SITE_URL='https://dokkants.emanuelemelini.dev'
-   CRON_SECRET='<lo stesso di Vercel, passo f>'
-   X
-   chmod 600 ~/.config/dokkants/prod.env
-   ```
-   e in ogni terminale dove lanci gli script `prod:*`:
-   `set -a; . ~/.config/dokkants/prod.env; set +a`.
-
-Con `PROD_DATABASE_CA_CERT` gli script si collegano con
-`sslmode=verify-full` su quella CA (e tolgono un eventuale `sslmode=require`
-copiato dalla dashboard). Senza CA un database remoto si rifiuta: niente
-TLS non verificato verso la produzione.
-
-### c) Il database: `prod:setup`
-
-```bash
-set -a; . ~/.config/dokkants/prod.env; set +a
-npm run prod:setup              # stampa bersaglio e passi, non tocca niente
-npm run prod:setup -- --yes     # migrazioni, harden, import completo
-```
-
-Fa: `db/migrate.mjs` (le 21 migrazioni), `harden.mjs`, poi l'import dalle
-cache locali nell'ordine di `db/prod/pipeline.mjs`: carte, carte dal
-gioco, eventi, datamine, **righe delle immagini** (`fetch-assets
---offline`: le ricava dai file in `public/assets`, non scarica niente),
-eventi dal gioco, finestre, missioni, equipaggiamento. Niente fixture,
-niente demo, nessun reset, nessun utente. Le immagini stanno prima degli
-eventi del gioco e delle missioni perché le copertine preferiscono le carte
-con miniatura e le icone dei premi si agganciano per nome: così il primo
-giro dà lo stesso risultato del secondo.
-
-Gli script rifiutano `localhost`, `127.0.0.1`, `::1` e ogni database che
-finisce in `_dev` o `_test` (`--allow-local` serve solo alla simulazione
-qui sotto), e non leggono mai `DATABASE_URL` né `.env.local`: lanciano gli
-importer con `DOKKAN_ENV_FILES=off` (vedi `db/env.mjs`) e senza le
-variabili `PG*`. Si può rilanciare: le migrazioni applicano solo le
-pendenti e gli importer sono idempotenti. È anche il comando per le
-**migrazioni nuove**: `prod:update` non cambia lo schema.
-
-La simulazione, fatta l'8 ottobre 2026 su un database locale
-`dokkan_prodsim` poi cancellato: `prod:setup` in **9 secondi**, con conteggi e
-contenuto dei dati di gioco identici a `dokkan_dev`: 2697 carte, 792
-eventi, 8372 stage e 9892 difficoltà, 1747 finestre, 7720 missioni con
-13.322 premi, 8857 sfere con 8857 regole, 6246 righe in `asset` (riprese
-tutte dal disco; 45 immagini mancano anche in sviluppo); 0 utenti, 0
-sessioni, 0 clear, 0 squadre. Due `prod:update` di fila non hanno cambiato
-una riga, e `prod:backup` ha scritto 1,5 MB compressi, ripristinati poi su
-un database vuoto con gli stessi conteggi.
-
-### d) Le immagini: Cloudflare Pages
-
-1. `npx wrangler login` (una volta: apre il browser sull'account
-   Cloudflare che ha la zona `emanuelemelini.dev`).
-2. Crea il progetto, di tipo Direct Upload:
-   `npx wrangler@4.148.0 pages project create dokkants-assets --production-branch main`
-   (o dalla dashboard: Workers & Pages → Create → Pages → Upload assets,
-   nome `dokkants-assets`).
-3. `npm run assets:deploy` conta i file e controlla i limiti; `npm run
-   assets:deploy -- --yes` pubblica. Lo script scrive prima
-   `public/assets/_headers` (`Cache-Control: public, max-age=31536000,
-   immutable` e `nosniff` per tutto), poi lancia
-   `npx wrangler@4.148.0 pages deploy public/assets --project-name dokkants-assets --branch main`.
-   Wrangler carica solo i file nuovi o cambiati, quindi i deploy dopo il
-   primo sono rapidi.
-4. Nel progetto Pages, **Custom domains → Set up a custom domain →
-   `dokkants-assets.emanuelemelini.dev`**. La zona è sullo stesso account,
-   quindi Cloudflare crea da solo il CNAME, **proxied** (qui l'arancione è
-   giusto: è Cloudflare stesso a servire i file). Aspetta "Active".
-
-I limiti del piano Free, per deploy: **20.000 file** e **25 MiB per file**;
-500 deploy al mese; banda e richieste dei file statici senza limite.
-Oggi: **6246 file** (1,31 GB), il più grande
-`cards/1026900/art-animated.webp` da **10,0 MiB**. Lo script si ferma prima
-di wrangler se uno dei due limiti verrebbe superato, e dice quale file.
-Il prezzo di `immutable`: un'immagine riscaricata sotto la stessa chiave
-(con `db:assets --force`) arriva a chi l'aveva già vista solo quando la sua
-cache scade. Le chiavi però non cambiano di significato, quindi succede
-quasi mai.
-
-### e) L'email: Resend
-
-1. Su resend.com (piano Free) **Domains → Add Domain →
-   `dokkants.emanuelemelini.dev`**, regione `eu-west-1` (Irlanda).
-2. Resend mostra tre record (o li scrive lui con "Sign in to Cloudflare").
-   Nel DNS di Cloudflare, zona `emanuelemelini.dev`, i nomi sono relativi
-   alla zona:
-   | Tipo | Nome | Valore |
-   | --- | --- | --- |
-   | MX | `send.dokkants` | `feedback-smtp.eu-west-1.amazonses.com`, priorità 10 |
-   | TXT | `send.dokkants` | `v=spf1 include:amazonses.com ~all` |
-   | TXT | `resend._domainkey.dokkants` | la chiave DKIM che mostra Resend |
-
-   Copia i valori dalla pagina di Resend, non da qui. Tutti **DNS only**
-   (MX e TXT non si possono comunque proxare). Facoltativo ma consigliato
-   un DMARC per il sottodominio: TXT `_dmarc.dokkants` con
-   `v=DMARC1; p=none;`.
-3. Aspetta "Verified", poi **API Keys → Create** con permesso **Sending
-   access** limitato a quel dominio: è `RESEND_API_KEY`.
-
-**Perché non tocca l'Email Routing dell'apex.** Email Routing (quello che
-riceve `privacy@emanuelemelini.dev`) vive sui record **dell'apex**: gli MX
-`route*.mx.cloudflare.net` e il TXT SPF di `emanuelemelini.dev`, che la
-dashboard blocca. I record di Resend stanno su nomi diversi
-(`send.dokkants…`, il dominio di ritorno per i bounce, e
-`resend._domainkey.dokkants…`), e su `dokkants` stesso non c'è nessun MX:
-si spedisce da lì, non si riceve. Niente si sovrappone, e l'SPF dell'apex
-resta quello di Cloudflare.
-
-### f) Vercel: il progetto e le variabili
-
-1. Il progetto importato al passo (a): framework Next.js, comandi di
-   default. La regione delle funzioni è già in `vercel.json` (`fra1`,
-   accanto a Supabase): controlla in Settings → Functions che dica
-   Frankfurt.
-2. **Settings → Environment Variables**, ambiente **Production** (sono
-   disponibili anche al build):
-
-   | Variabile | Cosa metterci |
-   | --- | --- |
-   | `DATABASE_URL` | la stringa del **Transaction pooler** (porta 6543); serve anche al build, che legge gli eventi da prerenderizzare |
-   | `DATABASE_CA_CERT` | il contenuto di `prod-ca-2021.crt`, PEM intero (vanno bene anche gli a capo scritti `\n`) |
-   | `BETTER_AUTH_URL` | `https://dokkants.emanuelemelini.dev` (serve anche al build: `robots.txt` è statico) |
-   | `BETTER_AUTH_SECRET` | **nuovo**, non quello di sviluppo: `openssl rand -base64 32` |
-   | `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET` | l'app Discord di sempre |
-   | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | il client Google **di produzione** |
-   | `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET` | l'applicazione Twitch **di produzione** |
-   | `RESEND_API_KEY` | la chiave del passo (e) |
-   | `EMAIL_FROM` | `Dokkan Team Sharing <login@dokkants.emanuelemelini.dev>` |
-   | `ASSET_BASE_URL` | `https://dokkants-assets.emanuelemelini.dev` (senza `/` finale) |
-   | `CRON_SECRET` | `openssl rand -hex 32` (almeno 16 caratteri, o la rotta risponde sempre 401) |
-   | `AUTH_IP_HEADERS` | **non impostarla**: su Vercel il limite per IP legge già `x-vercel-forwarded-for` |
-
-   Senza `RESEND_API_KEY` o `EMAIL_FROM` il server non parte; senza
-   `DATABASE_CA_CERT` la pool rifiuta il database remoto. Un provider senza
-   le sue due variabili semplicemente non compare tra i bottoni.
-3. **Sposta i segreti di produzione da `.env.local`.** Le coppie Google e
-   Twitch `# PROD` commentate lì vanno incollate su Vercel e poi
-   **cancellate** dal file: `.env.local` deve contenere solo lo sviluppo, e
-   un segreto di produzione su disco è un segreto in più da proteggere.
-4. **Settings → Domains → Add `dokkants.emanuelemelini.dev`.** Vercel mostra
-   il CNAME da usare (un valore tipo `….vercel-dns-0xx.com`). Su
-   Cloudflare: record **CNAME** `dokkants` → quel valore, **DNS only**
-   (nuvola grigia): Vercel sconsiglia un proxy davanti, e il certificato lo
-   emette lui. Aspetta che il dominio risulti valido.
-5. **Deployments → Redeploy** (o un push su `main`, o `npx vercel --prod`):
-   ora il build ha le variabili.
-
-### g) Le console OAuth
-
-I callback di produzione stanno **accanto** a quelli di sviluppo
-(`http://localhost:3000/api/auth/callback/<provider>`), non al loro posto.
-
-- **Discord** (discord.com/developers, la stessa app → OAuth2 → Redirects):
-  aggiungi `https://dokkants.emanuelemelini.dev/api/auth/callback/discord`.
-- **Google** (console.cloud.google.com, Google Auth Platform):
-  - **Clients → Create client**, tipo Web application, nome "produzione":
-    Authorized JavaScript origins `https://dokkants.emanuelemelini.dev`,
-    Authorized redirect URIs
-    `https://dokkants.emanuelemelini.dev/api/auth/callback/google`.
-  - **Branding**: app home page `https://dokkants.emanuelemelini.dev`,
-    privacy policy `https://dokkants.emanuelemelini.dev/privacy`, terms of
-    service `https://dokkants.emanuelemelini.dev/terms`, authorized domain
-    `emanuelemelini.dev`.
-  - **Audience → Publish app**, da Testing a **In production**: in Testing
-    entrano solo 100 utenti di prova e le autorizzazioni scadono dopo 7
-    giorni. Gli scope sono solo `openid email profile`, quindi non serve
-    la verifica dell'app (quella del brand è facoltativa: chiede il dominio
-    verificato in Search Console, e senza il logo non compare).
-- **Twitch** (dev.twitch.tv/console → Register Your Application, una
-  nuova per la produzione): categoria Website Integration, client
-  Confidential, OAuth Redirect URL
-  `https://dokkants.emanuelemelini.dev/api/auth/callback/twitch`.
-
-### h) Il primo deploy: cosa controllare
-
-- [ ] `https://dokkants.emanuelemelini.dev` porta a `/events`, e una
-      pagina evento si apre con stage, finestre e missioni.
-- [ ] Le immagini arrivano da `dokkants-assets.emanuelemelini.dev`
-      (DevTools → Network, o il "Copy image address" di una carta), e
-      `curl -sI https://dokkants-assets.emanuelemelini.dev/icons/rarity/UR.webp`
-      risponde 200 con `cache-control: public, max-age=31536000, immutable`.
-- [ ] `curl -sI https://dokkants.emanuelemelini.dev/events` ha
-      `strict-transport-security`, `x-frame-options: DENY` e niente
-      `x-powered-by`.
-- [ ] Si entra con **Discord**, con **Google** e con **Twitch** (un
-      account per provider, o un account con i tre collegati da Settings).
-- [ ] Il **magic link** arriva (Resend → Emails mostra "Delivered"), si
-      apre e porta a `/welcome` per scegliere l'handle.
-- [ ] `/robots.txt` indica la sitemap di `dokkants.emanuelemelini.dev`,
-      esclude `/events/browse` e `/events/*/clears`, e `/sitemap.xml`
-      elenca gli eventi e le carte.
-- [ ] **La cache**: un secondo `curl -sI` di `/events`, di una pagina
-      evento, di una carta e del tuo profilo (`/users/<handle>`) risponde
-      con `x-vercel-cache: HIT` (o `STALE`), e `/api/me` senza cookie dà
-      `{"user":null}` con `cache-control` `private, no-store`. Poi
-      `SMOKE_URL=https://dokkants.emanuelemelini.dev SMOKE_EXPECT_CACHE=1
-      SMOKE_PROFILE_HANDLE=<handle> npm run test:smoke` (solo GET): con
-      `SMOKE_EXPECT_CACHE` accetta i 404 e i redirect nello stream delle
-      pagine dinamiche e legge anche `x-vercel-cache`.
-- [ ] **I redirect**: `curl -sI https://dokkants.emanuelemelini.dev/cards/1032311`
-      due volte; la seconda (dalla cache) deve avere `location: /cards/1032310`.
-      Se manca, come con `next start` in locale, il browser segue lo
-      stesso il redirect nel corpo, ma i motori no: va segnalato.
-- [ ] **Il profilo e l'handle**: il link dell'handle nell'header apre il
-      profilo; `/users/<HANDLE>` con le maiuscole diverse porta al tuo
-      profilo con un 308, e dopo `/users/<handle>` si apre ancora con 200
-      (non un redirect a se stesso: vedi "Cache e budget CPU"); da
-      Settings > Handle un cambio di sole maiuscole riesce e il profilo si
-      apre col nome nuovo.
-- [ ] **Il cron**: Settings → Cron Jobs mostra `/api/cron/purge` alle 4
-      UTC; "Run" lo lancia subito, e nei log della funzione la risposta è
-      200 con `{"purged":n,"reports":m}`. Da fuori, `curl -i
-      https://dokkants.emanuelemelini.dev/api/cron/purge` deve dare 401.
-- [ ] Supabase → Table Editor: `app_user` ha solo gli account delle prove.
-- [ ] **Il primo admin**: dopo aver scelto l'handle sul sito,
-      `npm run prod:role -- <handle> admin --yes` (sezione "Moderazione").
-      Alla richiesta dopo l'header mostra Moderation e `/admin` risponde.
-
-### i) La routine
-
-**Ogni settimana** (il datamine si aggiorna di settimana in settimana):
-
-```bash
-npm run db:fetch -- --fresh     # wiki + datamine nuovo (--fresh va a fetch-datamine)
-npm run db:import               # prima sullo sviluppo: si guarda che torni
-npm run db:assets               # scarica le immagini nuove in public/assets
-npm run assets:deploy -- --yes  # le pubblica, PRIMA che il database le citi
-set -a; . ~/.config/dokkants/prod.env; set +a
-npm run prod:backup -- --yes    # la copia prima di scrivere
-npm run prod:update -- --yes    # solo l'import, dalle cache appena scaricate
-```
-
-`prod:update` controlla prima che lo schema sia aggiornato (se ci sono
-migrazioni nuove, chiede `prod:setup`) e poi rifà la stessa fila di
-`prod:setup`, migrazioni escluse. Un secondo giro non cambia niente.
-Alla fine chiede al sito di rinfrescare le pagine (`POST /api/revalidate`
-con `PROD_SITE_URL` e `CRON_SECRET`); senza le due variabili lo salta, e
-le pagine si aggiornano solo alla scadenza della cache o al deploy dopo.
-
-**I backup.** Supabase Free non ne fa. `prod:backup` usa `pg_dump` dello
-schema `public` (con le estensioni) in `backups/<ora UTC>.sql.gz` e tiene
-le ultime 8 copie. Il `pg_dump` deve essere almeno della versione del
-server: lo script prende quello di Postgres.app della stessa versione se
-c'è, altrimenti uno più nuovo, e si ferma se non ne trova (Postgres.app
-installa più versioni affiancate; `PG_DUMP=/percorso/pg_dump` ne indica
-uno). Supabase crea i progetti nuovi su una versione più recente della 15
-di questo Mac: controlla in Settings → Infrastructure. Per ripristinare su
-un database vuoto (un progetto Supabase nuovo, o uno locale):
-
-```bash
-gunzip -c backups/<copia>.sql.gz \
-  | sed -e '/^CREATE SCHEMA public;$/d' -e '/^COMMENT ON EXTENSION /d' \
-  | psql -X -q -v ON_ERROR_STOP=1 "<url di sessione del database vuoto>"
-```
-
-Le due righe tolte sono le sole che falliscono su un database che ha già
-lo schema `public` e le estensioni di qualcun altro. Provato in locale: il
-ripristino dà gli stessi conteggi, funzioni, trigger e indici.
-
-**Quando una quota finisce.** Nessun servizio ha una carta: si ferma, non
-addebita.
-
-| Servizio | Quota Free | Cosa succede | Dove guardare |
-| --- | --- | --- | --- |
-| Vercel Hobby | 1M invocazioni, 4 ore di CPU attiva, 100 GB di traffico al mese | la funzione si ferma (fino a 30 giorni) e il sito dà errore | Dashboard → Usage |
-| Supabase Free | 500 MB di database (oggi ~56 MB), 5 GB di egress | oltre lo spazio il database passa in sola lettura; dopo 7 giorni senza attività il progetto va in pausa (il cron quotidiano lo tiene sveglio) | Organization → Usage, e le email di Supabase |
-| Cloudflare Pages | 500 deploy al mese, 20.000 file | il deploy viene rifiutato; i file già pubblicati restano | Workers & Pages → il progetto |
-| Resend Free | 100 email al giorno, 3000 al mese | le email in più falliscono: il magic link non arriva, i provider OAuth continuano a funzionare | Resend → Usage ed Emails |
-
-Il segnale da tenere d'occhio nella prima settimana è la CPU attiva di
-Vercel: le pagine pubbliche escono dalla cache (sezione "Cache e budget
-CPU"), ma `/events/browse`, l'accesso, Settings e l'invio passano sempre
-dal server, bot compresi.
-
-### j) L'aggiornamento settimanale automatico (GitHub Actions)
-
-`.github/workflows/weekly-data.yml` fa da solo la routine del punto i), ogni venerdì alle 03:17 UTC (il datamine di solito arriva mercoledì o giovedì):
-
-1. riscarica wiki e datamine. Il datamine con `--strict`: commit noto e tutte le tabelle, altrimenti si ferma. Se il wiki non risponde usa la cache della settimana prima e lo scrive nel riepilogo;
-2. `db/prod/sanity.mjs` confronta con la cache precedente: pagine del wiki calate di oltre il 2% o un CSV sotto il 90% fermano tutto;
-3. `db/prod/last-run.mjs`: se commit del datamine e contenuto del wiki sono quelli dell'ultimo import riuscito (tabella `import_run`, migrazione 0023), "Nothing new" e fine;
-4. un `pg_dump` della produzione (`db/prod/dump.mjs`), cifrato con age per la tua chiave pubblica e caricato come artifact `prod-backup-<data>` (14 giorni). Il dump in chiaro non lascia mai il runner: il repository è pubblico;
-5. il giro di prova: il dump ripristinato in un Postgres 17 dentro il runner (`db/prod/rehearsal.mjs`), poi `node db/migrate.mjs --check` (se la produzione è indietro si ferma: le migrazioni restano `prod:setup` a mano), poi lo stesso `prod:update` con `--allow-local`;
-6. `db/prod/snapshot.mjs` prima e dopo, e `db/prod/compare.mjs` con `db/prod/limits.json`: le tabelle degli utenti devono restare identiche (sempre, nessuna eccezione) e ogni tabella di gioco ha un tetto alle righe tolte. Una violazione ferma il job prima della produzione;
-7. le immagini nuove: chiede al wiki solo quelle senza riga (`fetch-assets --missing`). Un 403 della CDN del wiki diventa un avviso e non si ritenta. Se ne arriva almeno una, `db/prod/mirror-assets.mjs` ricostruisce l'albero completo dalla nostra CDN (ogni file verificato con sha256), ci aggiunge le nuove e lo pubblica su Pages. Un deploy di Pages è una fotografia intera: mai solo i file nuovi;
-8. `prod:update` sulla produzione con le stesse cache, poi un confronto con il giro di prova (avvisa soltanto: nel frattempo gli utenti scrivono). Alla fine `prod:update` chiama `POST /api/revalidate` del sito (sezione "Cache e budget CPU");
-9. il riepilogo del job: cambiamenti per tabella, eventi e carte nuovi, immagini, "Needs attention", limiti.
-
-**Da configurare una volta**, nelle Settings del repository su GitHub:
-
-- Environments → `production`, con Deployment branches "Selected branches" = `main`. Secret dell'environment (non del repository):
-  - `PROD_DATABASE_URL`: il pooler di **sessione** (`aws-0-eu-central-1.pooler.supabase.com:5432`, utente `postgres.<ref>`). L'host diretto `db.<ref>.supabase.co` è solo IPv6, e i runner di GitHub non hanno IPv6;
-  - `PROD_DATABASE_CA_CERT_PEM`: il contenuto del `.crt` di Supabase;
-  - `CLOUDFLARE_API_TOKEN`: un token con solo Account → Cloudflare Pages → Edit;
-  - `CRON_SECRET`: lo stesso di Vercel, per rinfrescare le pagine dopo l'import.
-- Variables: `CLOUDFLARE_ACCOUNT_ID`, `CF_PAGES_PROJECT` (`dokkants-assets`), `ASSET_BASE_URL` (`https://dokkants-assets.emanuelemelini.dev`), `PROD_SITE_URL` (`https://dokkants.emanuelemelini.dev`), `BACKUP_AGE_RECIPIENT`, `WEEKLY_APPLY` (`false` all'inizio).
-- La chiave age, sul Mac: `brew install age`, poi `age-keygen -o ~/.config/dokkants/backup.agekey` e `chmod 600` sul file. La riga `# public key: age1...` va in `BACKUP_AGE_RECIPIENT`. La chiave privata resta solo da te (tienine una copia sicura: senza, i backup non si aprono).
-- Settings → Notifications → Actions: "Only notify for failed workflows". GitHub scrive a chi ha modificato per ultimo la riga del cron.
-
-**Le prime settimane** `WEEKLY_APPLY=false`: il cron fa solo la prova. Leggi 2-3 riepiloghi e aggiusta `limits.json` se serve. Prima di accendere, controlla che i file su Pages siano esattamente quelli della tabella `asset`: un file su Pages senza riga sparirebbe al primo deploy fatto dalla CI. Poi metti `WEEKLY_APPLY=true`. A mano: Actions → Weekly data update → Run workflow. `dry_run` è acceso per difetto; spento, applica davvero anche con `WEEKLY_APPLY=false`.
-
-**Limiti superati.** Il job si ferma e il riepilogo dice tabella, righe tolte e tetto. Se le cancellazioni sono giuste (il gioco ha davvero tolto quegli eventi), rilancia a mano con `allow_deletions`: vale per i dati di gioco, mai per quelli degli utenti. Un tetto con numero e percentuale vale per il più stretto dei due; la regola `"*"` (almeno il 97% delle righe) vale per le tabelle senza un limite proprio. `force` rifà tutto anche senza novità, `skip_wiki` usa il wiki in cache.
-
-**Aprire un backup.** Scarica l'artifact `prod-backup-<data>`: contiene `<nome>.dump.age` e `<nome>.dump.extensions.json` (solo gli schemi delle estensioni, nessun dato). Nella stessa cartella:
-
-```bash
-age -d -i ~/.config/dokkants/backup.agekey -o <nome>.dump <nome>.dump.age
-createdb dokkan_restore_test
-DATABASE_URL=postgres://localhost/dokkan_restore_test node db/prod/rehearsal.mjs --dump <nome>.dump
-```
-
-`rehearsal.mjs` accetta solo un database locale e vuoto: ricrea le estensioni negli schemi della produzione e lancia `pg_restore`, che deve essere almeno della versione del server (Postgres.app 17 se Supabase è sulla 17, oppure `PG_RESTORE=/percorso/pg_restore`). Il dump contiene email e sessioni: cancella la copia in chiaro quando hai finito.
-
-**In locale** ci sono gli stessi pezzi: `npm run prod:snapshot -- --out a.json`, `npm run prod:compare -- a.json b.json`, `npm run prod:sanity`. `npm run prod:mirror-assets -- --from https://dokkants-assets.emanuelemelini.dev --to public/assets` rifà le immagini su una macchina nuova scaricandole dalla CDN, e riprende da dove si era fermato.
-
-**Cosa può andare storto.**
-- Il wiki blocca l'API anche dai datacenter: si usa la cache. Se non c'è un giro riuscito da più di 30 giorni l'artifact è scaduto e il job fallisce.
-- Il cron di un repository pubblico si spegne dopo 60 giorni senza commit: GitHub avvisa per email, e un commit lo riaccende.
-- Un `prod:update` dal Mac mentre gira la CI viene rifiutato da `import_run`. Un giro rimasto "running" per più di 2 ore si considera morto.
+1. Un Postgres 15 o più recente con TLS e il suo certificato CA.
+   `PROD_DATABASE_URL` (più `PROD_SITE_URL` e `CRON_SECRET`, per
+   rinfrescare le pagine dopo l'import) nell'ambiente, poi
+   `npm run prod:setup -- --yes`: migra, toglie i permessi ai ruoli API di
+   Supabase sullo schema pubblico e importa i dati, senza fixture né demo.
+   Gli script di `db/prod` rifiutano i database locali e quelli di
+   sviluppo o di test, e senza `--yes` stampano il bersaglio e si fermano.
+2. Le immagini di `public/assets` su un host statico
+   (`npm run assets:deploy` le pubblica su Cloudflare Pages) e
+   `ASSET_BASE_URL` che punta lì.
+3. Sull'host Next.js le variabili `DATABASE_URL`, `DATABASE_CA_CERT`,
+   `BETTER_AUTH_URL`, `BETTER_AUTH_SECRET`, `RESEND_API_KEY`,
+   `EMAIL_FROM`, `ASSET_BASE_URL`, `CRON_SECRET`, e le coppie
+   `*_CLIENT_ID` / `*_CLIENT_SECRET` dei provider OAuth che vuoi
+   (Discord, Google, Twitch: un provider senza le sue due variabili non
+   compare). Senza `RESEND_API_KEY` o `EMAIL_FROM` il server di
+   produzione non parte, e senza `DATABASE_CA_CERT` la pool rifiuta un
+   database remoto.
+4. Il primo admin solo da script: `npm run prod:role -- <handle> admin --yes`.
+5. L'aggiornamento settimanale (`.github/workflows/weekly-data.yml`) gira
+   solo su questo repository: in una fork va adattata la condizione
+   `github.repository`. Parte in prova e scrive in produzione solo con la
+   variabile `WEEKLY_APPLY=true`; il commento in cima al file dice come
+   tratta segreti e log in un repository pubblico.
 
 ## Cosa manca, in ordine
 
@@ -2183,13 +1810,11 @@ Il codice per la messa online è finito e verificato (`db:test`, `tsc`,
 `test:auth-smoke`, `test:cpu`). Restano i passi che solo il proprietario
 può fare, e poi il lavoro sui dati e sulle pagine.
 
-0. **La messa online, a mano.** Creare gli account (GitHub, Supabase,
-   Cloudflare Pages, Resend, Vercel, le console OAuth di Discord, Google e
-   Twitch) e seguire "Messa online" dal punto a) al j), con la lista del
-   punto h) al primo deploy (cache, redirect, profilo). Nessuno script crea
+0. **La messa online, a mano.** Gli account (Supabase, Cloudflare Pages,
+   Resend, Vercel, le console OAuth di Discord, Google e Twitch) li crea il
+   proprietario, seguendo la sua guida privata. Nessuno script crea
    account o pubblica da solo.
-1. **Il calendario, da tenere vivo.** Il workflow settimanale (Messa
-   online, punto j) rifà datamine, eventi e finestre ogni venerdì. Le prime
+1. **Il calendario, da tenere vivo.** Il workflow settimanale rifà datamine, eventi e finestre ogni venerdì. Le prime
    settimane gira in prova (`WEEKLY_APPLY=false`, e `dry_run` acceso nei
    lanci a mano): leggi 2-3 riepiloghi, aggiusta `db/prod/limits.json` se
    serve, controlla che i file su Pages siano quelli della tabella `asset`,
