@@ -1,6 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "regions": ["fra1"],
-  "ignoreCommand": "[ \"$VERCEL_ENV\" != production ]",
+  "ignoreCommand": "[ \"$VERCEL_ENV\" = preview ]",
   "crons": [{ "path": "/api/cron/purge", "schedule": "0 4 * * *" }]
 }

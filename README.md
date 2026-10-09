@@ -353,7 +353,7 @@ test/
   cpu.sh                      la CPU per richiesta su next start (npm run test:cpu)
 .github/workflows/weekly-data.yml   l'aggiornamento settimanale automatico
 scripts/assets-deploy.mjs     public/assets su Cloudflare Pages, con _headers (assets:deploy)
-vercel.json                   regione fra1, il cron della pulizia giornaliera, build solo per la produzione (ignoreCommand)
+vercel.json                   regione fra1, il cron della pulizia giornaliera, anteprime saltate (ignoreCommand)
 public/assets/                le immagini ospitate da noi (non versionate)
 backups/                      le copie di prod:backup (non versionate)
 docs/                         l'analisi competitiva e le decisioni di progetto
