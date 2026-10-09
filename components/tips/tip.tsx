@@ -12,6 +12,7 @@ import { canWrite } from '@/lib/viewer/types'
 import { TipVoto } from '@/components/tips/tip-voto'
 import { TipForm } from '@/components/tips/tip-form'
 import { TipElimina } from '@/components/tips/tip-elimina'
+import { HandleLink } from '@/components/handle-link'
 
 /**
  * Una tip. Il testo e' testo React (niente markdown, niente HTML); il
@@ -60,7 +61,7 @@ export function Tip({ tip }: { tip: TipRow }) {
       )}
       <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[11px] text-tenue">
         <TipVoto tipId={tip.id} score={tip.score} />
-        <span className="font-medium text-inchiostro">{tip.handle}</span>
+        <HandleLink handle={tip.handle} className="font-medium text-inchiostro" />
         <time dateTime={tip.createdAt.toISOString()}>{soloGiorno(tip.createdAt)}</time>
         {tip.editedAt && (
           <span

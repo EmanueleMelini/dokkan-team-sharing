@@ -1,5 +1,6 @@
 import { sql, sqlOne } from '@/lib/db'
 import { buildJson, type SlotBuild } from '@/lib/clears/build'
+import { VUOTI, type Classe, type FiltriClear, type Ordine, type TipoCarta } from '@/lib/clears/filtri'
 
 export type Region = 'global' | 'japan'
 export type Status = 'active' | 'upcoming' | 'past'
@@ -308,11 +309,66 @@ export const CLEAR_PER_PAGINA = 20
  */
 export const ORDINE_CLEAR = 'c.has_proof desc, c.score desc, c.turns nulls last, c.id'
 
+/** Gli altri due ordini della lista filtrata: costanti, mai costruiti dall'URL. */
+export const ORDINE_CLEAR_NUOVI = 'c.created_at desc, c.id'
+export const ORDINE_CLEAR_TURNI = 'c.turns asc nulls last, c.has_proof desc, c.score desc, c.id'
+const ORDINI_CLEAR: Record<Ordine, string> = {
+  top: ORDINE_CLEAR, new: ORDINE_CLEAR_NUOVI, turns: ORDINE_CLEAR_TURNI,
+}
+
+/*
+ * Le carte di una versione in ogni suo assetto: clear_card (la partenza,
+ * l'unica che hanno i clear di prima del 0016) piu' clear_lineup_card (ogni
+ * assetto, cambi a meta' evento compresi). I doppioni non contano: si
+ * chiede solo "c'e'" o "ce n'e' una che non...". Vuole l'alias c.
+ */
+const SQUADRA = `(select k.card_id from clear_card k where k.version_id = c.version_id
+     union all
+     select k.card_id from clear_lineup_card k where k.version_id = c.version_id)`
+
+/**
+ * Il pezzo di WHERE dei filtri (lib/clears/filtri.ts), da aggiungere dopo
+ * le condizioni su clear_current c. I nove valori arrivano legati da
+ * valoriFiltroClear, a partire da $primo: posizioni fisse come in
+ * searchCards (lib/cards.ts), e un filtro spento e' un "is null or" che il
+ * planner scarta, perche' pg prepara ogni query con i suoi valori veri.
+ * Senza tier lo potra' usare anche la pagina di una carta.
+ */
+export function filtroClear(primo: number): string {
+  const $ = (i: number) => `$${primo + i}`
+  return `
+       and (${$(0)}::boolean is not true or c.has_proof)
+       and (${$(1)}::boolean is not true or c.no_items)
+       and (${$(2)}::boolean is not true or c.deathless)
+       and (${$(3)}::smallint is null or c.turns <= ${$(3)}::smallint)
+       and (${$(4)}::bigint is null or exists (
+             select 1 from clear_card k
+             where k.version_id = c.version_id and k.role = 'leader' and k.card_id = ${$(4)}::bigint))
+       and not exists (
+             select 1 from unnest(${$(5)}::bigint[]) w(id)
+             where w.id not in ${SQUADRA})
+       and (${$(6)}::unit_type is null or not exists (
+             select 1 from ${SQUADRA} s(card_id) join card cd on cd.id = s.card_id
+             where cd.type <> ${$(6)}::unit_type))
+       and (${$(7)}::unit_class is null or not exists (
+             select 1 from ${SQUADRA} s(card_id) join card cd on cd.id = s.card_id
+             where cd.class <> ${$(7)}::unit_class))
+       and (${$(8)}::smallint is null or not exists (
+             select 1 from ${SQUADRA} s(card_id)
+             where not exists (select 1 from card_category cc
+                               where cc.card_id = s.card_id and cc.category_id = ${$(8)}::smallint)))`
+}
+
+/** I valori di filtroClear, nel suo ordine. Una lista di carte vuota non filtra. */
+export function valoriFiltroClear(f: FiltriClear): unknown[] {
+  return [f.proof, f.noItems, f.noKo, f.turns, f.leader, f.cards, f.mono, f.cls, f.cat]
+}
+
 /** I clear di una difficoltà in una regione, con la squadra e le prove. */
 export async function listClears(
   tierId: string,
   reg: Region,
-  { limit = CLEAR_PER_PAGINA, offset = 0 }: { limit?: number; offset?: number } = {},
+  { limit = CLEAR_PER_PAGINA, offset = 0, filtri = VUOTI }: { limit?: number; offset?: number; filtri?: FiltriClear } = {},
 ): Promise<ClearRow[]> {
   return sql<ClearRow>(
     `select c.id::text, c.version_id::text, u.handle, c.turns, c.no_items,
@@ -346,11 +402,135 @@ export async function listClears(
      from clear_current c
      join app_user u on u.id = c.author_id
      join clear_reputation rep on rep.clear_id = c.id
-     where c.stage_tier_id = $1::bigint and c.reg = $2 and c.status = 'published'
-     order by ${ORDINE_CLEAR}
+     where c.stage_tier_id = $1::bigint and c.reg = $2 and c.status = 'published'${filtroClear(5)}
+     order by ${ORDINI_CLEAR[filtri.sort] ?? ORDINE_CLEAR}
      limit $3 offset $4`,
-    [tierId, reg, limit, offset],
+    [tierId, reg, limit, offset, ...valoriFiltroClear(filtri)],
   )
+}
+
+/** Quanti clear del tier passano i filtri (lo stesso WHERE di listClears). */
+export async function countClears(tierId: string, reg: Region, filtri: FiltriClear): Promise<number> {
+  const r = await sqlOne<{ n: number }>(
+    `select count(*)::int as n from clear_current c
+     where c.stage_tier_id = $1::bigint and c.reg = $2 and c.status = 'published'${filtroClear(3)}`,
+    [tierId, reg, ...valoriFiltroClear(filtri)],
+  )
+  return r?.n ?? 0
+}
+
+export type CartaFiltro = {
+  id: string
+  name: string | null
+  epithet: string | null
+  type: TipoCarta
+  class: Classe
+  thumb_key: string | null
+  /** in quanti clear del tier (0 per un'etichetta letta da cardLabels) */
+  n: number
+}
+
+/** Le opzioni dei filtri di un tier, con quanti clear ha ciascuna. */
+export type FacetClear = {
+  cards: CartaFiltro[]
+  leaders: CartaFiltro[]
+  types: { id: TipoCarta; n: number }[]
+  classes: { id: Classe; n: number }[]
+  categories: { id: number; name: string; n: number }[]
+}
+
+/** Quante carte al massimo offre il filtro "usa la carta". */
+export const CARTE_FILTRO_MAX = 200
+
+/**
+ * Le opzioni dei filtri, contate su TUTTI i clear pubblicati del tier in
+ * questa regione (non su quelli gia' filtrati): ogni opzione da sola trova
+ * almeno un clear, e la query e' una sola per tier, in cache. Le stesse
+ * regole di filtroClear: ogni assetto conta, il leader e' quello di
+ * partenza, una categoria vale se ce l'ha ogni carta.
+ */
+export async function getClearFacets(tierId: string, reg: Region): Promise<FacetClear> {
+  const r = await sqlOne<FacetClear>(
+    `with v as (
+       select c.version_id from clear_current c
+       where c.stage_tier_id = $1::bigint and c.reg = $2 and c.status = 'published'
+     ),
+     sq as (
+       select distinct v.version_id, k.card_id from v cross join lateral (
+         select card_id from clear_card where version_id = v.version_id
+         union
+         select card_id from clear_lineup_card where version_id = v.version_id) k
+     ),
+     tot as (select version_id, count(*) as n from sq group by 1),
+     composizione as (
+       select sq.version_id, min(cd.type::text) as tipo, count(distinct cd.type) as tipi,
+              min(cd.class::text) as classe, count(distinct cd.class) as classi
+       from sq join card cd on cd.id = sq.card_id group by 1
+     ),
+     carte as (
+       select sq.card_id, count(*)::int as n from sq group by 1
+       order by 2 desc, 1 limit $3
+     ),
+     leader as (
+       select k.card_id, count(distinct k.version_id)::int as n
+       from v join clear_card k on k.version_id = v.version_id and k.role = 'leader'
+       group by 1
+     )
+     select
+       coalesce((select json_agg(json_build_object(
+                  'id', x.card_id::text, 'name', ct.name, 'epithet', ct.epithet,
+                  'type', cd.type, 'class', cd.class, 'thumb_key', cd.thumb_key, 'n', x.n)
+                order by x.n desc, ct.name nulls last, x.card_id)
+         from carte x join card cd on cd.id = x.card_id
+         left join card_text ct on ct.card_id = x.card_id and ct.locale = 'en'), '[]'::json) as cards,
+       coalesce((select json_agg(json_build_object(
+                  'id', x.card_id::text, 'name', ct.name, 'epithet', ct.epithet,
+                  'type', cd.type, 'class', cd.class, 'thumb_key', cd.thumb_key, 'n', x.n)
+                order by x.n desc, ct.name nulls last, x.card_id)
+         from leader x join card cd on cd.id = x.card_id
+         left join card_text ct on ct.card_id = x.card_id and ct.locale = 'en'), '[]'::json) as leaders,
+       coalesce((select json_agg(json_build_object('id', t.tipo, 'n', t.n)
+                order by t.n desc, array_position(enum_range(null::unit_type)::text[], t.tipo))
+         from (select tipo, count(*)::int as n from composizione where tipi = 1 group by 1) t), '[]'::json) as types,
+       coalesce((select json_agg(json_build_object('id', t.classe, 'n', t.n) order by t.n desc, t.classe desc)
+         from (select classe, count(*)::int as n from composizione where classi = 1 group by 1) t), '[]'::json) as classes,
+       coalesce((select json_agg(json_build_object('id', t.category_id, 'name', ctx.name, 'n', t.n)
+                order by t.n desc, ctx.name, t.category_id)
+         from (select x.category_id, count(*)::int as n
+               from (select sq.version_id, cc.category_id, count(*) as n
+                     from sq join card_category cc on cc.card_id = sq.card_id group by 1, 2) x
+               join tot on tot.version_id = x.version_id
+               where x.n = tot.n group by 1) t
+         join category_text ctx on ctx.category_id = t.category_id and ctx.locale = 'en'), '[]'::json) as categories`,
+    [tierId, reg, CARTE_FILTRO_MAX],
+  )
+  return r ?? { cards: [], leaders: [], types: [], classes: [], categories: [] }
+}
+
+/**
+ * Nome, titolo e miniatura di carte date per id: per le carte di un URL
+ * condiviso che fra le opzioni del tier non ci sono (nessuno le ha usate
+ * qui). n vale 0.
+ */
+export async function cardLabels(ids: string[]): Promise<CartaFiltro[]> {
+  const validi = ids.filter((id) => /^[1-9]\d{0,17}$/.test(id))
+  if (!validi.length) return []
+  return sql<CartaFiltro>(
+    `select cd.id::text, ct.name, ct.epithet, cd.type::text as type, cd.class::text as class, cd.thumb_key, 0 as n
+     from card cd left join card_text ct on ct.card_id = cd.id and ct.locale = 'en'
+     where cd.id = any($1::bigint[])
+     order by cd.id`,
+    [validi],
+  )
+}
+
+/** Il nome inglese di una categoria, o null. */
+export async function categoryName(id: number): Promise<string | null> {
+  const r = await sqlOne<{ name: string }>(
+    `select name from category_text where category_id = $1::smallint and locale = 'en'`,
+    [id],
+  )
+  return r?.name ?? null
 }
 
 /** La pagina (da 1) della lista del suo tier in cui sta un clear, o null. */

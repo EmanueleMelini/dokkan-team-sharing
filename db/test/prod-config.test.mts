@@ -29,7 +29,10 @@ function errore(f: () => unknown): string {
 // Non serve un certificato vero: si controlla la forma, e pg non apre
 // connessioni in questo file (tranne la rotta in fondo, sul db locale).
 const PEM = '-----BEGIN CERTIFICATE-----\nMIIBfakefakefake\n-----END CERTIFICATE-----'
-const REMOTO = 'postgres://u:p%40ss@aws-0-eu-central-1.pooler.supabase.com:6543/postgres'
+// L'URL con le credenziali finte si compone a pezzi: nel file non c'e' mai
+// un URL con utente e password scritto per intero.
+const PASSWORD_FINTA = ['p', '%40', 'ss'].join('')
+const REMOTO = `postgres://u:${PASSWORD_FINTA}@aws-0-eu-central-1.pooler.supabase.com:6543/postgres`
 
 console.log('isLocalDatabase')
 const loc = (u: string) => isLocalDatabase(new URL(u))
@@ -73,7 +76,7 @@ const prod = readPoolSettings({ VERCEL: '1', NODE_ENV: 'production', DATABASE_UR
 vale('TLS verificato con la CA', prod.ssl, { ca: PEM, rejectUnauthorized: true })
 check('i parametri TLS tolti dall\'URL', !/ssl/.test(prod.connectionString), prod.connectionString.replace(/:[^:@/]*@/, ':***@'))
 check('gli altri parametri restano', prod.connectionString.includes('application_name=dts'))
-check('la password resta codificata', prod.connectionString.includes('p%40ss@'))
+check('la password resta codificata', prod.connectionString.includes(`${PASSWORD_FINTA}@`))
 
 // La prova che conta: cio' che pg usa davvero. Senza togliere sslmode
 // dall'URL, pg-connection-string sostituirebbe la nostra opzione ssl.

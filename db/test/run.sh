@@ -5,15 +5,17 @@
 #   configurazione di produzione (pool, TLS, cron, IP) ->
 #   import dei dati veri (carte del wiki, poi quelle solo nel gioco) -> query
 #   delle pagine (lib/queries.ts vero) -> parametri dell'URL (lib/parametri.ts)
-#   -> URL degli eventi (lib/urls.ts) -> tag della cache (lib/cache/*)
+#   -> URL degli eventi (lib/urls.ts) -> filtri dei clear (parametri)
+#   -> tag della cache (lib/cache/*)
 #   -> builder dei clear (0016, lib/clears*, lib/cards.ts, /api/cards)
 #   -> build degli slot (0018, Skill Orb, /api/equipment) -> sfere
 #   esclusive (0021)
 #   -> settings dell'account (0019: scollegare, cancellare l'account)
 #   -> moderazione (0024: segnalazioni, nascosti, sospensioni, registro,
 #   letture di /admin, il lato di chi usa il sito) -> tip (0025)
+#   -> profili pubblici e cambio di handle (0026)
 #   -> carte solo nel gioco (load-game-cards) -> skill delle carte (0022)
-#   e la pagina della carta
+#   e la pagina della carta -> filtri dei clear
 #   -> finestre degli eventi dal
 #   gioco (load-windows) -> eventi creati dal gioco (load-game-events) ->
 #   stage delle riedizioni -> classificazione (story, SBR, archivi) ->
@@ -92,6 +94,11 @@ passo "parametri dell'URL" verifica node_ts db/test/parametri.test.mts
 # Gli URL degli eventi (lib/urls.ts): la grammatica dei percorsi e i link
 # che il sito costruisce. Funzioni pure, niente database.
 passo "URL degli eventi" verifica node_ts db/test/urls.test.mts
+# I filtri della lista dei clear (lib/clears/filtri.ts) e i loro URL
+# (lib/urls.ts filteredClearsHref, clearListHref): valori sbagliati che
+# valgono "non impostato", l'URL canonico, la guardia dei moduli puri.
+# Funzioni pure, niente database.
+passo "filtri dei clear (parametri)" verifica node_ts db/test/filtri.test.mts
 # La cache (lib/cache/*): i tag di ogni scrittura, i tag ammessi,
 # /api/revalidate con una funzione finta al posto di next/cache, e la
 # guardia che tiene lib/queries.ts, lib/clears.ts, lib/cards.ts,
@@ -144,6 +151,14 @@ passo "moderazione (lato utente)" verifica node_ts db/test/moderation-app.test.m
 # sospensione, report_content e mod_set_tip_status, le letture vere di
 # lib/tips.ts e della coda di /admin. Crea solo utenti tiptest+ e li toglie.
 passo "tip" verifica node_ts db/test/tips.test.mts
+# I profili pubblici e il cambio di handle (0026): la vista public_profile
+# con le sole colonne pubbliche, gli indici per autore, change_handle (forma,
+# riservati, nomi presi o lasciati, 30 giorni, le sole maiuscole, riprendere
+# il proprio nome), la corsa sotto il lock consultivo, /welcome che rifiuta i
+# nomi lasciati da altri, la sospensione che nasconde il profilo, la
+# cancellazione che libera i nomi, e le letture vere di lib/profiles.ts
+# (conteggi, lista, pagina del tier). Crea solo utenti profiletest+ e li toglie.
+passo "profili pubblici" verifica node_ts db/test/profiles.test.mts
 # Rilancia load-game-cards e load-datamine, e prova il passaggio al wiki
 # con una pagina finta su 1034200 (poi rimette la carta com'era).
 passo "carte dal gioco" verifica node_ts db/test/game-cards.test.mts
@@ -159,6 +174,14 @@ passo "pagina della carta (dati)" verifica node_ts db/test/card-page.test.mts
 # lib/card-art.ts (quale artwork, la scelta per carta nel localStorage).
 # Crea solo utenti cardpageui+ con i loro clear, e li toglie.
 passo "pagina della carta (pagina)" verifica node_ts db/test/card-page-ui.test.mts
+# I filtri della lista dei clear: listClears con i filtri, countClears,
+# getClearFacets, cardLabels e categoryName di lib/queries.ts, confrontati
+# con un modello in JS (ogni assetto conta, il leader e' quello di partenza,
+# mono ignora la classe, la categoria vuole ogni carta, turns esclude i
+# clear senza turni, i tre ordini, Japan e nascosti fuori, valori legati).
+# Crea solo utenti filterstest+ con i loro clear su un tier senza clear, e
+# li toglie.
+passo "filtri dei clear" verifica node_ts db/test/filters.test.mts
 # Per ultima: rilancia load-windows e set-event-window, e ritocca qualche
 # run per provarli (rimettendole come le ha trovate).
 passo "finestre dal gioco" verifica node_ts db/test/windows.test.mts

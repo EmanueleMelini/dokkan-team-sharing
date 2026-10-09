@@ -39,6 +39,7 @@
     "assets:deploy": "node scripts/assets-deploy.mjs",
     "db:test:queries": "./db/test/queries.test.sh",
     "test:parametri": "node --experimental-strip-types --disable-warning=ExperimentalWarning --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./db/test/alias.mjs db/test/parametri.test.mts",
+    "test:filtri": "node --experimental-strip-types --disable-warning=ExperimentalWarning --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./db/test/alias.mjs db/test/filtri.test.mts",
     "test:smoke": "./test/smoke.sh",
     "test:auth-smoke": "./test/auth-smoke.sh",
     "test:cpu": "./test/cpu.sh"

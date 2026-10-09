@@ -10,7 +10,10 @@ import { friendlyAccountError, handleMatches } from '@/lib/auth/account'
 import { PROVIDERS } from '@/lib/auth/env'
 import { safeNext } from '@/lib/auth/safe-next'
 import { requireFreshUser, requireOnboardedUser, requireUser } from '@/lib/dal'
-import { collectUserFootprint, invalidateUser } from '@/lib/cache/invalidate'
+import { afterUserChanged, collectUserFootprint, invalidateProfiles, invalidateUser } from '@/lib/cache/invalidate'
+import { friendlyHandleError, nextHandleChange } from '@/lib/auth/handle-change'
+import { handleChangedAt } from '@/lib/auth/handle-state'
+import { soloGiorno } from '@/lib/date'
 import { HINT_COOKIE } from '@/lib/viewer/hint'
 
 // Le Server Action dell'accesso. Ognuna si comporta come un endpoint
@@ -63,6 +66,8 @@ export async function completeOnboardingAction(
 
   try {
     await sql('select complete_onboarding($1, $2, $3)', [user.id, handle, reg])
+    // Il profilo nuovo: una visita di prima a /users/<handle> e' un 404 in cache
+    invalidateProfiles([handle], 'now')
   } catch (e) {
     const msg = onboardingError(e)
     if (msg !== 'done') return { ...echo, error: msg }
@@ -74,12 +79,13 @@ export async function completeOnboardingAction(
 
 function onboardingError(e: unknown): string {
   if (!(e instanceof DatabaseError)) throw e
-  if (e.code === '23505') return 'That handle is already taken. Try another one.'
-  if (e.code === '23514') {
-    if (e.constraint === 'already_onboarded') return 'done'
-    if (e.constraint === 'handle_reserved') return 'That handle is reserved. Try another one.'
-    return 'Use 3 to 24 characters: letters, digits or underscores.'
-  }
+  if (e.constraint === 'already_onboarded') return 'done'
+  // Le frasi sono quelle del cambio di handle (handle_shape, handle_reserved,
+  // handle_taken, e il 23505 dell'unique di app_user): una tabella sola
+  const msg = friendlyHandleError(e)
+  if (msg) return msg
+  // Un altro 23514 e' un check di forma di app_user, l'ultima difesa
+  if (e.code === '23514') return friendlyHandleError({ constraint: 'handle_shape' })!
   throw e
 }
 
@@ -177,4 +183,48 @@ export async function setArtPreferenceAction(_prev: ArtPreferenceState, form: Fo
   // nella cache del router, cosi' tornandoci si vede il valore nuovo.
   revalidatePath('/settings')
   return { saved: v }
+}
+
+// ---------------------------------------------------------------------
+//  Settings: il cambio dell'handle (0026)
+// ---------------------------------------------------------------------
+
+/**
+ * changed: l'handle nuovo, per il messaggio e per far rileggere /api/me
+ * all'header. reauth come per le altre azioni dell'account.
+ */
+export type HandleState = { error?: string; reauth?: boolean; changed?: string; handle?: string }
+
+/**
+ * Cambia l'handle della sessione. Chiede un accesso recente, come
+ * scollegare un provider: un handle e' l'identita' pubblica, e chi trova
+ * una sessione aperta non deve poterla cambiare. Le regole (30 giorni, le
+ * sole maiuscole libere, i nomi lasciati, la sospensione) le impone
+ * change_handle; qui la forma si controlla prima per non fare un giro su
+ * Postgres per niente.
+ */
+export async function changeHandleAction(_prev: HandleState, form: FormData): Promise<HandleState> {
+  const user = await requireFreshUser('/settings')
+  if (!user) return { reauth: true }
+  const handle = String(form.get('handle') ?? '').trim()
+  if (!HANDLE.test(handle)) return { handle, error: 'Use 3 to 24 characters: letters, digits or underscores.' }
+  if (handle === user.handle) return { handle, error: 'That is already your handle.' }
+  const vecchio = user.handle
+  try {
+    await sql('select change_handle($1::uuid, $2)', [user.id, handle])
+  } catch (e) {
+    if (!(e instanceof DatabaseError)) throw e
+    const msg = friendlyHandleError(e)
+    if (!msg) throw e
+    if (e.constraint !== 'handle_cooldown') return { handle, error: msg }
+    const dopo = nextHandleChange(await handleChangedAt(user.id))
+    return { handle, error: dopo ? `${msg} You can change it again on ${soloGiorno(dopo)}.` : msg }
+  }
+  // Ogni pagina che mostrava il nome vecchio: i suoi eventi, le carte, il
+  // profilo vecchio (che ora porta al nuovo) e quello nuovo. Gli id
+  // arrivano dal database (userFootprint), mai dal form.
+  await afterUserChanged(user.id, { extraHandles: [vecchio] })
+  // /settings e' per utente e dinamica: si ridisegna col nome nuovo.
+  revalidatePath('/settings')
+  return { changed: handle }
 }

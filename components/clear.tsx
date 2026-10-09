@@ -5,6 +5,7 @@ import { Commenti } from '@/components/clears/commenti'
 import { AzioniProprie } from '@/components/clears/azioni-proprie'
 import { VotoClear } from '@/components/clears/voto'
 import { SegnalaClear } from '@/components/moderation/segnala-isole'
+import { HandleLink } from '@/components/handle-link'
 import { soloGiorno } from '@/lib/date'
 import type { ClearComment, VersionLineup } from '@/lib/clears'
 import type { ClearProof, ClearRow } from '@/lib/queries'
@@ -67,7 +68,8 @@ export function Clear({ clear, eventId, ritorno, cambi, commenti }: Props) {
     <article aria-labelledby={titolo} className="border border-linea rounded-[var(--raggio)] bg-superficie p-4">
       <header className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
         <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
-          <h3 id={titolo} className="scroll-mt-6 text-[13px] font-medium text-inchiostro">{clear.handle}</h3>
+          {/* Il link sta dentro l'h3: il titolo dell'articolo resta l'handle */}
+          <h3 id={titolo} className="scroll-mt-6 text-[13px] font-medium text-inchiostro"><HandleLink handle={clear.handle} /></h3>
           {clear.has_proof && (
             <Segno icona={<Camera size={12} weight="bold" className="text-oro" aria-hidden />}>Proof</Segno>
           )}

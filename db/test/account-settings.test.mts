@@ -71,7 +71,7 @@ async function cascate() {
   const versoUtente = fk.filter((f) => f.madre === 'app_user').map((f) => f.figlia).sort()
   check('le tabelle che puntano a app_user sono quelle note',
     versoUtente.join(',') === 'auth_account,auth_session,clear,clear_comment,clear_vote,clear_write_log,' +
-      'moderation_action,moderation_action,report,report,team,tip,tip_vote',
+      'handle_history,moderation_action,moderation_action,report,report,team,tip,tip_vote',
     versoUtente.join(','))
   const trig = await num(
     `select count(*) from pg_trigger where tgname = 'report_target_gone'

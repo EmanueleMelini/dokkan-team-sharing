@@ -11,6 +11,10 @@ export type Ricerca = Record<string, string | string[] | undefined>
 /** Un parametro ripetuto (?q=a&q=b) arriva come array: vale il primo. */
 export const uno = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v)
 
+/** Un parametro che puo' ripetersi (?card=a&card=b): sempre un array, vuoto se manca. */
+export const molti = (v: string | string[] | undefined): string[] =>
+  v === undefined ? [] : Array.isArray(v) ? v.filter((x) => typeof x === 'string') : [v]
+
 export const regione = (sp: Ricerca): Region => (uno(sp.region) === 'japan' ? 'japan' : 'global')
 
 // Nessun filtro arriva a centomila pagine. Il tetto serve all'offset:

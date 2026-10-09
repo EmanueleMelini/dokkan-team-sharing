@@ -351,6 +351,9 @@ export type UserFootprint = { eventIds: string[]; cardIds: string[]; handles: st
  * quelle che ha votato; le carte dei suoi
  * clear; il suo profilo e quello degli autori che ha votato (i voti
  * ricevuti stanno nel profilo). Da leggere PRIMA di cancellare.
+ * Anche i nomi lasciati (handle_history): /users/<vecchio> in cache e' un
+ * 308 o, durante una sospensione, un 404 col solo tag del vecchio nome, e
+ * deve cambiare quando la sospensione finisce o l'account se ne va.
  */
 export async function userFootprint(userId: string, extraHandles: string[] = []): Promise<UserFootprint> {
   const [eventi, carte, handle] = await Promise.all([
@@ -383,7 +386,8 @@ export async function userFootprint(userId: string, extraHandles: string[] = [])
        union select a.handle::text from clear_vote x
          join clear_version v on v.id = x.version_id join clear c on c.id = v.clear_id
          join app_user a on a.id = c.author_id
-        where x.user_id = $1::uuid`,
+        where x.user_id = $1::uuid
+       union select h.handle::text from handle_history h where h.user_id = $1::uuid`,
       [userId],
     ),
   ])

@@ -11,13 +11,16 @@ a questa conclusione sta in `docs/`.
 ## Stato
 
 Lo strato database è completo e verificato, con le carte, gli eventi e le
-missioni veri. Sopra c'è il sito: le pagine degli eventi, gli account, il
-builder con cui si inviano i clear, la moderazione (segnalazioni e `/admin`),
-le tip dei giocatori nella pagina evento e la pagina di ogni carta
-(`/cards/<id>`). I numeri sono quelli di `dokkan_dev`
-all'8 ottobre 2026.
+missioni veri. Sopra c'è il sito, pronto per la messa online: le pagine
+degli eventi (con le missioni e i filtri della lista dei clear), gli
+account, il builder con cui si inviano i clear, la moderazione
+(segnalazioni e `/admin`), le tip dei giocatori nella pagina evento, la
+pagina di ogni carta (`/cards/<id>`) e il profilo pubblico di ogni
+giocatore (`/users/<handle>`). Manca solo quello che va fatto a mano
+(sezione "Cosa manca, in ordine"). I numeri sono quelli di `dokkan_dev`
+all'8 ottobre 2026; schema e verifiche anche di `dokkan_test`.
 
-- **66 tabelle, 3 view, 15 trigger, 77 funzioni** su PostgreSQL 15, in 25
+- **68 tabelle, 4 view, 15 trigger, 80 funzioni** su PostgreSQL 15, in 26
   migrazioni
 - **2697 carte**: 2651 dal wiki, con link skill, categorie, statistiche e
   date di uscita separate per Japan e Global, più 46 che ha solo il gioco
@@ -36,20 +39,22 @@ all'8 ottobre 2026.
   sua regola su chi la monta: 1852 per tipo e classe, 5042 per categoria,
   1825 per lista di carte, 138 per nome
 - **6246 immagini** ospitate da noi
-- **1946 verifiche automatiche** in `db:test`: 38 passi, di cui 9
-  preparano il database e 29 sono suite di verifica, tutte verdi, su un
-  database a parte che non è quello di sviluppo
+- **2183 verifiche automatiche** in `db:test`: 41 passi, di cui 9
+  preparano il database e 32 sono suite di verifica, tutte verdi, su un
+  database a parte che non è quello di sviluppo. In più `test:smoke` (57
+  controlli contro `next start`) e `test:auth-smoke` sul sito che gira
 
 Tre regole recenti da sapere:
 
-- **Le pagine pubbliche stanno in cache e non leggono la sessione.** Gli
-  URL degli eventi si costruiscono con `lib/urls.ts`, i dati di chi guarda
-  arrivano solo da `/api/me` nelle isole client, e ogni scrittura
-  invalida per tag (sezione "Cache e budget CPU"). Dopo un import in
-  locale: `npm run cache:clear`.
+- **Le pagine pubbliche stanno in cache e non leggono la sessione.**
+  Eventi, carte e profili: gli URL si costruiscono con `lib/urls.ts`, i
+  dati di chi guarda arrivano solo da `/api/me` nelle isole client, e ogni
+  scrittura invalida per tag (sezione "Cache e budget CPU"). Dopo un
+  import in locale: `npm run cache:clear`.
 
 - **Le azioni sensibili chiedono un accesso recente.** Scollegare o
-  collegare un provider e cancellare l'account passano solo con una
+  collegare un provider, cambiare l'handle, sospendere un utente e
+  cancellare l'account passano solo con una
   sessione nata da meno di 15 minuti; altrimenti si rientra da
   `/settings/sign-in`, senza uscire (sezione "Gli account").
 - **Le Skill Orb esclusive si rispettano.** Il builder mostra solo le sfere
@@ -82,7 +87,7 @@ Tre regole recenti da sapere:
 npm install
 npm run db:fetch     # scarica wikitext e CSV del gioco (in cache, una volta)
 npm run db:refresh   # ricrea, migra, importa carte, eventi, correzioni e immagini
-npm run db:test      # le 262 verifiche, su dokkan_test: lo sviluppo non si tocca
+npm run db:test      # tutte le verifiche, su dokkan_test: lo sviluppo non si tocca
 npm run dev          # http://localhost:3000
 ```
 
@@ -118,14 +123,16 @@ dopo `load-datamine` (`db/prod/pipeline.mjs`, spiegato in "Messa online").
    nessuna richiesta di rete;
 4. verifica le **query che alimentano le pagine** chiamando le funzioni vere
    di `lib/queries.ts` (`queries.test.mts`, 124), i **parametri dell'URL**
-   di `lib/parametri.ts` (`parametri.test.mts`, 42), gli **URL degli
-   eventi** di `lib/urls.ts` (`urls.test.mts`) e i **tag della cache**
+   di `lib/parametri.ts` (`parametri.test.mts`, 43), gli **URL degli
+   eventi** di `lib/urls.ts` (`urls.test.mts`), i **parametri dei filtri**
+   dei clear (`filtri.test.mts`, 72) e i **tag della cache**
    (`cache-tags.test.mts`);
 5. poi le suite del builder, degli account, della moderazione (SQL, area
-   admin, lato utente), delle tip (`tips.test.mts`), dei dati del gioco,
-   dei testi delle skill (`card-page.test.mts`), della pagina della carta
-   (`card-page-ui.test.mts`) e, per ultima, dell'aggiornamento settimanale
-   (`weekly-data.test.mts`).
+   admin, lato utente), delle tip (`tips.test.mts`), dei profili e del
+   cambio di handle (`profiles.test.mts`), dei dati del gioco, dei testi
+   delle skill (`card-page.test.mts`), della pagina della carta
+   (`card-page-ui.test.mts`), dei filtri dei clear (`filters.test.mts`) e,
+   per ultima, dell'aggiornamento settimanale (`weekly-data.test.mts`).
 
 Un passo che prepara i dati, se fallisce, ferma tutto; una suite rossa non
 ferma le altre. Alla fine c'è un riepilogo, e il comando esce con errore se
@@ -151,8 +158,8 @@ poi secondo il server:
 
 `npm run db:test:queries` rigira solo le verifiche delle query, per le
 iterazioni veloci dopo un `db:test` (che prepara fixture e dati importati);
-`npm run test:parametri` solo quelle dei parametri, che non usano il
-database. Le query si provano senza un passo di build: Node toglie i tipi al
+`npm run test:parametri` e `npm run test:filtri` solo quelle dei parametri
+dell'URL e dei filtri, che non usano il database. Le query si provano senza un passo di build: Node toglie i tipi al
 volo (`--experimental-strip-types`) e `db/test/alias.mjs` gli insegna gli
 alias `@/` di tsconfig.
 
@@ -167,11 +174,17 @@ delle viste (`/japan`, `/t/<tier>`, `/p/<n>`, con i loro 404), del 307 da
 `/settings` senza sessione (307 a `/login`) e di `/api/me` senza cookie.
 Sulla pagina di una sfida cerca il blocco delle tip nella versione anonima;
 sulle carte prova `/cards/<id>` (200), la forma Z (308 verso la base) e gli
-id sbagliati (404). Gli eventi da
-aprire li prende dalle viste filtrate: servono i dati importati, non i
-clear dimostrativi. Contro `next start` con `SMOKE_EXPECT_CACHE=1`
-controlla anche che la seconda visita esca dalla cache (`x-nextjs-cache:
-HIT`).
+id sbagliati (404); sulla lista filtrata dei clear il noindex, il
+canonical al tier e i valori sbagliati (200, mai un 500); sui profili un
+profilo vero, il 308 delle maiuscole diverse e gli handle che non ci sono,
+malformati o riservati (404). Gli eventi da aprire li prende dalle viste
+filtrate: servono i dati importati. Il profilo lo cerca nelle pagine
+evento, o lo prende da `SMOKE_PROFILE_HANDLE` (con `db:demo`:
+`demo_rotation`). Contro `next start` con `SMOKE_EXPECT_CACHE=1`
+controlla anche che la seconda visita a `/events`, a un evento, a una
+carta e a un profilo esca dalla cache (`x-nextjs-cache: HIT`), e accetta
+i redirect e i 404 che lì arrivano nello stream (sezione "Cache e budget
+CPU").
 
 `npm run db:demo` crea tre clear dimostrativi su un evento **vero**,
 passando da `submit_clear()` — serve a vedere la pagina popolata invece che
@@ -259,88 +272,108 @@ database che finisce per `_test`.
 ## Struttura
 
 ```
-app/                        Next.js 16, App Router
-  admin/                    l'area dei moderatori: coda, nascosti, utenti, registro (404 per chi non e' admin)
-  cards/[id]/               la pagina di una carta: pubblica, in cache, 308 dalla forma Z, 404 vero
-proxy.ts                    solo per /admin: senza cookie di sessione un 404 vero, senza database
+app/                          Next.js 16, App Router
+  events/                     /events (statica), browse/ (viste filtrate, dinamiche)
+    [id]/                     la pagina evento; [...view]/ per /japan, /t/<tier>, /p/<n>
+      clears/                 la lista filtrata dei clear di un tier (dinamica, noindex)
+      clears/[clearId]/edit/  la modifica di un proprio clear
+      submit/                 il builder per inviare un clear
+  cards/[id]/                 la pagina di una carta: pubblica, in cache, 308 dalla forma Z, 404 vero
+  users/[handle]/             il profilo pubblico (e p/[n]/ dalla pagina 2): in cache, 308 dai nomi lasciati
+  login/, welcome/            l'accesso e la prima entrata (handle e regione)
+  settings/                   l'account: handle, display, provider, clear nascosti, cancellazione; sign-in/ per rientrare
+  admin/                      l'area dei moderatori: coda, nascosti, utenti, registro (404 per chi non e' admin)
+  privacy/, terms/            le pagine legali (testi in lib/legale.ts)
+  api/                        auth/ (better-auth), me/ (chi guarda), cards/ e equipment/ (i picker),
+                              revalidate/ (dopo un import), cron/purge/ (la pulizia giornaliera)
+  robots.ts, sitemap.ts       cosa indicizzare: eventi e carte, mai le viste filtrate
+proxy.ts                      solo per /admin: senza cookie di sessione un 404 vero, senza database
+instrumentation.ts            all'avvio: controlla la configurazione dell'accesso, pulizia delle sessioni
+components/
+  evento/, eventi/            la pagina evento e la lista, uguali per tutti (stanno in cache)
+  clear.tsx, clears/          la scheda di un clear (squadre, cambi, voti, commenti, Delete) e i filtri della lista
+  builder/                    il builder dei clear: slot, picker delle carte, build, dettagli, prove
+  cards/, carta.tsx           la pagina della carta, e il nome di una carta come link
+  profile/, handle-link.tsx   il profilo pubblico, e l'handle come link al profilo
+  tips/                       il blocco delle tip: lista, Top/New, Helpful, Report, il form
+  moderation/                 Report e il banner della sospensione (isole), la coda, i form e il registro di /admin
+  auth/                       accesso, /welcome, Settings (handle, provider, artwork, cancellazione), l'utente nell'header
+  viewer/                     ViewerProvider e useViewer(): le isole client che leggono /api/me
+  missioni.tsx                le missioni di un evento, con i premi
+lib/
+  queries.ts                  le letture delle pagine evento (pure): eventi, stage, clear, filtri, faccette
+  clears.ts, clears/          il builder e il clear: letture, Server Action, validatori, frasi d'errore, filtri
+  tips.ts, tips/              le tip: letture (pure), Server Action, validatori, frasi d'errore
+  card-page.ts, card-art.ts   la pagina della carta (pura) e la scelta dell'artwork
+  profiles.ts                 i profili (pure): solo dalla vista public_profile
+  cards.ts, equipment.ts      le ricerche dei picker (anche GET /api/cards e /api/equipment)
+  parametri.ts, urls.ts       la query string letta con difesa, e tutti gli URL interni
+  cache/                      'use cache' sopra le query pure, i tag, l'invalidazione, /api/revalidate
+  viewer/                     chi guarda: il tipo di /api/me e il cookie dts_signed_in
+  auth/                       better-auth: configurazione, mittente del link, Server Action, regole di Settings e dell'handle
+  dal.ts                      chi e' l'utente: requireUser / requireOnboardedUser / requireFreshUser (mai nelle pagine pubbliche)
+  moderation/                 motivi, frasi d'errore, Report, requireAdmin, letture e azioni di /admin
+  legale.ts                   i numeri e i testi di privacy e terms
+  db.ts, db-config.ts         la pool (una per processo) e le sue impostazioni: dimensioni, TLS
+  cron.ts                     l'autenticazione delle rotte di Vercel Cron
 db/
-  migrations/               NNNN_*.sql, applicate in ordine, mai modificate
-    0001_schema.sql         tabelle, view, indici, trigger dei punteggi
-    0002_write_api.sql      proof_host, trigger di congelamento, funzioni
-    0016_clear_builder.sql  invio e revisione dal sito in una transazione, assetti congelati
-    0017_rerun_stages.sql   stage.game_quest_id: gli stage che una riedizione aggiunge
-    0018_slot_builds.sql    le build degli slot (Hidden Potential, Skill Orb), congelate con la versione
-    0019_account_settings.sql  Settings: unlink_provider, delete_account, le segnalazioni col bersaglio
-    0021_equipment_limits.sql  le Skill Orb esclusive: chi puo' montare quale sfera, controllato dal builder
-    0022_card_skills.sql    card_skill: i testi completi delle skill, con EZA e Super EZA; set_prefers_animated
-    0023_import_run.sql     import_run: un import alla volta, e l'ultimo riuscito per l'aggiornamento settimanale
-    0024_moderation.sql     segnalazioni con motivo, nascosti, sospensioni, moderation_action (solo in aggiunta)
-    0025_tips.sql           le tip: bersaglio, limiti, link senza accorciatori, voto Helpful, Report e mod_set_tip_status
-  admin/set-role.mjs        il ruolo di un utente, solo da script (db:role, prod:role)
-  seed/                     demo-clears.mjs: tre clear dimostrativi su un evento vero (db:demo)
-  queries/reference.sql     le query di lettura principali, documentate
-  test/                     le verifiche: run.sh le mette in fila (npm run db:test)
-  cache-clear.mjs           invalida la cache del server di sviluppo dopo un import (npm run cache:clear)
-  import/
-    fetch-wiki.mjs          scarica il wikitext delle carte, in cache
-    fetch-events.mjs        scarica il wikitext degli eventi, in cache
-    load-cards.mjs          interpreta le carte e le scrive, idempotente
-    wiki-skills.mjs         il template Characters letto come MediaWiki: i testi delle skill (card_skill)
-    load-game-cards.mjs     le carte uscite su Global senza pagina wiki, dal datamine (db:game-cards)
-    game-cards.mjs          la sua scelta: quali righe del datamine sono carte che mancano davvero
-    load-events.mjs         idem per eventi, stage e difficoltà
-    load-game-events.mjs    gli eventi che il wiki non ha, dal datamine del gioco
-    game-events/            i suoi moduli: classify, build, write, i legami del wiki, gli stage delle riedizioni
-    quest-refs.mjs          i legami per quest (Super Battle Road, archivi), per load-windows
-    load-missions.mjs       le missioni Global e i loro premi, dal datamine (db:missions)
-    missions/               i suoi moduli: owner (di che evento), text, rewards, write
-    load-equipment.mjs      le Skill Orb, le loro regole e le abilita' del Hidden Potential (db:equipment)
-    equipment-limits.mjs    le regole delle esclusive dal gioco alle nostre carte (funzioni pure)
-    fetch-assets.mjs        scarica le immagini e le registra in asset (--offline: solo dal disco)
-    .cache/                 il wikitext scaricato (non versionato)
-  prod/                     gli script contro la produzione (prod:setup, prod:update, prod:backup)
-    target.mjs              il bersaglio: PROD_DATABASE_URL, i rifiuti, il TLS, la conferma --yes
-    pipeline.mjs            l'ordine dell'import, uguale per setup e update
-    harden.mjs              toglie i privilegi su public ai ruoli della Data API di Supabase
-    snapshot.mjs, compare.mjs, limits.json  la fotografia delle tabelle e i limiti dell'aggiornamento settimanale
-    dump.mjs, rehearsal.mjs il backup della produzione e il giro di prova su una copia locale
-    sanity.mjs, last-run.mjs, missing-assets.mjs, mirror-assets.mjs  i controlli e le immagini del workflow
-.github/workflows/weekly-data.yml  l'aggiornamento settimanale automatico (Messa online, punto j)
-public/assets/              le immagini ospitate da noi (non versionate)
-  migrate.mjs               runner: applica le pendenti, una transazione ciascuna
-  reset.mjs                 ricostruisce il database di sviluppo da zero
-  local.sh                  avvia/ferma il cluster locale
-docs/                       l'analisi competitiva e le decisioni di progetto
-test/smoke.sh               prova di fumo sul sito che gira (npm run test:smoke)
-test/auth-smoke.sh          il giro del magic link sul sito che gira (npm run test:auth-smoke)
-lib/auth/                   better-auth: configurazione, mittente del link, Server Action
-lib/dal.ts                  chi e' l'utente: requireUser / requireOnboardedUser (mai nelle pagine pubbliche)
-lib/urls.ts                 gli URL degli eventi: /events/<id>[/japan][/t/<tier>[/p/<n>]], /events/browse
-lib/cache/                  'use cache' sopra le query pure, i tag, l'invalidazione, /api/revalidate
-lib/viewer/                 chi guarda: il tipo di /api/me e il cookie dts_signed_in
-lib/clears/                 le Server Action dei clear, i loro validatori e le frasi d'errore
-lib/moderation/             motivi, frasi d'errore, Report (report-actions), requireAdmin (guard), letture e azioni di /admin
-lib/clears.ts               le letture del builder e del clear: modifica, cambi, voti, commenti
-lib/tips.ts                 le letture delle tip (pure): la lista per tier ed evento, lo stato di chi guarda per /api/me
-lib/tips/                   le Server Action delle tip, i loro validatori e le frasi d'errore
-lib/card-page.ts            le letture della pagina della carta (pure): carta, skill per livello, catena, clear che la usano
-lib/card-art.ts             statico o animato: la scelta dell'artwork e quella per carta nel localStorage
-lib/cards.ts                la ricerca delle carte per il picker (anche GET /api/cards)
-lib/equipment.ts            la ricerca delle Skill Orb per le build (anche GET /api/equipment)
-lib/db.ts, lib/db-config.ts la pool (una per processo) e le sue impostazioni: dimensioni, TLS
-lib/cron.ts                 l'autenticazione delle rotte di Vercel Cron (app/api/cron/)
-vercel.json                 regione fra1 e il cron della pulizia giornaliera
-scripts/assets-deploy.mjs   public/assets su Cloudflare Pages, con _headers (assets:deploy)
-backups/                    le copie di prod:backup (non versionate)
-components/builder/         il builder dei clear: slot, picker delle carte, build, dettagli, prove
-components/clears/          la scheda di un clear: squadre, cambi, voti, commenti, Delete
-components/evento/, eventi/ la pagina evento e la lista, uguali per tutti (stanno in cache)
-components/viewer/          ViewerProvider e useViewer(): le isole client che leggono /api/me
-components/moderation/      Report e il banner della sospensione (isole), la coda, i form e il registro di /admin
-components/tips/            il blocco delle tip nella pagina evento: lista, Top/New, Helpful, Report, il form
-components/cards/           la pagina della carta: artwork, schede delle skill per livello, catena, clear con la carta
-test/cpu.sh                 la CPU per richiesta su next start (npm run test:cpu)
+  migrations/                 NNNN_*.sql, applicate in ordine, mai modificate (0001-0026, elenco sotto)
+  migrate.mjs                 runner: applica le pendenti, una transazione ciascuna (--check per sapere se e' indietro)
+  reset.mjs                   ricostruisce un database da zero (--fixture per i test)
+  env.mjs                     la sorgente unica di DATABASE_URL per gli script
+  local.sh, pgenv.sh          il cluster locale opzionale e le variabili PG*
+  cache-clear.mjs             invalida la cache del server di sviluppo dopo un import (npm run cache:clear)
+  import/                     gli import, idempotenti, dalle cache locali (vedi sotto)
+    fetch-wiki.mjs, fetch-events.mjs, fetch-datamine.mjs   scaricano wiki e datamine, in cache
+    load-cards.mjs, wiki-skills.mjs   le carte del wiki e i testi delle skill (card_skill)
+    load-game-cards.mjs, game-cards.mjs   le carte uscite su Global senza pagina wiki
+    load-events.mjs           eventi, stage e difficolta' dal wiki
+    load-datamine.mjs         correzioni e arricchimenti dal gioco
+    load-game-events.mjs, game-events/   gli eventi che il wiki non ha, e gli stage delle riedizioni
+    load-windows.mjs, set-event-window.mjs, quest-refs.mjs   le finestre Global dal gioco
+    load-missions.mjs, missions/   le missioni Global e i loro premi
+    load-equipment.mjs, equipment-limits.mjs   le Skill Orb e le loro regole
+    fetch-assets.mjs          le immagini (--offline: solo dal disco; --missing: solo quelle senza riga)
+    .cache/                   wikitext e CSV scaricati (non versionati)
+  prod/                       gli script contro la produzione (prod:setup, prod:update, prod:backup, ...)
+    target.mjs                il bersaglio: PROD_DATABASE_URL, i rifiuti, il TLS, la conferma --yes
+    pipeline.mjs              l'ordine dell'import, uguale per setup e update
+    harden.mjs                toglie i privilegi su public ai ruoli della Data API di Supabase
+    tables.mjs                ogni tabella classificata: di gioco o degli utenti
+    snapshot.mjs, compare.mjs, limits.json   la fotografia delle tabelle e i limiti dell'aggiornamento settimanale
+    dump.mjs, rehearsal.mjs   il backup della produzione e il giro di prova su una copia locale
+    sanity.mjs, last-run.mjs, missing-assets.mjs, mirror-assets.mjs   i controlli e le immagini del workflow
+  admin/set-role.mjs          il ruolo di un utente, solo da script (db:role, prod:role)
+  seed/demo-clears.mjs        tre clear dimostrativi su un evento vero (db:demo)
+  queries/reference.sql       le query di lettura principali, documentate
+  test/                       le verifiche: run.sh le mette in fila (npm run db:test), fixture/ i dati di prova
+test/
+  smoke.sh                    prova di fumo sul sito che gira (npm run test:smoke)
+  auth-smoke.sh               il giro del magic link sul sito che gira (npm run test:auth-smoke)
+  cpu.sh                      la CPU per richiesta su next start (npm run test:cpu)
+.github/workflows/weekly-data.yml   l'aggiornamento settimanale automatico (Messa online, punto j)
+scripts/assets-deploy.mjs     public/assets su Cloudflare Pages, con _headers (assets:deploy)
+vercel.json                   regione fra1 e il cron della pulizia giornaliera
+public/assets/                le immagini ospitate da noi (non versionate)
+backups/                      le copie di prod:backup (non versionate)
+docs/                         l'analisi competitiva e le decisioni di progetto
 ```
+
+Le migrazioni che contano per il sito, oltre allo schema dei dati (0001-0013, 0015, 0017):
+
+| | |
+|---|---|
+| `0002_write_api.sql` | `proof_host`, trigger di congelamento, le funzioni di scrittura |
+| `0014_auth.sql` | gli account: better-auth sulle nostre tabelle, `complete_onboarding` |
+| `0016_clear_builder.sql` | invio e revisione dal sito in una transazione, assetti congelati |
+| `0018_slot_builds.sql` | le build degli slot (Hidden Potential, Skill Orb), congelate con la versione |
+| `0019_account_settings.sql`, `0020` | Settings: `unlink_provider`, `delete_account` e la sua guardia |
+| `0021_equipment_limits.sql` | le Skill Orb esclusive: chi può montare quale sfera |
+| `0022_card_skills.sql` | `card_skill`: i testi completi delle skill, con EZA e Super EZA; `set_prefers_animated` |
+| `0023_import_run.sql` | `import_run`: un import alla volta, e l'ultimo riuscito |
+| `0024_moderation.sql` | segnalazioni con motivo, nascosti, sospensioni, `moderation_action` |
+| `0025_tips.sql` | le tip: bersaglio, limiti, link senza accorciatori, voto Helpful, Report |
+| `0026_public_profiles.sql` | `public_profile`, `handle_history`, `change_handle`, gli indici per autore |
 
 ### Sulle migrazioni
 
@@ -1165,8 +1198,8 @@ aggiornamenti si leggono gli avvisi di sicurezza prima di cambiare numero.
 - `app/api/auth/[...all]/route.ts`: le rotte di better-auth (callback OAuth,
   verifica del link, sessione, uscita).
 - Le pagine: `/login`, `/welcome` (prima entrata: handle e regione),
-  `/settings` (metodi di accesso collegati, scollegare, uscita, cancellare
-  l'account). Nell'header, dentro un
+  `/settings` (handle, artwork, metodi di accesso collegati, scollegare,
+  clear nascosti, cancellare l'account). Nell'header, dentro un
   `<Suspense>`, "Sign in" oppure l'utente.
 
 **Le regole, e perché.**
@@ -1187,8 +1220,10 @@ aggiornamenti si leggono gli avvisi di sicurezza prima di cambiare numero.
   niente cache nel cookie: uscire o revocare vale subito.
 - Alla prima entrata l'utente ha un handle provvisorio `user_xxxxxxxx` e
   `onboarded_at` nullo; `/welcome` lo fa scegliere (3-24 tra lettere, cifre,
-  `_`, non riservato) con `complete_onboarding`. Chi nasce da SQL (fixture,
-  seed, test) ha `onboarded_at` già pieno.
+  `_`, non riservato, non preso né lasciato da un altro) con
+  `complete_onboarding`. Dopo si cambia da Settings, una volta ogni 30
+  giorni (sezione "I profili pubblici"). Chi nasce da SQL (fixture, seed,
+  test) ha `onboarded_at` già pieno.
 - Un provider compare solo se ha **entrambe** le sue variabili.
 - All'avvio (`instrumentation.ts`) la configurazione si controlla e parte la
   pulizia delle righe scadute, ripetuta ogni giorno.
@@ -1253,8 +1288,8 @@ parte**, apposta.
   `/events?account=deleted`, con un avviso che chi è dentro non vede.
 - Il limite è nella natura: si cancella una volta, e si scollegano al più
   tre provider.
-- *La sessione fresca.* Scollegare, collegare un provider e cancellare
-  l'account chiedono un accesso di meno di 15 minuti (`lib/auth/fresh.ts`,
+- *La sessione fresca.* Scollegare, collegare un provider, cambiare
+  l'handle e cancellare l'account chiedono un accesso di meno di 15 minuti (`lib/auth/fresh.ts`,
   `isFreshSession`): conta `auth_session.created_at`, che il rinnovo
   giornaliero non sposta, quindi solo un accesso vero. Così un cookie di
   sessione vecchio, anche rubato, non basta per agganciare un altro
@@ -1352,6 +1387,9 @@ Le verifiche sono `db/test/submit.test.mts` (gli ingressi SQL) e
   dei commenti e invio sono isole client che leggono `/api/me?tier=`, così
   l'HTML della pagina è uguale per tutti e sta in cache. Dopo un invio o
   una revisione si arriva alla pagina dove il clear compare davvero.
+  L'handle di ogni clear e commento porta al profilo dell'autore; da 2
+  clear in su, sopra la lista c'è la barra dei filtri (sezioni "I filtri
+  dei clear" e "I profili pubblici").
 - **`/events/[id]/submit?tier=`** e **`/events/[id]/clears/[clearId]/edit`**:
   lo stesso builder (`components/builder/`). Lo stato è un `useReducer`
   puro in `lib/clears/builder-stato.ts` e parte come un solo campo JSON;
@@ -1590,6 +1628,47 @@ L'artwork parte sempre statico: è l'immagine che si vede subito, e chi non è e
 
 I nomi delle carte nei clear portano alla pagina nella stessa scheda, senza prefetch (20 clear per 7 carte farebbero 140 prefetch a pagina). Dal builder, l'icona dello slot e il link sotto il picker aprono una scheda nuova, perché il builder non salva la bozza. La sitemap ha tutte le carte uscite su Global.
 
+## I filtri dei clear
+
+La lista dei clear di un tier si può filtrare e ordinare. I filtri valgono per il tier (stage o livello EZA) e la regione scelti: non c'è una vista "tutti i clear con questa carta" fra eventi.
+
+| Parametro | Significato |
+|---|---|
+| `proof=1` | con una prova raggiungibile |
+| `noitems=1` / `noko=1` | senza oggetti / senza KO |
+| `turns=N` | al massimo N turni (1-99); i clear che non dicono i turni restano fuori |
+| `card=<id>` (fino a 3) | usa TUTTE queste carte, in qualsiasi assetto (anche i cambi a metà evento), in qualsiasi ruolo |
+| `leader=<id>` | il leader dell'assetto di partenza (il friend non conta) |
+| `mono=AGL\|TEQ\|INT\|STR\|PHY` | ogni carta di ogni assetto di quel tipo; la classe non conta |
+| `class=super\|extreme` | ogni carta Super, o ogni carta Extreme |
+| `cat=<id>` | ogni carta di ogni assetto ha quella categoria |
+| `sort=top\|new\|turns` | Top (prova, poi voti: l'ordine di sempre), Newest (prima pubblicazione, una revisione non conta), Fewest turns (senza turni in fondo) |
+
+Un valore sbagliato vale "non impostato" (mai un 500), e ogni valore arriva alle query come parametro legato; l'ORDER BY è una di tre costanti. Il parsing sta in `lib/clears/filtri.ts` (puro), la parte SQL in `lib/queries.ts` (`filtroClear`, `listClears` con i filtri, `countClears`, `getClearFacets`).
+
+**Dove stanno.** La pagina del tier (`/events/<id>/t/<tier>`) resta statica e in cache: mostra solo la barra dei filtri (da 2 clear in su), con le opzioni contate su tutti i clear del tier (`getClearFacets`, in cache col tag `event:<id>` in `lib/cache/filters.ts`). Scegliere un filtro porta a `/events/<id>/clears?tier=...&...` (`clearListHref` in `lib/urls.ts`), una pagina dinamica (una invocazione per vista) con la stessa pagina dell'evento e la lista filtrata. Togliere tutti i filtri riporta alla pagina statica. La barra è un vero form GET: funziona anche senza JavaScript.
+
+**Perché la lista filtrata non è in cache.** Le combinazioni dei filtri sono senza fine: in cache ogni voce occuperebbe memoria per una visita sola. Per lo stesso motivo le viste filtrate sono noindex con il canonical al tier senza filtri, `robots.txt` esclude `/events/*/clears`, e i chip dei filtri attivi sono link `rel="nofollow"` senza prefetch: un bot non deve poterle girare tutte (CPU di Vercel, query di Supabase).
+
+**I dati delle carte.** I filtri si calcolano dal vivo su `card` e `card_category`: un import che cambia le categorie di una carta cambia anche quali clear passano il filtro. Le carte che esistono solo nei dati del gioco (0015) possono non avere categorie, e allora non passano nessun filtro di categoria: è corretto, non è provato che ci appartengano.
+
+Le prove: `npm run test:filtri` (parametri e URL, niente database), i passi "filtri dei clear (parametri)" e "filtri dei clear" di `npm run db:test`, e `test:smoke` (noindex, canonical, valori sbagliati, `tier=abc` 404).
+
+## I profili pubblici (migrazione 0026)
+
+`/users/<handle>` (e `/users/<handle>/p/<n>` dalla pagina 2) è pubblica e in cache come eventi e carte: non legge mai la sessione. Mostra l'handle, la versione del gioco, il mese d'iscrizione, i conteggi (clear pubblicati, voti +1 ricevuti su tutte le versioni dei clear pubblicati, commenti pubblicati su clear pubblicati) e la lista dei clear, 20 per pagina, dal più recente. Niente avatar (la privacy promette che l'immagine del provider non si mostra), niente ruolo, niente email, niente commenti. Ogni riga porta alla pagina del tier dove il clear si vede davvero, calcolata con lo stesso `ORDINE_CLEAR` della lista dell'evento. Il proprietario vede in più "Edit profile" (un'isola che legge `/api/me`). I profili senza clear sono noindex, e i profili non sono nella sitemap.
+
+Ogni handle del sito (clear, commenti, tip, Settings, header) passa da `components/handle-link.tsx`, che costruisce l'URL con `profileHref` di `lib/urls.ts`, senza prefetch. Nell'header l'handle porta al profilo e Settings ha un link suo (l'ingranaggio sul telefono).
+
+Le letture stanno in `lib/profiles.ts` (pure) e leggono gli utenti SOLO dalla vista `public_profile`, che ha un elenco chiuso di colonne (un test lo controlla). La vista esclude chi non ha finito /welcome e chi è sospeso (`user_suspended`, 0024): il loro profilo è un 404 come quello di chi non esiste. La cache sta in `lib/cache/profiles.ts`, con i tag `profile:<handle>` (minuscolo), `community` e gli `event:<id>` degli eventi dove l'utente ha clear o commenti, così voti e commenti rinfrescano i conteggi. Al build si prerenderizzano i 20 profili con più clear.
+
+L'handle si cambia da Settings > Handle, con un accesso recente (15 minuti, come scollegare un provider o cancellare l'account). Le regole le impone `change_handle`:
+- un cambio vero ogni 30 giorni (`app_user.handle_changed_at`); cambiare solo le maiuscole è sempre libero;
+- il nome lasciato va in `handle_history` e resta riservato all'utente finché l'account esiste: `/users/<vecchio>` porta al nuovo con un 308, e l'utente può riprenderselo;
+- chi è sospeso non lo cambia.
+
+Ogni presa di un handle (/welcome e Settings) passa da `handle_assert_free`, sotto un lock consultivo per handle: due richieste per lo stesso nome passano una alla volta, e la seconda riceve `handle_taken`. Cancellare l'account porta via `handle_history` (cascata), quindi i vecchi nomi tornano liberi: scelta accettata. Dopo un cambio, `afterUserChanged(userId, { extraHandles: [vecchio] })` invalida le pagine degli eventi e delle carte con i suoi clear, commenti, tip e voti, e i profili vecchio e nuovo. `userFootprint` mette nel conto anche tutti i nomi di `handle_history`: così sospensione, fine sospensione e cancellazione dell'account rinfrescano anche `/users/<vecchio>` (un 404 in cache visto durante una sospensione porta solo il tag del vecchio nome). I rifiuti hanno un nome tradotto da `lib/auth/handle-change.ts`, la stessa tabella che usa /welcome. Le verifiche sono nel passo "profili pubblici" (`db/test/profiles.test.mts`) e in `test:smoke` (un profilo, il 308 delle maiuscole, i 404).
+
 ## La produzione: Vercel, Supabase, Cloudflare
 
 Deciso: tutto sui piani gratuiti, senza carta da nessuna parte. Superare
@@ -1640,11 +1719,14 @@ per non arrivarci.
 - Il limite per IP di better-auth legge l'IP da `x-vercel-forwarded-for`,
   scritto da Vercel: un header mandato dal client non lo sposta.
   `AUTH_IP_HEADERS` lo cambia (per esempio dietro un altro proxy).
-- `robots.ts` e `sitemap.ts`: indicizzati gli eventi; fuori API, accesso,
-  Settings, pagine di invio e le viste filtrate (`/events/browse`). La
-  sitemap ha `/events` e tutti gli eventi, in cache per un giorno.
+- `robots.ts` e `sitemap.ts`: indicizzati eventi, carte e profili; fuori
+  API, accesso, Settings, `/admin`, pagine di invio e modifica e le viste
+  filtrate (`/events/browse`, `/events/*/clears`). La sitemap ha `/events`,
+  tutti gli eventi e le carte uscite su Global (i profili no), in cache
+  per un giorno.
   **Il build legge il database** (solo SELECT): prerenderizza `/events`, la
-  sitemap e fino a 100 eventi (sezione "Cache e budget CPU"), quindi
+  sitemap, fino a 100 eventi, 100 carte e 20 profili (sezione "Cache e
+  budget CPU"), quindi
   `DATABASE_URL` deve rispondere anche durante il build.
   `robots.txt` è statico e prende l'URL da `BETTER_AUTH_URL` **al build**.
 - `.vercelignore` lascia fuori `public/assets` (1,2 GB) e le cache
@@ -1656,28 +1738,35 @@ online sono nella sezione seguente. Le prove: `npm run db:test` (passi
 
 ## Cache e budget CPU
 
-Vercel Hobby dà 4 ore di CPU attiva al mese, senza extra. Per questo le pagine pubbliche (`/events`, `/events/<id>/…`, `/cards/<id>`) non leggono mai né la sessione né la query string: sono prerender (ISR) che la CDN serve senza invocare funzioni. Chi è dentro costa una sola richiesta a `/api/me` per pagina; chi non è dentro, niente.
+Vercel Hobby dà 4 ore di CPU attiva al mese, senza extra. Per questo le pagine pubbliche (`/events`, `/events/<id>/…`, `/cards/<id>`, `/users/<handle>`) non leggono mai né la sessione né la query string: sono prerender (ISR) che la CDN serve senza invocare funzioni. Chi è dentro costa una sola richiesta a `/api/me` per pagina; chi non è dentro, niente.
 
-- **URL**: `/events` (statica) · `/events/browse?region=&type=&status=&q=&page=` (viste filtrate, dinamiche, noindex, escluse da `robots.txt`) · `/events/<id>` · `/events/<id>/japan` · `/events/<id>[/japan]/t/<tier>` · `…/t/<tier>/p/<n>` (n ≥ 2). Si costruiscono solo con `lib/urls.ts`. Un tier che non è dell'evento, `p/1` o una pagina oltre l'ultima sono 404. Su `next start` e su Vercel la prima visita a un URL non prerenderizzato riceve lo shell con 200 e il 404 nello stream (noindex); dalla seconda visita è un 404 vero, dalla cache. `/` porta a `/events` con un 307 (`next.config.ts`). Restano con la query string le pagine per utente: `/events/<id>/submit?tier=` (e `region=japan`) e `/events?account=deleted` dopo la cancellazione dell'account (l'avviso lo legge un'isola client).
-- **Dati**: `lib/cache/data.ts` (`'use cache'` con `cacheLife` e `cacheTag`) avvolge `lib/queries.ts` e `lib/clears.ts`, che restano senza cache perché i test li importano fuori da Next. Tag: `catalog`, `events-list`, `community`, `event:<id>`, `card:<id>`, `profile:<handle>`. Lo stato degli eventi (Ongoing/Ended) scade al prossimo inizio o fine di una run (minimo 5 minuti).
-- **Invalidazione** (`lib/cache/invalidate.ts`): invio, revisione, cancellazione e commento rigenerano subito l'evento (`updateTag`); il voto lo segna vecchio senza rigenerare (`revalidateTag` `'max'`): gli altri vedono il voto dopo una visita, chi vota lo vede subito da `/api/me`. Mai `revalidatePath('/', 'layout')`.
+- **URL**: `/events` (statica) · `/events/browse?region=&type=&status=&q=&page=` (viste filtrate, dinamiche, noindex, escluse da `robots.txt`) · `/events/<id>` · `/events/<id>/japan` · `/events/<id>[/japan]/t/<tier>` · `…/t/<tier>/p/<n>` (n ≥ 2) · `/events/<id>/clears?tier=&…` (la lista filtrata dei clear, dinamica, noindex, esclusa da `robots.txt`) · `/cards/<id>` · `/users/<handle>[/p/<n>]`. Si costruiscono solo con `lib/urls.ts` (`eventHref`, `browseHref`, `clearListHref`, `cardHref`, `profileHref`). Un tier che non è dell'evento, `p/1` o una pagina oltre l'ultima sono 404. Su `next start` e su Vercel la prima visita a un URL non prerenderizzato riceve lo shell con 200 e il 404 nello stream (noindex); dalla seconda visita è un 404 vero, dalla cache. `/` porta a `/events` con un 307 (`next.config.ts`). Restano con la query string le pagine per utente: `/events/<id>/submit?tier=` (e `region=japan`) e `/events?account=deleted` dopo la cancellazione dell'account (l'avviso lo legge un'isola client).
+- **Dati**: `lib/cache/*.ts` (`'use cache'` con `cacheLife` e `cacheTag`: `data.ts`, `cards.ts`, `tips.ts`, `filters.ts`, `profiles.ts`) avvolge i moduli di query (`lib/queries.ts`, `lib/clears.ts`, `lib/card-page.ts`, `lib/tips.ts`, `lib/profiles.ts`), che restano senza cache perché i test li importano fuori da Next (lo controlla una guardia in `cache-tags.test.mts`). eslint vieta a `lib/cache/*` di importare `lib/dal`, `lib/auth` e `next/headers`. Tag: `catalog`, `events-list`, `community`, `event:<id>`, `card:<id>`, `profile:<handle>`. Lo stato degli eventi (Ongoing/Ended) scade al prossimo inizio o fine di una run (minimo 5 minuti).
+- **Invalidazione** (`lib/cache/invalidate.ts`): invio, revisione, cancellazione e commento rigenerano subito l'evento (`updateTag`), e invio, revisione e cancellazione anche le carte del clear e il profilo dell'autore; il voto lo segna vecchio senza rigenerare (`revalidateTag` `'max'`): gli altri vedono il voto dopo una visita, chi vota lo vede subito da `/api/me`. Cambio di handle, cancellazione dell'account e sospensione passano da `afterUserChanged`, che raccoglie dal database eventi, carte e handle toccati (sopra 300 id invalida tutto `community`). Mai `revalidatePath('/', 'layout')`.
 - **Chi guarda**: il cookie `dts_signed_in=1` (non segreto, non httpOnly) lo mette better-auth a ogni accesso e lo toglie l'uscita; solo con lui il browser chiama `/api/me` (private, no-store). Header, voto, Edit/Delete, commenti e invio sono isole client (`components/viewer`).
 - **Import**: in produzione `db/prod/update.mjs` chiama `POST /api/revalidate` (Bearer `CRON_SECRET`, la stessa variabile del cron; serve anche `PROD_SITE_URL`, da mettere in `~/.config/dokkants/prod.env` per la routine a mano). In locale `db:import`, `db:refresh` e `db:demo` finiscono con `npm run cache:clear`; dopo una modifica a mano con psql lancialo tu, altrimenti `next dev` mostra i dati vecchi fino al riavvio. In `next dev` senza `CRON_SECRET` la rotta è aperta.
-- **Build**: legge il database (solo SELECT): fino a 100 eventi Global in corso o in arrivo, fino a 100 carte (le più usate nei clear), `/events` e la sitemap (tutti gli eventi e le carte uscite su Global). Se Supabase Free è in pausa, il build fallisce. Ogni deploy riparte con la cache vuota.
-- **Misure** (`test/cpu.sh` su `next start` locale, 200 richieste per classe, ms di CPU per richiesta):
+- **Build**: legge il database (solo SELECT): fino a 100 eventi Global in corso o in arrivo, fino a 100 carte (le più usate nei clear), i 20 profili con più clear, `/events` e la sitemap (tutti gli eventi e le carte uscite su Global). Sulla macchina di sviluppo dura pochi secondi (6-9 s con la cache di Turbopack, 167 pagine generate). Se Supabase Free è in pausa, il build fallisce. Ogni deploy riparte con la cache vuota.
+- **Misure** (`test/cpu.sh` su `next start` locale, 200 richieste per classe, ms di CPU per richiesta). "Prima" è la base di partenza, con ogni pagina dinamica; "fase 1" è dopo la cache; "fase 4" è la misura finale prima della messa online, l'8 ottobre 2026, con filtri e profili (stesso metodo, `next build` e `next start -p 3550` su `dokkan_dev`, `CPU_PROFILE_HANDLE=demo_rotation`):
 
-  | classe | prima (ogni pagina dinamica) | dopo | dopo, NEXT_CACHE_MEMORY=0 |
-  |---|---|---|---|
-  | /events | 8,50 | 1,65-1,85 (HIT) | 2,55 |
-  | pagina evento (20 id) | 6,10 | 1,40 (HIT) | 16,45 |
-  | pagina tier (16) | 5,45 | 1,30-1,85 (HIT) | 27,75 |
-  | /events/browse | 7,85 | 12-16 (dinamica) | 12,55 |
-  | /api/cards | 1,50 | 1,2-2,2 | 1,30 |
+  | classe | prima (ogni pagina dinamica) | fase 1 | fase 1, NEXT_CACHE_MEMORY=0 | fase 4 (2026-10-08) |
+  |---|---|---|---|---|
+  | /events | 8,50 | 1,65-1,85 (HIT) | 2,55 | 1,45 (HIT) |
+  | pagina evento (20 id) | 6,10 | 1,40 (HIT) | 16,45 | 1,30 (HIT) |
+  | pagina tier (16) | 5,45 | 1,30-1,85 (HIT) | 27,75 | 1,25 (HIT) |
+  | /events/browse | 7,85 | 12-16 (dinamica) | 12,55 | 11,05 (dinamica) |
+  | /api/cards | 1,50 | 1,2-2,2 | 1,30 | 1,60 |
+  | /cards/<id> (20 dalla sitemap) | | | | 0,95 (HIT) |
+  | lista filtrata dei clear (16 tier, `proof=1`) | | | | 9,70 (dinamica) |
+  | /users/<handle> | | | | 1,05 (HIT) |
 
-  In locale anche una pagina in cache passa da Node (circa 1,5 ms); su Vercel esce dalla CDN e costa zero. La colonna NEXT_CACHE_MEMORY=0 è il caso peggiore: in locale le pagine generate a richiesta non restano, su Vercel stanno nella cache ISR durevole. Dopo il deploy: Vercel Observability → Functions (CPU attiva per rotta) e la pagina Usage (invocazioni, scritture ISR).
-- **Come misurare**: `npm run build`; `NODE_ENV=production NEXT_PRIVATE_DEBUG_CACHE=1 npx next start -p 3100 > /tmp/next.log 2>&1 &`; `CPU_URL=http://localhost:3100 CPU_LOG=/tmp/next.log npm run test:cpu`. In locale servono anche `RESEND_API_KEY` ed `EMAIL_FROM` finti, e `VERCEL=1` per non fare la pulizia delle sessioni su `dokkan_dev`.
+  In fase 4 nessuna classe ha rifatto dati (`dati MISS` 0) né rigenerato pagine (`ISR` 0) durante le 200 richieste. Le due classi dinamiche, `/events/browse` e la lista filtrata, sono le sole che su Vercel invocano una funzione a ogni vista: per questo sono noindex, fuori da `robots.txt` e raggiungibili solo dal form o da link `nofollow`. In locale anche una pagina in cache passa da Node (circa 1 ms); su Vercel esce dalla CDN e costa zero. La colonna NEXT_CACHE_MEMORY=0 è il caso peggiore: in locale le pagine generate a richiesta non restano, su Vercel stanno nella cache ISR durevole. Dopo il deploy: Vercel Observability → Functions (CPU attiva per rotta) e la pagina Usage (invocazioni, scritture ISR).
+- **Come misurare**: `npm run build`; `NODE_ENV=production NEXT_PRIVATE_DEBUG_CACHE=1 npx next start -p 3100 > /tmp/next.log 2>&1 &`; `CPU_URL=http://localhost:3100 CPU_LOG=/tmp/next.log npm run test:cpu`. Le classi carte, filtri e profili prendono gli URL dalla sitemap e dalle pagine dei tier; `CPU_PROFILE_HANDLE` aggiunge un profilo. In locale servono anche `RESEND_API_KEY` ed `EMAIL_FROM` finti, e `VERCEL=1` per non fare la pulizia delle sessioni su `dokkan_dev`.
 
-Le prove: `npm run db:test` (passi "URL degli eventi" e "cache: tag e /api/revalidate") e `npm run test:smoke`, che con `SMOKE_EXPECT_CACHE=1` contro `next start` controlla anche che la seconda visita a `/events`, a un evento e a una carta sia un `x-nextjs-cache: HIT`.
+**Con `next start` (e su Vercel) una pagina dinamica risponde 200 anche quando finisce in un 404 o in un redirect.** Il layout è un prerender, quindi lo shell parte subito con 200, e `notFound()` o `redirect()` arrivano nello stream (con noindex, o con il redirect che il browser segue). Vale per `/settings` e `/welcome` senza sessione, per `/events/<id>/clears?tier=abc` e per la prima visita a un URL pubblico non prerenderizzato; dalla seconda visita quest'ultimo è un 404 o un 308 vero, dalla cache. Il 308 servito dalla cache locale non ha l'header Location (il redirect sta nel corpo): da controllare su Vercel al primo deploy (Messa online, punto h). `next dev` invece risponde con i codici veri.
+
+**In locale su macOS non provare le maiuscole diverse di un profilo contro `next start`.** La cache ISR locale sta su file, e APFS non distingue le maiuscole: il 308 di `/users/DEMO_ROTATION` prende il posto della voce di `/users/demo_rotation`, che poi risponde con un redirect a se stessa fino al build dopo. Su Vercel la cache ISR non sta su un file system locale, ma va provato al primo deploy (Messa online, punto h); `test:smoke` con `SMOKE_EXPECT_CACHE=1` salta quella verifica.
+
+Le prove: `npm run db:test` (passi "URL degli eventi" e "cache: tag e /api/revalidate") e `npm run test:smoke`, che con `SMOKE_EXPECT_CACHE=1` contro `next start` controlla anche che la seconda visita a `/events`, a un evento, a una carta e a un profilo sia un `x-nextjs-cache: HIT`.
 
 ## Messa online
 
@@ -1956,13 +2045,26 @@ I callback di produzione stanno **accanto** a quelli di sviluppo
 - [ ] Il **magic link** arriva (Resend → Emails mostra "Delivered"), si
       apre e porta a `/welcome` per scegliere l'handle.
 - [ ] `/robots.txt` indica la sitemap di `dokkants.emanuelemelini.dev`,
-      esclude `/events/browse`, e `/sitemap.xml` elenca gli eventi.
-- [ ] **La cache**: un secondo `curl -sI` di `/events` e di una pagina
-      evento risponde con `x-vercel-cache: HIT` (o `STALE`), e
-      `/api/me` senza cookie dà `{"user":null}` con `cache-control`
-      `private, no-store`. Anche `SMOKE_URL=https://dokkants.emanuelemelini.dev
-      npm run test:smoke` passa (solo GET; senza `SMOKE_EXPECT_CACHE`,
-      che legge `x-nextjs-cache` di `next start` e non l'header di Vercel).
+      esclude `/events/browse` e `/events/*/clears`, e `/sitemap.xml`
+      elenca gli eventi e le carte.
+- [ ] **La cache**: un secondo `curl -sI` di `/events`, di una pagina
+      evento, di una carta e del tuo profilo (`/users/<handle>`) risponde
+      con `x-vercel-cache: HIT` (o `STALE`), e `/api/me` senza cookie dà
+      `{"user":null}` con `cache-control` `private, no-store`. Poi
+      `SMOKE_URL=https://dokkants.emanuelemelini.dev SMOKE_EXPECT_CACHE=1
+      SMOKE_PROFILE_HANDLE=<handle> npm run test:smoke` (solo GET): con
+      `SMOKE_EXPECT_CACHE` accetta i 404 e i redirect nello stream delle
+      pagine dinamiche e legge anche `x-vercel-cache`.
+- [ ] **I redirect**: `curl -sI https://dokkants.emanuelemelini.dev/cards/1032311`
+      due volte; la seconda (dalla cache) deve avere `location: /cards/1032310`.
+      Se manca, come con `next start` in locale, il browser segue lo
+      stesso il redirect nel corpo, ma i motori no: va segnalato.
+- [ ] **Il profilo e l'handle**: il link dell'handle nell'header apre il
+      profilo; `/users/<HANDLE>` con le maiuscole diverse porta al tuo
+      profilo con un 308, e dopo `/users/<handle>` si apre ancora con 200
+      (non un redirect a se stesso: vedi "Cache e budget CPU"); da
+      Settings > Handle un cambio di sole maiuscole riesce e il profilo si
+      apre col nome nuovo.
 - [ ] **Il cron**: Settings → Cron Jobs mostra `/api/cron/purge` alle 4
       UTC; "Run" lo lancia subito, e nei log della funzione la risposta è
       200 con `{"purged":n,"reports":m}`. Da fuori, `curl -i
@@ -2076,11 +2178,22 @@ DATABASE_URL=postgres://localhost/dokkan_restore_test node db/prod/rehearsal.mjs
 
 ## Cosa manca, in ordine
 
-1. **Il calendario, da tenere vivo.** Rifare il datamine con `--fresh`
-   ogni settimana, poi `db:game-events` e `db:windows`: gli eventi nuovi
-   arrivano da lì, il wiki non ne scrive più. In produzione lo fa il
-   workflow settimanale (Messa online, punto j), da accendere con
-   `WEEKLY_APPLY=true` dopo le prime prove. Japan resta senza finestre
+Il codice per la messa online è finito e verificato (`db:test`, `tsc`,
+`eslint`, `next build`, `test:smoke` anche contro `next start`,
+`test:auth-smoke`, `test:cpu`). Restano i passi che solo il proprietario
+può fare, e poi il lavoro sui dati e sulle pagine.
+
+0. **La messa online, a mano.** Creare gli account (GitHub, Supabase,
+   Cloudflare Pages, Resend, Vercel, le console OAuth di Discord, Google e
+   Twitch) e seguire "Messa online" dal punto a) al j), con la lista del
+   punto h) al primo deploy (cache, redirect, profilo). Nessuno script crea
+   account o pubblica da solo.
+1. **Il calendario, da tenere vivo.** Il workflow settimanale (Messa
+   online, punto j) rifà datamine, eventi e finestre ogni venerdì. Le prime
+   settimane gira in prova (`WEEKLY_APPLY=false`, e `dry_run` acceso nei
+   lanci a mano): leggi 2-3 riepiloghi, aggiusta `db/prod/limits.json` se
+   serve, controlla che i file su Pages siano quelli della tabella `asset`,
+   poi metti `WEEKLY_APPLY=true`. Japan resta senza finestre
    vere, e 374 eventi Global restano "attivi, fine non nota" (312 del wiki,
    62 del gioco). Le corse di un'area riaperta dopo più di un mese partono
    dall'ultimo blocco: la corsa di prima non ha una run del gioco sua.
@@ -2101,8 +2214,8 @@ DATABASE_URL=postgres://localhost/dokkan_restore_test node db/prod/rehearsal.mjs
    riemesse e secondi id): niente epiteto, niente immagini. Sono anche i
    boss che mancano nelle copertine. E le immagini delle 19 carte nuove di
    ottobre aspettano il CDN del wiki, che oggi risponde 403.
-4. **Le missioni, da mostrare e da completare.** Ci sono (7720, con i
-   premi), manca la sezione nella pagina evento. Restano fuori le missioni
+4. **Le missioni, da completare.** Ci sono (7720, con i premi) e la
+   pagina evento le mostra. Restano fuori le missioni
    Burst Mode degli archivi (serve una tabella `genkai_battles` che il
    datamine non esporta), i piani 61+ della Extreme Super Battle Road (il
    wiki non ha la pagina, e un evento del gioco per loro non c'è ancora) e
@@ -2114,6 +2227,24 @@ DATABASE_URL=postgres://localhost/dokkan_restore_test node db/prod/rehearsal.mjs
    riusare le proprie squadre invece di ricomporle, e la ricerca delle
    carte per chi gioca la versione giapponese (il picker mostra solo le
    uscite Global; il builder accetta qualsiasi carta).
+6. **Piccole cose lasciate aperte.**
+   - Un commento su un evento dove l'autore non ha altri clear né commenti
+     aggiorna il conteggio dei commenti del suo profilo solo alla
+     rivalidazione giornaliera: l'azione del commento non invalida
+     `profile:<handle>` (basterebbe passare l'handle a `afterClearWrite`
+     e aggiungere i profili al caso `comment` di `tagsFor`).
+   - Nessuna vista "tutti i clear con questa carta" fra eventi: la pagina
+     della carta mostra i 10 migliori. `lib/clears/filtri.ts` e
+     `filtroClear` sono pronti per farla senza tier.
+   - Su Vercel, come con `next start`, le pagine dinamiche rispondono 200
+     con il 404 o il redirect nello stream, e un 308 dalla cache può non
+     avere Location (sezione "Cache e budget CPU"): da guardare al primo
+     deploy.
+   - Con i dati veri, controllare con EXPLAIN che la lista filtrata usi
+     l'indice `clear_by_tier`: sui dati di prova il planner non lo sceglie.
+   - A 375 px l'header è stretto (titolo e Sign out vanno a capo, senza
+     scroll orizzontale); i menu Leader e Category dei filtri tagliano i
+     nomi lunghi oltre 16rem.
 
 ## Nota su Next.js
 

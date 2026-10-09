@@ -97,6 +97,8 @@ export const TABLES = {
   report: { class: 'user' },
   // il registro della moderazione (0024): lo scrivono gli admin, mai un import
   moderation_action: { class: 'user' },
+  // gli handle lasciati (0026): li scrive solo change_handle
+  handle_history: { class: 'user' },
 
   // ---- degli script
   schema_migrations: { class: 'system' },

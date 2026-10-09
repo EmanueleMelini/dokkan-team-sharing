@@ -46,6 +46,15 @@ export default function Privacy() {
           on tips, but who voted is not shown. Same legal basis as above.
         </li>
         <li>
+          <strong>Your public profile.</strong> Your handle has a public page at /users/your-handle. It
+          shows your handle, the game version you play, the month you joined, how many clears you
+          shared, how many upvotes they received and how many comments you wrote, and the list of
+          your clears. It never shows your email, your sign-in provider, its name or picture, or your
+          role. The profile of a suspended account is not shown. If you change your handle, your old
+          handles stay reserved for your account so nobody else can take them, and links to them lead
+          to your new one. Same legal basis as above.
+        </li>
+        <li>
           <strong>Reports and moderation.</strong> When you report a clear, a comment or a tip, the site
           stores your account, the post, the reason you picked, the details you wrote, if any, and
           the time. Only moderators (accounts the site owner gives the admin role) see reports;
@@ -100,6 +109,10 @@ export default function Privacy() {
       <h2>How long it is kept</h2>
       <ul>
         <li>Your account and what you post: until you delete them.</li>
+        <li>
+          Your old handles: as long as your account exists. Deleting the account frees them, and
+          someone else can then pick them.
+        </li>
         <li>Sessions: 30 days after your last visit, then removed.</li>
         <li>Sign-in links: 10 minutes. Sign-in counters: 1 hour. The sign-in email log: 1 day.</li>
         <li>

@@ -89,7 +89,8 @@ try {
   r = await esito("select complete_onboarding($1, 'no-dash', 'global')", [nuovo])
   check('rifiuta un handle malformato', r === '23514 handle_shape', r)
   r = await esito("select complete_onboarding($1, 'EMATANOIA', 'global')", [nuovo])
-  check('rifiuta un handle preso (anche con maiuscole diverse)', r === '23505 app_user_handle_key', r)
+  // dal 0026 il controllo e' di handle_assert_free, sotto il lock per handle
+  check('rifiuta un handle preso (anche con maiuscole diverse)', r === '23505 handle_taken', r)
   r = await esito("select complete_onboarding($1, 'fresh_one', 'japan')", [nuovo])
   const dopo = await one<{ handle: string; reg: string; fatto: boolean }>(
     'select handle, reg, onboarded_at is not null as fatto from app_user where id = $1', [nuovo])

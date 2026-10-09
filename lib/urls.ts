@@ -1,4 +1,5 @@
 import type { EventKind, Region, Status } from '@/lib/queries'
+import { filtriAttivi, parametriFiltri, type FiltriClear } from '@/lib/clears/filtri'
 
 // Tutti gli URL interni degli eventi passano da qui. Lo stato che deve
 // poter stare in cache (regione, tier, pagina) sta nel percorso: con
@@ -93,3 +94,51 @@ export const clearAnchor = (clearId: string) => `#clear-${clearId}`
 
 /** La pagina di una carta (/cards/<id>): un URL solo per carta, niente query string. */
 export const cardHref = (cardId: string) => `/cards/${cardId}`
+
+/**
+ * La lista filtrata dei clear di un tier: /events/<id>/clears?... E' una
+ * pagina dinamica e noindex (robots.txt la esclude), quindi i filtri
+ * stanno nella query string, in ordine canonico: region (solo japan), tier,
+ * i filtri (lib/clears/filtri.ts), page (solo da 2).
+ */
+export function filteredClearsHref({ id, reg = 'global', tier, filtri, page = 1 }: {
+  id: string
+  reg?: Region
+  tier: string
+  filtri: FiltriClear
+  page?: number
+}): string {
+  const p = new URLSearchParams()
+  if (reg === 'japan') p.set('region', reg)
+  p.set('tier', tier)
+  for (const [k, v] of parametriFiltri(filtri)) p.append(k, v)
+  if (page > 1) p.set('page', String(Math.min(Math.trunc(page), PAGINA_MAX)))
+  return `/events/${id}/clears?${p}`
+}
+
+/**
+ * Dove porta una scelta nella barra dei filtri: senza filtri e con
+ * l'ordine di difetto e' la pagina statica del tier (in cache, indicizzata),
+ * altrimenti la lista filtrata.
+ */
+export function clearListHref(a: { id: string; reg?: Region; tier: string; filtri: FiltriClear; page?: number }): string {
+  return filtriAttivi(a.filtri) === 0 && a.filtri.sort === 'top'
+    ? eventHref({ id: a.id, reg: a.reg, tier: a.tier, page: a.page })
+    : filteredClearsHref(a)
+}
+
+/**
+ * Il profilo pubblico: /users/<handle>[/p/<n>]. Come per gli eventi, la
+ * pagina sta nel percorso (il profilo e' un prerender in cache).
+ */
+export function profileHref(handle: string, page = 1): string {
+  const base = `/users/${encodeURIComponent(handle)}`
+  return page > 1 ? `${base}/p/${Math.min(Math.trunc(page), PAGINA_MAX)}` : base
+}
+
+/** Il numero del segmento /p/<n> di un profilo, o null (un 404): solo da 2 a PAGINA_MAX. */
+export function parseProfilePage(raw: unknown): number | null {
+  if (typeof raw !== 'string' || !PAGINA.test(raw)) return null
+  const n = Number(raw)
+  return n >= 2 && n <= PAGINA_MAX ? n : null
+}

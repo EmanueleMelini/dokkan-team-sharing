@@ -12,6 +12,8 @@
 # Richiede i dati importati (piu' di una pagina di eventi, un'EZA, una
 # sfida con stage), non i clear dimostrativi di db:demo. Gli eventi da
 # aprire si prendono dalla lista; SMOKE_EZA_ID e SMOKE_STAGE_ID li fissano.
+# Il profilo da aprire si cerca nelle pagine evento; SMOKE_PROFILE_HANDLE
+# lo fissa (con db:demo: demo_rotation).
 set -uo pipefail
 BASE=${SMOKE_URL:-http://localhost:3000}
 BASE=${BASE%/}
@@ -52,13 +54,40 @@ verifica () {
 # prima visita lo shell dell'app con 200, e il 404 arriva nello stream (con
 # noindex); la pagina rigenerata dietro e' un 404 vero, servito dalla cache
 # dalla seconda visita. Per questo un 200 con noindex vale un secondo giro.
-verifica_404 () { # nome percorso
+#
+# Una pagina dinamica (per utente o con la query string) non va mai in
+# cache: con next start ogni visita riceve lo shell con 200 e il 404 nello
+# stream. Il terzo argomento "dinamica" lo accetta, ma solo contro next
+# start (SMOKE_EXPECT_CACHE=1); con next dev resta un 404 vero.
+verifica_404 () { # nome percorso [dinamica]
   prendi "$2"
-  if [ "$codice" = 200 ] && grep -q '<meta name="robots" content="noindex"' "$TMP/html"; then prendi "$2"; fi
+  if [ "$codice" = 200 ] && grep -q '<meta name="robots" content="noindex"' "$TMP/html"; then
+    if [ "${3:-}" = dinamica ] && [ "${SMOKE_EXPECT_CACHE:-}" = 1 ]; then pass "$1 (200, 404 nello stream: next start)"; return; fi
+    prendi "$2"
+  fi
   if [ "$codice" != 404 ]; then fail "$1: $2 ha risposto $codice, atteso 404"; return; fi
   if ! grep -q '<meta name="robots" content="noindex"' "$TMP/html"; then fail "$1: $2 senza noindex"; return; fi
   if grep -qE -- "$ERRORE" "$TMP/testo"; then fail "$1: $2 mostra l'errore"; return; fi
   pass "$1 ($codice)"
+}
+
+# Un redirect vero: il codice e la Location. Con next start
+# (SMOKE_EXPECT_CACHE=1) il redirect di una pagina non prerenderizzata
+# arriva nello stream (200), e quello servito dalla cache e' un 308 senza
+# Location: li' vale il NEXT_REDIRECT nel corpo, che il browser segue. La
+# prima visita a un URL mai visto puo' essere lo shell senza il redirect,
+# che la pagina rigenerata dietro avra': un 200 vale un secondo giro.
+rimanda () { # nome percorso codice destinazione
+  local nome=$1 percorso=$2 atteso=$3 dest=$4 c d
+  read -r c d < <(curl -s -o "$TMP/html" -w '%{http_code} %{redirect_url}\n' --max-time 120 "$BASE$percorso") || c=000
+  if [ "$c" = 200 ] && [ "${SMOKE_EXPECT_CACHE:-}" = 1 ] && ! grep -qF "NEXT_REDIRECT;" "$TMP/html"; then
+    read -r c d < <(curl -s -o "$TMP/html" -w '%{http_code} %{redirect_url}\n' --max-time 120 "$BASE$percorso") || c=000
+  fi
+  if [ "$c" = "$atteso" ] && [[ "$d" == *"$dest" ]]; then pass "$nome ($c)"; return; fi
+  if [ "${SMOKE_EXPECT_CACHE:-}" = 1 ] && grep -qF "NEXT_REDIRECT;replace;$dest;$atteso;" "$TMP/html"; then
+    pass "$nome ($c, redirect nel corpo: next start)"; return
+  fi
+  fail "$nome: $percorso ha risposto $c $d, atteso $atteso verso $dest"
 }
 
 # il primo evento della lista il cui riquadro dice /regex/
@@ -118,11 +147,7 @@ verifica "una carta senza artwork ne' testi (solo datamine)" /cards/1031350 200 
 verifica_404 "carta: id non numerico" /cards/abc
 verifica_404 "carta: id che non esiste" /cards/99999999
 verifica_404 "carta: zeri iniziali" /cards/01032310
-read -r codice dove < <(curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' --max-time 120 "$BASE/cards/1032311")
-case "$codice $dove" in
-  "308 "*/cards/1032310) pass "la forma Z porta alla base (308)" ;;
-  *) fail "la forma Z: /cards/1032311 ha risposto $codice $dove, atteso 308 verso /cards/1032310" ;;
-esac
+rimanda "la forma Z porta alla base" /cards/1032311 308 /cards/1032310
 
 echo "le pagine evento"
 EZA=${SMOKE_EZA_ID:-$(primo_evento '/events/browse?type=zbattle' '[0-9]+ levels')}
@@ -151,6 +176,21 @@ if [ -n "$EZA" ]; then
     verifica_404 "un tier che non e' dell'evento" "/events/$EZA/t/999999999999"
     verifica_404 "p/1 non esiste (la pagina 1 e' senza /p)" "/events/$EZA/t/$TIER/p/1"
     verifica_404 "una pagina oltre l'ultima" "/events/$EZA/t/$TIER/p/99999"
+    # La lista filtrata (lib/clears/filtri.ts): dinamica, noindex con il
+    # canonical al tier senza filtri; un valore sbagliato vale "non
+    # impostato", mai un 500.
+    echo "la lista filtrata dei clear"
+    verifica "filtri: la lista filtrata" "/events/$EZA/clears?tier=$TIER&proof=1" 200 '[0-9]+ levels' "$ERRORE"
+    grep -q '<meta name="robots" content="noindex, follow"' "$TMP/html" && pass "la lista filtrata e' noindex" \
+      || fail "/events/$EZA/clears senza noindex"
+    grep -q "<link rel=\"canonical\" href=\"[^\"]*/events/$EZA/t/$TIER\"" "$TMP/html" && pass "la lista filtrata ha il canonical al tier" \
+      || fail "/events/$EZA/clears senza canonical a /events/$EZA/t/$TIER"
+    verifica "filtri: valori sbagliati, niente 500" \
+      "/events/$EZA/clears?tier=$TIER&proof=1&card=abc&turns=999&sort=zzz&cat=99999&mono=teq&leader=1%27" 200 '[0-9]+ levels' "$ERRORE"
+    verifica_404 "filtri: un tier che non e' un id" "/events/$EZA/clears?tier=abc" dinamica
+    prendi "/events/$EZA/t/$TIER"
+    grep -q '<meta name="robots" content="noindex' "$TMP/html" && fail "la pagina statica del tier e' noindex" \
+      || pass "la pagina del tier senza filtri resta indicizzabile"
   fi
   verifica_404 "un segmento sconosciuto" "/events/$EZA/zzz"
   verifica_404 "Japan con la maiuscola" "/events/$EZA/Japan"
@@ -160,10 +200,10 @@ read -r codice dove < <(curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n'
 prendi /robots.txt
 grep -q 'Disallow: /events/browse' "$TMP/html" && pass "robots.txt esclude /events/browse" || fail "robots.txt senza /events/browse"
 grep -q 'Disallow: /admin' "$TMP/html" && pass "robots.txt esclude /admin" || fail "robots.txt senza /admin"
+grep -qx 'Disallow: /events/\*/clears' "$TMP/html" && pass "robots.txt esclude /events/*/clears" || fail "robots.txt senza /events/*/clears"
 prendi /sitemap.xml
 grep -q '/cards/1032310</loc>' "$TMP/html" && pass "la sitemap ha le carte" || fail "la sitemap non ha /cards/1032310"
-prendi /settings
-[ "$codice" = 307 ] && pass "Settings senza sessione porta a /login (307)" || fail "/settings senza sessione ha risposto $codice, atteso 307"
+rimanda "Settings senza sessione porta a /login" /settings 307 '/login?next=%2Fsettings'
 
 echo "chi guarda (/api/me)"
 intestazioni=$(curl -s -D - -o "$TMP/html" --max-time 60 "$BASE/api/me" | tr -d '\r')
@@ -181,13 +221,50 @@ if [ -n "${STAGE:-}" ]; then
     || pass "la pagina in cache non ha niente di chi guarda (Report, sospensione, Moderation)"
 fi
 
-# Contro next start (non next dev): le pagine pubbliche escono dalla cache
+# /users/<handle> (lib/profiles.ts): pubblico e in cache. Le maiuscole
+# diverse portano all'handle salvato con un 308; un handle che non c'e',
+# malformato o riservato e' un 404 vero. L'handle si prende da un clear di
+# una pagina evento, o da SMOKE_PROFILE_HANDLE (con db:demo: demo_rotation).
+echo "il profilo pubblico"
+UTENTE=${SMOKE_PROFILE_HANDLE:-}
+for p in ${STAGE:+/events/$STAGE} ${EZA:+/events/$EZA} ${TIER:+/events/$EZA/t/$TIER}; do
+  [ -n "$UTENTE" ] && break
+  prendi "$p"
+  UTENTE=$(grep -o 'href="/users/[A-Za-z0-9_]*"' "$TMP/html" | head -1 | sed 's#href="/users/##; s#"$##')
+done
+if [ -n "$UTENTE" ]; then
+  verifica "un profilo ($UTENTE)" "/users/$UTENTE" 200 "Joined [A-Z][a-z]+ [0-9]{4}" "$ERRORE"
+  grep -q '>Edit profile<' "$TMP/html" && fail "il profilo in cache contiene Edit profile" || pass "il profilo in cache non ha Edit profile"
+  ALTO=$(printf '%s' "$UTENTE" | tr '[:lower:]' '[:upper:]')
+  # Contro next start si salta: la cache ISR locale sta su file, e su un
+  # disco che non distingue le maiuscole (APFS di macOS) il 308 di
+  # /users/DEMO prenderebbe il posto della voce di /users/demo, che poi
+  # risponderebbe con un redirect a se stessa. Su Vercel la cache distingue.
+  if [ "$ALTO" != "$UTENTE" ] && [ "${SMOKE_EXPECT_CACHE:-}" != 1 ]; then
+    rimanda "le maiuscole diverse portano all'handle salvato" "/users/$ALTO" 308 "/users/$UTENTE"
+  elif [ "$ALTO" != "$UTENTE" ]; then
+    echo "  (next start: salto il 308 delle maiuscole, la cache su file locale non le distingue)"
+  fi
+  verifica_404 "profilo: pagina 1 esplicita" "/users/$UTENTE/p/1"
+else
+  echo "  (nessun handle nelle pagine evento: salto le verifiche positive del profilo)"
+fi
+verifica_404 "profilo: handle che non c'e'" /users/nessuno_xyz_404
+verifica_404 "profilo: handle malformato" /users/a-b
+verifica_404 "profilo: nome riservato" /users/users
+
+# Contro next start o Vercel (non next dev): le pagine pubbliche escono
+# dalla cache. next start scrive x-nextjs-cache, Vercel x-vercel-cache (HIT,
+# STALE o PRERENDER vengono tutti dalla cache).
 if [ "${SMOKE_EXPECT_CACHE:-}" = 1 ]; then
-  echo "la cache (next start)"
-  for p in /events ${EZA:+/events/$EZA} /cards/1032310; do
+  echo "la cache (next start o Vercel)"
+  for p in /events ${EZA:+/events/$EZA} /cards/1032310 ${UTENTE:+/users/$UTENTE}; do
     curl -s -o /dev/null "$BASE$p"
-    stato=$(curl -s -D - -o /dev/null "$BASE$p" | tr -d '\r' | grep -i '^x-nextjs-cache:' | awk '{print $2}')
-    [ "$stato" = HIT ] && pass "$p al secondo giro: HIT" || fail "$p al secondo giro: x-nextjs-cache ${stato:-assente}"
+    stato=$(curl -s -D - -o /dev/null "$BASE$p" | tr -d '\r' | grep -iE '^x-(nextjs|vercel)-cache:' | awk '{print $2}' | head -1)
+    case "$stato" in
+      HIT|STALE|PRERENDER) pass "$p al secondo giro: $stato" ;;
+      *) fail "$p al secondo giro: cache ${stato:-assente}" ;;
+    esac
   done
 fi
 

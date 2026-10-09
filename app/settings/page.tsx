@@ -1,6 +1,8 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { ArtPreference } from '@/components/auth/art-preference'
+import { ChangeHandle } from '@/components/auth/change-handle'
+import { HandleLink } from '@/components/handle-link'
 import { DeleteAccount } from '@/components/auth/delete-account'
 import { BannerSospeso } from '@/components/moderation/banner-sospeso'
 import { LinkProvider } from '@/components/auth/link-provider'
@@ -12,6 +14,8 @@ import { providers } from '@/lib/auth/auth'
 import { authErrorMessage } from '@/lib/auth/messages'
 import { accountEmail, linkedProviderIds, requireOnboardedUser, sessionIsFresh } from '@/lib/dal'
 import { hiddenClearsOf } from '@/lib/clears'
+import { nextHandleChange } from '@/lib/auth/handle-change'
+import { handleChangedAt } from '@/lib/auth/handle-state'
 import { soloGiorno } from '@/lib/date'
 import { editClearHref } from '@/lib/urls'
 
@@ -30,9 +34,10 @@ export default async function SettingsPage({ searchParams }: PageProps<'/setting
   const sp = await searchParams
   // fresh decide solo cosa mostrare al clic: lo ricontrollano le Server
   // Action e l'hook di /link-social, perche' la pagina puo' restare aperta.
-  const [linked, { email, verified }, fresh, nascosti] = await Promise.all([
-    linkedProviderIds(), accountEmail(), sessionIsFresh(), hiddenClearsOf(user.id),
+  const [linked, { email, verified }, fresh, nascosti, cambiato] = await Promise.all([
+    linkedProviderIds(), accountEmail(), sessionIsFresh(), hiddenClearsOf(user.id), handleChangedAt(user.id),
   ])
+  const prossimoCambio = nextHandleChange(cambiato)
   const error = authErrorMessage(one(sp.error))
   const justLinked = PROVIDERS.find((p) => p.id === one(sp.linked) && linked.includes(p.id))
   const justUnlinked = PROVIDERS.find((p) => p.id === one(sp.unlinked) && !linked.includes(p.id))
@@ -53,11 +58,25 @@ export default async function SettingsPage({ searchParams }: PageProps<'/setting
     <div className="mx-auto max-w-6xl px-5 py-10">
       <h1 className="text-2xl font-semibold tracking-tight text-inchiostro">Settings</h1>
       <p className="mt-1.5 text-sm text-testo">
-        Signed in as <span className="font-medium text-inchiostro">{user.handle}</span>.
+        Signed in as <HandleLink handle={user.handle} className="font-medium text-inchiostro" />.
       </p>
       {user.suspended && user.suspendedUntil && (
         <BannerSospeso until={user.suspendedUntil} reason={user.suspensionReason} className="mt-6 max-w-lg" />
       )}
+
+      {/* id: il link "Edit profile" della pagina del profilo porta qui */}
+      <section className="mt-8 max-w-lg" aria-labelledby="handle">
+        <h2 id="handle" className="scroll-mt-6 text-[13px] font-semibold text-inchiostro">
+          Handle
+        </h2>
+        <div className="mt-3 border border-linea rounded-[var(--raggio)] bg-superficie px-4 py-3">
+          <ChangeHandle
+            handle={user.handle}
+            fresh={fresh}
+            nextChange={prossimoCambio ? soloGiorno(prossimoCambio) : null}
+          />
+        </div>
+      </section>
 
       <section className="mt-8 max-w-lg" aria-labelledby="display">
         <h2 id="display" className="text-[13px] font-semibold text-inchiostro">

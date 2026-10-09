@@ -5,11 +5,13 @@ import { notFound } from 'next/navigation'
 import { ArrowLeft, Trophy } from '@phosphor-icons/react/dist/ssr'
 import { assetUrl } from '@/lib/db'
 import { quando } from '@/lib/date'
-import { CLEAR_PER_PAGINA, type EventDetail, type StageRow } from '@/lib/queries'
+import {
+  CLEAR_PER_PAGINA, countClears, listClears, type EventDetail, type StageRow,
+} from '@/lib/queries'
 import {
   getEventCached, getEzaLinksCached, getMissionsCached, getStagesCached, listClearsCached,
 } from '@/lib/cache/data'
-import { browseHref, eventHref, submitHref, type EventView } from '@/lib/urls'
+import { browseHref, clearListHref, eventHref, submitHref, type EventView } from '@/lib/urls'
 import { AttesaLink } from '@/components/attesa-link'
 import { Clear } from '@/components/clear'
 import { InviaClear } from '@/components/clears/invia-cta'
@@ -22,12 +24,20 @@ import { DIFFICOLTA, nomeTier } from '@/lib/livelli'
 import { Missioni } from '@/components/missioni'
 import { ConteggioClear } from '@/components/conteggio-clear'
 import { Paginazione } from '@/components/paginazione'
+import { FiltriClear, type OpzioniFiltri } from '@/components/clears/filtri-clear'
+import { FiltriAttivi } from '@/components/clears/filtri-attivi'
+import { SPIEGA_ORDINE, VUOTI, filtriAttivi, soloOrdine, type FiltriClear as Filtri } from '@/lib/clears/filtri'
+import { datiFiltri } from '@/lib/clears/filtri-pagina'
 
 // Il corpo della pagina di un evento, per tutte le sue viste
 // (/events/<id>[/japan][/t/<tier>[/p/<n>]]). Legge solo dati in cache e
 // non legge mai la sessione: la pagina e' la stessa per tutti, e Vercel la
 // serve dalla CDN come prerender. Chi guarda arriva dopo, nelle isole
 // client (voto, Edit/Delete, commenti, invio), da /api/me.
+//
+// Con `filtri` e' la lista filtrata (/events/<id>/clears?...), dinamica e
+// noindex: la lista e il conteggio filtrati non stanno in cache (le
+// combinazioni sono senza fine), tutto il resto si'.
 
 const TIPO_EVENTO: Record<string, string> = {
   challenge: 'Challenge', zbattle: 'Extreme Z-Battle', limited: 'Limited', story: 'Story',
@@ -71,6 +81,50 @@ export async function metadataEvento(id: string, view: EventView | null): Promis
   return e ? { title: e.name, description: e.description?.slice(0, 160) } : {}
 }
 
+/** La barra dei filtri sopra la lista, se il tier ha abbastanza clear; altrimenti solo la lista. */
+function ListaConFiltri({ barra, eventId, reg, tier, filtri, sostituisci, etichette, children }: {
+  barra: OpzioniFiltri | null
+  eventId: string
+  reg: EventView['reg']
+  tier: string
+  filtri: Filtri
+  sostituisci: boolean
+  etichette: Record<string, string>
+  children: React.ReactNode
+}) {
+  if (!barra) return <>{children}</>
+  return (
+    <FiltriClear
+      eventId={eventId} reg={reg} tier={tier} filtri={filtri} opzioni={barra}
+      sostituisci={sostituisci} etichette={etichette}
+    >
+      {children}
+    </FiltriClear>
+  )
+}
+
+const N = ({ n }: { n: number | string }) => <span className="numeri">{n}</span>
+
+/** "Clears 1-20 of 40", o con i filtri "12 of 40 clears match". */
+function Riepilogo({ primo, visti, totale, delTier, filtrata }: {
+  primo: number
+  visti: number
+  totale: number
+  delTier: number
+  filtrata: boolean
+}) {
+  if (totale > visti) {
+    return (
+      <>
+        Clears <N n={`${primo}-${primo + visti - 1}`} /> of <N n={totale} />
+        {filtrata && <> matching, out of <N n={delTier} /></>}
+      </>
+    )
+  }
+  if (filtrata) return <><N n={totale} /> of <N n={delTier} /> clears match</>
+  return <><N n={totale} /> {totale === 1 ? 'clear' : 'clears'}</>
+}
+
 /** Il tier mostrato all'apertura: quello con più clear, altrimenti il più difficile. */
 function tierIniziale(stages: StageRow[]): StageRow | undefined {
   let migliore: StageRow | undefined
@@ -84,7 +138,7 @@ function tierIniziale(stages: StageRow[]): StageRow | undefined {
  * un messaggio, ne' un ripiego sul tier di apertura). notFound() qui, al
  * livello della pagina e non dentro un <Suspense>, risponde davvero 404.
  */
-export async function EventPage({ id, view }: { id: string; view: EventView | null }) {
+export async function EventPage({ id, view, filtri }: { id: string; view: EventView | null; filtri?: Filtri }) {
   if (!view || !idValido(id)) notFound()
   const { reg, page: pagina } = view
 
@@ -98,16 +152,26 @@ export async function EventPage({ id, view }: { id: string; view: EventView | nu
   // Il totale dei clear viene da getStages, che li conta con gli stessi
   // filtri di listClears (tier, regione, pubblicati).
   const totaleClear = scelto?.clears ?? 0
-  const ultimaPagina = Math.max(1, Math.ceil(totaleClear / CLEAR_PER_PAGINA))
-  if (pagina > ultimaPagina) notFound()
+  // La lista filtrata non e' una voce ISR: una pagina oltre l'ultima mostra
+  // il riquadro "non esiste" invece di un 404.
+  if (!filtri && pagina > Math.max(1, Math.ceil(totaleClear / CLEAR_PER_PAGINA))) notFound()
+  const f = filtri ?? VUOTI
+  const nFiltri = filtriAttivi(f)
 
   // Le missioni ci sono solo per Global: il datamine è quello della versione Global.
   // Le tip non hanno regione (gli stage nemmeno): le stesse in Global e Japan.
-  const [clears, missioni, tips] = await Promise.all([
-    scelto ? listClearsCached(scelto.tier_id, reg, (pagina - 1) * CLEAR_PER_PAGINA, e.id) : Promise.resolve([]),
+  const offset = (pagina - 1) * CLEAR_PER_PAGINA
+  const [clears, totaleFiltrato, perFiltri, missioni, tips] = await Promise.all([
+    !scelto ? Promise.resolve([])
+      : filtri ? listClears(scelto.tier_id, reg, { offset, filtri })
+        : listClearsCached(scelto.tier_id, reg, offset, e.id),
+    // senza filtri il conteggio e' quello di getStages
+    scelto && nFiltri > 0 ? countClears(scelto.tier_id, reg, f) : Promise.resolve(totaleClear),
+    scelto ? datiFiltri({ eventId: e.id, tierId: scelto.tier_id, reg, totale: totaleClear, filtri: f }) : Promise.resolve(null),
     reg === 'global' ? getMissionsCached(e.id, e.run_id) : Promise.resolve([]),
     scelto ? listTipsCached(e.id, scelto.tier_id) : Promise.resolve(null),
   ])
+  const ultimaPagina = Math.max(1, Math.ceil(totaleFiltrato / CLEAR_PER_PAGINA))
   const extra = await extraClear(e.id, clears)
   const invia = scelto ? submitHref(e.id, reg, scelto.tier_id) : ''
 
@@ -125,7 +189,8 @@ export async function EventPage({ id, view }: { id: string; view: EventView | nu
   const banner = assetUrl(e.banner_key)
   const copertina = assetUrl(e.cover_thumb_key)
   const linkEvento = (altro: string) => eventHref({ id: altro, reg })
-  const href = (tier: string, n = 1) => eventHref({ id: e.id, reg, tier, page: n })
+  // I link di stage, livelli e fasce tengono i filtri e tornano a pagina 1
+  const href = (tier: string, n = 1) => clearListHref({ id: e.id, reg, tier, filtri: f, page: n })
   const stato = statoEvento(e)
   // Per commentare si torna a questa pagina, non al builder
   const qui = scelto ? `${href(scelto.tier_id, pagina)}#clear` : ''
@@ -343,7 +408,9 @@ export async function EventPage({ id, view }: { id: string; view: EventView | nu
              * resta lo stesso nodo e il lettore di schermo ne legge il cambio.
              */}
             <p aria-live="polite" className="sr-only">
-              {nomeScelto}: {totaleClear === 0 ? 'no clears' : `${totaleClear} ${totaleClear === 1 ? 'clear' : 'clears'}`}
+              {nomeScelto}: {totaleClear === 0 ? 'no clears'
+                : nFiltri > 0 ? `${totaleFiltrato} of ${totaleClear} clears match`
+                  : `${totaleClear} ${totaleClear === 1 ? 'clear' : 'clears'}`}
             </p>
 
             {scelto && (
@@ -386,7 +453,7 @@ export async function EventPage({ id, view }: { id: string; view: EventView | nu
                 nomeTier={nomeScelto}
                 eza={eza}
                 tips={tips}
-                ritorno={`${href(scelto.tier_id)}#tips`}
+                ritorno={`${eventHref({ id: e.id, reg, tier: scelto.tier_id })}#tips`}
               />
             )}
 
@@ -403,48 +470,77 @@ export async function EventPage({ id, view }: { id: string; view: EventView | nu
                   Be the first to share it.
                 </p>
               </div>
-            ) : clears.length === 0 ? (
-              <div className="mt-5 border border-linea rounded-[var(--raggio)] bg-superficie px-6 py-10 text-center">
-                <p className="text-sm font-medium text-inchiostro">This page doesn’t exist</p>
-                <p className="mt-1.5 text-[13px] text-testo">
-                  Clears for this {eza ? 'level' : 'stage'} end at page {ultimaPagina}.
-                </p>
-                <Link
-                  href={href(scelto!.tier_id)}
-                  className="inline-block mt-4 px-3 py-1.5 text-[13px] font-medium rounded-[var(--raggio)] bg-inchiostro text-sfondo hover:opacity-90 transition-opacity"
-                >
-                  Go to the first page
-                </Link>
-              </div>
             ) : (
-              <>
-                <p className="mt-4 text-[12px] text-tenue">
-                  {totaleClear > clears.length ? (
-                    <>
-                      Clears <span className="numeri">{(pagina - 1) * CLEAR_PER_PAGINA + 1}-{(pagina - 1) * CLEAR_PER_PAGINA + clears.length}</span>{' '}
-                      of <span className="numeri">{totaleClear}</span>
-                    </>
-                  ) : (
-                    <>
-                      <span className="numeri">{totaleClear}</span> {totaleClear === 1 ? 'clear' : 'clears'}
-                    </>
-                  )}
-                  , those with proof and the most votes first
-                </p>
-                <ol className="mt-3 space-y-3">
-                  {clears.map((c) => (
-                    <li key={c.id}>
-                      <Clear clear={c} eventId={e.id} ritorno={qui} {...extra.get(c.id)!} />
-                    </li>
-                  ))}
-                </ol>
-                <Paginazione
-                  pagina={pagina}
-                  ultima={ultimaPagina}
-                  etichetta="Clear pages"
-                  href={(n) => `${href(scelto!.tier_id, n)}#clear`}
-                />
-              </>
+              <ListaConFiltri
+                barra={perFiltri?.opzioni ?? null}
+                eventId={e.id} reg={reg} tier={scelto!.tier_id} filtri={f} sostituisci={!!filtri}
+                etichette={Object.fromEntries(perFiltri?.nomi.carte ?? [])}
+              >
+                {perFiltri && (
+                  <FiltriAttivi
+                    eventId={e.id} reg={reg} tier={scelto!.tier_id} filtri={f} nomi={perFiltri.nomi} className="mt-3"
+                  />
+                )}
+                {totaleFiltrato === 0 ? (
+                  <div className="mt-5 border border-dashed border-linea-forte rounded-[var(--raggio)] px-6 py-10 text-center">
+                    <p className="text-sm font-medium text-inchiostro">No clears match these filters</p>
+                    <p className="mt-1.5 text-[13px] text-testo max-w-[46ch] mx-auto leading-relaxed">
+                      <span className="numeri">{totaleClear}</span> {totaleClear === 1 ? 'clear' : 'clears'} for
+                      this {eza ? 'level' : 'stage'}, but none with all of these.
+                    </p>
+                    {perFiltri?.maiUsate.map((frase) => (
+                      <p key={frase} className="mt-1 text-[13px] text-testo">{frase}</p>
+                    ))}
+                    <Link
+                      href={clearListHref({ id: e.id, reg, tier: scelto!.tier_id, filtri: soloOrdine(f) })}
+                      rel="nofollow"
+                      prefetch={false}
+                      scroll={false}
+                      className="inline-block mt-4 px-3 py-1.5 text-[13px] font-medium rounded-[var(--raggio)] bg-inchiostro text-sfondo hover:opacity-90 transition-opacity"
+                    >
+                      Clear all filters
+                    </Link>
+                  </div>
+                ) : clears.length === 0 ? (
+                  <div className="mt-5 border border-linea rounded-[var(--raggio)] bg-superficie px-6 py-10 text-center">
+                    <p className="text-sm font-medium text-inchiostro">This page doesn’t exist</p>
+                    <p className="mt-1.5 text-[13px] text-testo">
+                      {nFiltri > 0 ? 'Matching clears' : `Clears for this ${eza ? 'level' : 'stage'}`} end at page {ultimaPagina}.
+                    </p>
+                    <Link
+                      href={href(scelto!.tier_id)}
+                      className="inline-block mt-4 px-3 py-1.5 text-[13px] font-medium rounded-[var(--raggio)] bg-inchiostro text-sfondo hover:opacity-90 transition-opacity"
+                    >
+                      Go to the first page
+                    </Link>
+                  </div>
+                ) : (
+                  <>
+                    <p className="mt-4 text-[12px] text-tenue">
+                      <Riepilogo
+                        primo={offset + 1} visti={clears.length} totale={totaleFiltrato}
+                        delTier={totaleClear} filtrata={nFiltri > 0}
+                      />
+                      {nFiltri === 0 && f.sort === 'top'
+                        ? ', those with proof and the most votes first'
+                        : ` · ${SPIEGA_ORDINE[f.sort]}`}
+                    </p>
+                    <ol className="mt-3 space-y-3">
+                      {clears.map((c) => (
+                        <li key={c.id}>
+                          <Clear clear={c} eventId={e.id} ritorno={qui} {...extra.get(c.id)!} />
+                        </li>
+                      ))}
+                    </ol>
+                    <Paginazione
+                      pagina={pagina}
+                      ultima={ultimaPagina}
+                      etichetta="Clear pages"
+                      href={(n) => `${href(scelto!.tier_id, n)}#clear`}
+                    />
+                  </>
+                )}
+              </ListaConFiltri>
             )}
           </section>
           </ViewerTier>

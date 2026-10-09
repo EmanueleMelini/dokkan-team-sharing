@@ -13,7 +13,9 @@
 # cache (dati rifatti, pagine rigenerate) stanno al posto delle invocazioni.
 #
 # Funziona sia con gli URL vecchi (?tier=, /events?type=) sia con quelli
-# nuovi (/t/<tier>, /events/browse): li riconosce dalla pagina.
+# nuovi (/t/<tier>, /events/browse): li riconosce dalla pagina. Le classi
+# carte, filtri e profili (dalla fase 4) restano vuote dove le pagine non
+# ci sono; CPU_PROFILE_HANDLE=<handle> aggiunge un profilo da misurare.
 set -uo pipefail
 BASE=${CPU_URL:-http://localhost:3100}
 BASE=${BASE%/}
@@ -74,12 +76,29 @@ done
 echo "/events" > "$TMP/lista"
 echo "$browse" > "$TMP/browse"
 echo "/api/cards?q=goku" > "$TMP/api"
+# Dalla fase 4: le carte (dalla sitemap), le liste filtrate dei clear
+# (dinamiche per scelta, una invocazione per vista) e i profili. Gli handle
+# si prendono dalle pagine dei tier; CPU_PROFILE_HANDLE ne aggiunge uno.
+prendi /sitemap.xml > /dev/null
+grep -oE '/cards/[0-9]+</loc>' "$TMP/html" | sed 's#</loc>##' | head -20 > "$TMP/carte"
+: > "$TMP/filtri"; : > "$TMP/profili"
+if [ "$nuovo" = 1 ]; then
+  while IFS= read -r t; do
+    [ -n "$t" ] || continue
+    id=${t#/events/}; id=${id%%/*}
+    echo "/events/$id/clears?tier=${t##*/}&proof=1" >> "$TMP/filtri"
+    prendi "$t" > /dev/null
+    grep -oE 'href="/users/[A-Za-z0-9_]+"' "$TMP/html" | sed -E 's/href="([^"]+)"/\1/' >> "$TMP/profili"
+  done < "$TMP/tier"
+fi
+[ -n "${CPU_PROFILE_HANDLE:-}" ] && echo "/users/$CPU_PROFILE_HANDLE" >> "$TMP/profili"
+sort -u -o "$TMP/profili" "$TMP/profili"
 
 printf '  server %s (pid %s), schema URL %s, %s richieste per classe\n\n' \
   "$BASE" "$PID" "$([ $nuovo = 1 ] && echo nuovo || echo vecchio)" "$N"
 printf '  %-8s %6s %10s %8s %6s  %s\n' classe url 'ms CPU/req' 'dati MISS' 'ISR' 'header al 2o giro'
 
-for classe in lista eventi tier browse api; do
+for classe in lista eventi tier browse api carte filtri profili; do
   urls=()
   while IFS= read -r u; do [ -n "$u" ] && urls+=("$u"); done < "$TMP/$classe"
   [ ${#urls[@]} -gt 0 ] || { printf '  %-8s nessun URL\n' "$classe"; continue; }

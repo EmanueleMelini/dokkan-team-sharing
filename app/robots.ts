@@ -10,6 +10,10 @@ import { readAuthEnv } from '@/lib/auth/env'
 // funzione per vista) e in numero senza fine. Ogni evento e' gia' nella
 // sitemap, quindi ai motori non servono.
 //
+// /events/<id>/clears sono le liste filtrate dei clear di un tier: come
+// browse, dinamiche e senza fine (ogni combinazione di filtri e' un URL).
+// La regola copre anche /events/<id>/clears/<clear>/edit.
+//
 // /admin risponde 404 a chiunque non sia admin: niente da indicizzare, e
 // cosi' un bot non la prova a ogni giro.
 export default function robots(): MetadataRoute.Robots {
@@ -25,6 +29,7 @@ export default function robots(): MetadataRoute.Robots {
         '/settings',
         '/events/browse',
         '/events/*/submit',
+        '/events/*/clears',
         '/events/*/clears/*/edit',
         '/admin',
       ],
