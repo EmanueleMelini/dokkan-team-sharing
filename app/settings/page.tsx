@@ -6,6 +6,7 @@ import { HandleLink } from '@/components/handle-link'
 import { DeleteAccount } from '@/components/auth/delete-account'
 import { BannerSospeso } from '@/components/moderation/banner-sospeso'
 import { LinkProvider } from '@/components/auth/link-provider'
+import { ProviderLogo } from '@/components/auth/provider-logo'
 import { SignOutButton } from '@/components/auth/sign-out-button'
 import { UnlinkProvider } from '@/components/auth/unlink-provider'
 import { canUnlink } from '@/lib/auth/account'
@@ -118,9 +119,10 @@ export default async function SettingsPage({ searchParams }: PageProps<'/setting
           </li>
           {rows.map((p) => (
             <li key={p.id} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-4 py-3">
-              <p className="text-[13px] text-inchiostro">
+              <p className="flex items-center gap-2 text-[13px] text-inchiostro">
+                <ProviderLogo id={p.id} />
                 {p.label}
-                {linked.includes(p.id) && <span className="ml-2 text-[12px] text-oro font-medium">Linked</span>}
+                {linked.includes(p.id) && <span className="text-[12px] text-oro font-medium">Linked</span>}
               </p>
               {!linked.includes(p.id) ? (
                 <LinkProvider id={p.id} label={p.label} fresh={fresh} />

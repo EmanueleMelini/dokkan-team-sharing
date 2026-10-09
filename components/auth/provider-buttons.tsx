@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { ProviderLogo } from '@/components/auth/provider-logo'
 import { authClient } from '@/lib/auth/client'
 
 type Provider = { id: string; label: string }
@@ -44,8 +45,9 @@ export function ProviderButtons({ providers, next, errorPath = '/login' }: {
           type="button"
           onClick={() => start(p.id)}
           disabled={pending !== null}
-          className="w-full px-3 py-2 text-[13px] font-medium rounded-[var(--raggio)] border border-campo bg-superficie text-inchiostro hover:bg-superficie-2 transition-colors disabled:opacity-60"
+          className="w-full flex items-center justify-center gap-2 px-3 py-2 text-[13px] font-medium rounded-[var(--raggio)] border border-campo bg-superficie text-inchiostro hover:bg-superficie-2 transition-colors disabled:opacity-60"
         >
+          <ProviderLogo id={p.id} />
           {pending === p.id ? `Opening ${p.label}…` : `Continue with ${p.label}`}
         </button>
       ))}

@@ -422,11 +422,11 @@ if (CI && orfani.length) console.log(`::warning::${orfani.length} images have no
 let done = 0, skipped = kept.length, adoptedN = 0, failed = 0, bytes = 0
 const results = [...kept]
 
-// I primi 64 KB del file bastano a siMuove; un file che qui non c'e' conta
-// come animato, perche' non lo si puo' controllare.
+// I primi 64 KB del file bastano a siMuove. Un file che qui non c'e' non si
+// puo' controllare: null, e chi chiama lascia il collegamento com'e'.
 function muoveSulDisco(key) {
   const p = join(ASSET_DIR, key)
-  if (!existsSync(p)) return true
+  if (!existsSync(p)) return null
   const fd = openSync(p, 'r')
   try {
     const testa = Buffer.alloc(65536)
@@ -540,12 +540,17 @@ try {
   // Un "animato" che non si muove si scollega (siMuove in asset-select).
   // Senza il file su questo disco (--offline in produzione) non si puo'
   // sapere: il collegamento resta com'e'.
+  // Solo i file che ci sono si giudicano: nel giro di prova della CI le
+  // immagini non stanno sul disco, e ricollegarle lo faceva divergere dalla
+  // produzione, dove invece si scollegano.
   for (const col of ['thumb_animated_key', 'art_animated_key']) {
-    const fermi = cardCols[col].filter(([, k]) => !muoveSulDisco(k))
+    const esito = new Map(cardCols[col].map(([id, k]) => [id, muoveSulDisco(k)]))
+    const fermi = [...esito].filter(([, v]) => v === false).map(([id]) => id)
+    const ignoti = [...esito.values()].filter((v) => v === null).length
+    cardCols[col] = cardCols[col].filter(([id]) => esito.get(id) === true)
+    if (ignoti) console.log(`  card.${col}: ${ignoti} senza file su questo disco, lasciate come sono`)
     if (!fermi.length) continue
-    const tolti = new Set(fermi.map(([id]) => id))
-    cardCols[col] = cardCols[col].filter(([id]) => !tolti.has(id))
-    await tx.query(`update card set ${col} = null where id = any($1::bigint[])`, [[...tolti]])
+    await tx.query(`update card set ${col} = null where id = any($1::bigint[])`, [fermi])
     console.log(`  card.${col}: ${fermi.length} non animati, scollegati`)
   }
   for (const [col, pairs] of Object.entries(cardCols)) {
