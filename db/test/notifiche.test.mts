@@ -114,8 +114,8 @@ async function mondo(): Promise<Mondo> {
 async function regole() {
   console.log('\n  -- tipi, colonne e tabelle (0028)')
   const kinds = (await one<{ k: string[] }>('select notification_kinds() as k')).k
-  check('notification_kinds: i sei tipi della v1',
-    kinds.join(',') === 'clear_comment,content_hidden,content_unhidden,suspended,suspension_lifted,reports_open',
+  check('notification_kinds: i sei tipi della v1, poi il feed degli admin (0032)',
+    kinds.join(',') === 'clear_comment,content_hidden,content_unhidden,suspended,suspension_lifted,reports_open,site_activity',
     kinds.join(','))
   for (const [tab, nome] of [['notification', 'notification_kind_check'], ['notification_pref', 'notification_pref_kind_check']]) {
     const def = (await one<{ d: string }>(

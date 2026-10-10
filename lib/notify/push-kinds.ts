@@ -27,6 +27,16 @@ export const PUSH_GROUPS: readonly PushGroup[] = [
   { id: 'reports', label: 'New reports', kinds: ['reports_open'], admin: true },
 ]
 
+/**
+ * I tipi che non stanno in nessun gruppo: la loro push segue un
+ * interruttore suo. site_activity (0032) e' il feed degli admin, che
+ * l'interruttore "All site activity" di Settings accende insieme nella
+ * lista e sui dispositivi: non si accende mai da solo col primo "Turn on",
+ * e non conta per decidere se quel clic e' il primo. I test controllano
+ * che gruppi e tipi a parte coprano NOTIFICATION_KINDS una volta sola.
+ */
+export const PUSH_SEPARATE: readonly NotificationKind[] = ['site_activity']
+
 export const pushGroup = (id: unknown): PushGroup | undefined => PUSH_GROUPS.find((g) => g.id === id)
 
 /** I gruppi che questo utente vede. */
@@ -37,3 +47,17 @@ export const pushGroupsOn = (kindsOn: Iterable<string>, admin: boolean): PushGro
   const on = new Set(kindsOn)
   return pushGroupsFor(admin).filter((g) => g.kinds.every((k) => on.has(k))).map((g) => g.id)
 }
+
+/**
+ * Il primo "Turn on for this device": nessun tipo dei gruppi e' acceso (i
+ * tipi a parte non contano). Allora si accendono tutti i gruppi che
+ * l'utente vede, e solo quelli.
+ */
+export const primaIscrizione = (kindsOn: Iterable<string>): boolean => {
+  const aParte = new Set<string>(PUSH_SEPARATE)
+  return [...kindsOn].every((k) => aParte.has(k))
+}
+
+/** I tipi che il primo "Turn on" accende: quelli dei gruppi visibili, mai un tipo a parte. */
+export const kindsPrimaIscrizione = (admin: boolean): NotificationKind[] =>
+  pushGroupsFor(admin).flatMap((g) => g.kinds).filter((k) => !PUSH_SEPARATE.includes(k))

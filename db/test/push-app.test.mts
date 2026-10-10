@@ -2,8 +2,10 @@
 //   - lib/notify/endpoint.ts contro gli stessi casi di push_endpoint_ok
 //     (db/test/push-endpoints.ts), cosi' le due regole non divergono;
 //   - le chiavi VAPID dall'ambiente (spente se mancano o sono sbagliate);
-//   - i gruppi di Settings contro NOTIFICATION_KINDS;
-//   - testo e payload (512 byte, l'URL, il tag, mai il testo dei post);
+//   - i gruppi di Settings contro NOTIFICATION_KINDS, e il feed degli admin
+//     (site_activity, 0032) che sta a parte e non si accende col primo "Turn on";
+//   - testo e payload (512 byte, l'URL, il tag, mai il testo dei post), anche
+//     per ogni azione del feed (mai chi segnala);
 //   - il mittente vero contro un servizio push locale: la richiesta che
 //     arriva si decifra con la chiave del "browser" (RFC 8291, scritta qui
 //     da capo, non quella di web-push) e il token VAPID si verifica con la
@@ -15,7 +17,8 @@ import { pushEndpointOk, senzaPorta443 } from '@/lib/notify/endpoint'
 import { NOTIFICATION_KINDS } from '@/lib/notify/kinds'
 import { PUSH_PAYLOAD_MAX, pushPayload, pushTag, pushText, pushTopic, testPayload, type PushJobFields } from '@/lib/notify/payload'
 import { pushEnvProblem, readPushEnv } from '@/lib/notify/push-env'
-import { PUSH_GROUPS, pushGroupsOn } from '@/lib/notify/push-kinds'
+import { PUSH_GROUPS, PUSH_SEPARATE, kindsPrimaIscrizione, primaIscrizione, pushGroupsOn } from '@/lib/notify/push-kinds'
+import { SITE_ACTIVITY_ACTIONS } from '@/lib/notify/attivita'
 import { etichettaDispositivo } from '@/lib/pwa/piattaforma'
 import { ENDPOINT_BUONI, ENDPOINT_CATTIVI } from '@/db/test/push-endpoints'
 import { provaMittente } from '@/db/test/push-app-sender'
@@ -53,8 +56,17 @@ vale('le chiavi di web-push vanno, soggetto per difetto quello della privacy',
 vale('VAPID_SUBJECT https', readPushEnv({ ...envOk, VAPID_SUBJECT: 'https://dokkants.example' })?.subject, 'https://dokkants.example')
 
 console.log('lib/notify/push-kinds.ts')
-const coperti = PUSH_GROUPS.flatMap((g) => g.kinds)
-vale('i gruppi coprono ogni tipo una volta sola', [...coperti].sort(), [...NOTIFICATION_KINDS].sort())
+const coperti = [...PUSH_GROUPS.flatMap((g) => g.kinds), ...PUSH_SEPARATE]
+vale('i gruppi e i tipi a parte coprono ogni tipo una volta sola', [...coperti].sort(), [...NOTIFICATION_KINDS].sort())
+vale('a parte c\'e\' solo il feed degli admin, in nessun gruppo', [[...PUSH_SEPARATE], PUSH_GROUPS.some((g) => g.kinds.includes('site_activity'))],
+  [['site_activity'], false])
+check('il primo "Turn on": nessun tipo, o solo il feed, e\' il primo; un gruppo acceso no',
+  primaIscrizione([]) && primaIscrizione(['site_activity']) && !primaIscrizione(['site_activity', 'clear_comment']) &&
+  !primaIscrizione(['reports_open']))
+vale('il primo "Turn on" accende i gruppi visibili e mai il feed',
+  [kindsPrimaIscrizione(false), kindsPrimaIscrizione(true).includes('site_activity'), kindsPrimaIscrizione(true).includes('reports_open')],
+  [['clear_comment', 'content_hidden', 'content_unhidden', 'suspended', 'suspension_lifted'], false, true])
+vale('il feed acceso non accende nessun gruppo', pushGroupsOn(['site_activity'], true), [])
 check('reports solo per gli admin', PUSH_GROUPS.find((g) => g.id === 'reports')?.admin === true)
 vale('un gruppo acceso solo se tutti i suoi tipi lo sono',
   pushGroupsOn(['clear_comment', 'content_hidden', 'reports_open'], false), ['comments'])
@@ -94,6 +106,41 @@ for (const [nome, ev] of [['ASCII lungo', 'X'.repeat(900)], ['giapponese', 'イ�
     `${Buffer.byteLength(s)} byte`)
 }
 check('la prova porta a Settings', JSON.parse(testPayload(1)).url === '/settings#browser-notifications')
+
+console.log('lib/notify/payload.ts: il feed degli admin (site_activity, 0032)')
+const SEGNALA = 'Reporter_Secret_77'
+const feed = (action: string, x: Partial<PushJobFields> = {}): PushJobFields => job({
+  kind: 'site_activity', group_key: `act:${action}:abc`, action, actor_handle: 'Bob_9', subject_handle: 'Frank_1',
+  target: action.startsWith('tip_') ? 'tip' : 'clear', event_name: 'Extreme Z-Battle: Super Saiyan God SS Goku',
+  stage_seq: 10, stage_name: null, difficulty: 'eza_level', ...x,
+})
+vale('un voto: chi e cosa nel titolo, il luogo nel corpo', pushText(feed('clear_upvoted')),
+  { title: 'Bob_9 upvoted a clear', body: 'Extreme Z-Battle: Super Saiyan God SS Goku, Level 10' })
+vale('quattro cambi di voto: il conteggio e l\'ultimo', pushText(feed('clear_upvoted', { n: 4 })),
+  { title: '4 vote changes on a clear', body: 'Extreme Z-Battle: Super Saiyan God SS Goku, Level 10, latest: Bob_9 upvoted' })
+vale('un account cancellato: nessun handle, il corpo generico', pushText(feed('account_deleted', { actor_handle: null, subject_handle: null, event_name: null, difficulty: null })),
+  { title: 'An account was deleted', body: 'Open it to see more.' })
+vale('un iscritto nuovo: l\'handle di adesso', pushText(feed('user_joined', { event_name: null, difficulty: null })).title, 'Frank_1 joined the site')
+const segnalata = pushText(feed('report', { actor_handle: null, n: 3, target: 'comment' }))
+check('una segnalazione: senza chi l\'ha mandata', segnalata.title === '3 new reports on a comment' && !segnalata.body.includes('Bob_9'),
+  JSON.stringify(segnalata))
+const feedTutti = SITE_ACTIVITY_ACTIONS.flatMap((a) => [1, 3].flatMap((n) =>
+  [pushText(feed(a, { n })), pushText(feed(a, { n, actor_handle: null, subject_handle: null, event_name: null, difficulty: null }))]))
+check('ogni azione, con e senza nomi: inglese, un titolo suo, senza trattini lunghi',
+  feedTutti.every((t) => t.title && t.title !== 'You have new activity' && t.title !== 'New activity on the site' &&
+    !/[\u2014\u2013]/.test(t.title + t.body) && t.body.length > 0), JSON.stringify(feedTutti.find((t) => /[\u2014\u2013]/.test(t.title + t.body))))
+check('senza attore: "Someone", mai un handle inventato', pushText(feed('tip_posted', { actor_handle: null })).title === 'Someone posted a tip')
+// la riga non lo porta mai (actor_handle null, 0032); e anche se arrivasse, il testo non lo usa
+const riportate = [1, 2].map((n) => pushText(feed('report', { actor_handle: SEGNALA, n })))
+check('una segnalazione non nomina chi l\'ha mandata nemmeno se l\'handle arrivasse', !JSON.stringify(riportate).includes(SEGNALA),
+  JSON.stringify(riportate))
+for (const [nome, ev] of [['ASCII lungo', 'X'.repeat(900)], ['giapponese', 'イベント'.repeat(120)]] as const) {
+  const s2 = pushPayload(feed('comment_posted', { event_name: ev, actor_handle: 'A'.repeat(24), n: 99 }), Date.now())
+  const j2 = JSON.parse(s2)
+  check(`feed, ${nome}: al massimo ${PUSH_PAYLOAD_MAX} byte, titolo intero, kind e url giusti`,
+    Buffer.byteLength(s2) <= PUSH_PAYLOAD_MAX && j2.title === '99 new comments on a clear' && j2.kind === 'site_activity' &&
+    j2.url === '/notifications/42' && j2.tag === pushTag('act:comment_posted:abc'), `${Buffer.byteLength(s2)} byte`)
+}
 
 console.log('lib/pwa/piattaforma.ts: la label del dispositivo')
 const ua = {

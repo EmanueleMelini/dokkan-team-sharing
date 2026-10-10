@@ -16,6 +16,7 @@ import { handleChangedAt } from '@/lib/auth/handle-state'
 import { soloGiorno } from '@/lib/date'
 import { HINT_COOKIE } from '@/lib/viewer/hint'
 import { isTemaId, temaPerAccount } from '@/lib/tema/temi'
+import { kickPush } from '@/lib/notify/kick'
 
 // Le Server Action dell'accesso. Ognuna si comporta come un endpoint
 // pubblico (una POST diretta la raggiunge): rilegge la sessione da sola
@@ -67,6 +68,8 @@ export async function completeOnboardingAction(
 
   try {
     await sql('select complete_onboarding($1, $2, $3)', [user.id, handle, reg])
+    // il feed degli admin (0032): un iscritto nuovo. Solo se e' riuscita
+    kickPush()
     // Il profilo nuovo: una visita di prima a /users/<handle> e' un 404 in cache
     invalidateProfiles([handle], 'now')
   } catch (e) {
@@ -149,6 +152,9 @@ export async function deleteAccountAction(_prev: AccountState, form: FormData): 
   } catch (e) {
     return accountError(e)
   }
+  // il feed degli admin (0032): push_claim non chiede la sessione, e
+  // after() gira anche dopo signOut e il redirect
+  kickPush()
   invalidateUser(tracce)
   await auth.api.signOut({ headers: await headers() })
   await togliIndizio()
@@ -257,5 +263,7 @@ export async function changeHandleAction(_prev: HandleState, form: FormData): Pr
   await afterUserChanged(user.id, { extraHandles: [vecchio] })
   // /settings e' per utente e dinamica: si ridisegna col nome nuovo.
   revalidatePath('/settings')
+  // il feed degli admin (0032)
+  kickPush()
   return { changed: handle }
 }

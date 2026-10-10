@@ -160,6 +160,8 @@ export async function dismissReports(_prev: ModState, form: FormData): Promise<M
   }
   // le segnalazioni non si vedono nelle pagine pubbliche: solo l'admin
   rinfrescaAdmin()
+  // il feed degli altri admin (0032): solo se ha scritto il registro
+  if (n > 0) kickPush()
   return { ok: true, message: n === 0 ? 'There were no open reports left.' : `Dismissed.${chiusi(n)}` }
 }
 

@@ -20,6 +20,8 @@
 #   app (lib/notify: token, testi, cron, one-click)
 #   -> push del browser (0031: host ammessi, dispositivi, claim, tetti, esiti)
 #   e il loro lato app (lib/notify: endpoint, payload, mittente, sw.js, giro)
+#   -> attivita' del sito per gli admin (0032: il feed, una push per
+#   azione, mai per email)
 #   -> carte solo nel gioco (load-game-cards) -> skill delle carte (0022)
 #   e la pagina della carta -> filtri dei clear
 #   -> finestre degli eventi dal
@@ -78,7 +80,8 @@ passo "id delle carte dal wiki" verifica node db/test/wiki-card.test.mjs
 passo "configurazione di produzione" verifica node_ts db/test/prod-config.test.mts
 # Gli script di db/prod/: i rifiuti del bersaglio, l'ambiente dei figli
 # senza .env.local, la conferma con --yes e prod:backup vero su questo
-# database (in una cartella temporanea). Legge soltanto.
+# database (in una cartella temporanea). Legge soltanto: harden (anche su
+# una funzione creata dopo) gira in una transazione annullata.
 passo "script di produzione" verifica node_ts db/test/prod-scripts.test.mts
 # Le cache locali, nessuna rete. fetch-assets resta fuori: senza
 # --offline interroga il wiki, e con --offline dipenderebbe da cosa c'e'
@@ -231,6 +234,20 @@ passo "push del browser (app)" verifica node_ts db/test/push-app.test.mts
 # mittente finto, push_report), la prova e le letture di Settings. Crea
 # solo utenti pushrun+ e li toglie.
 passo "push del browser (giro)" verifica node_ts db/test/push-run.test.mts
+# Il feed dell'attivita' del sito per gli admin (0032): spento per difetto e
+# solo per gli admin, una riga per azione a chi l'ha acceso e a nessun altro,
+# mai a se stessi, le esclusioni (chi e' segnalato, l'autore moderato, i
+# ruoli da script, dts.silent), le scritture che non cambiano niente, una
+# cancellazione che e' un'azione sola, l'accorpamento, il rollback, nessun
+# handle dopo la cancellazione dell'account, render, testi e link veri, il
+# limite per famiglia e il pallino che si spegne oltre quel limite (con
+# quante azioni non mostrate), push_claim con una push per azione e senza
+# tetti (mai chi segnala), anche la prima persa da un giro non riuscito ma
+# non gli arretrati di chi accende la push dopo, il link alla pagina di
+# /admin di chi e' sospeso, il digest che non lo manda mai e chi smette di
+# essere admin, anche con una segnalazione nello stesso istante.
+# Crea solo utenti attivitatest+ e li toglie.
+passo "attivita' del sito" verifica node_ts db/test/attivita.test.mts
 # Rilancia load-game-cards e load-datamine, e prova il passaggio al wiki
 # con una pagina finta su 1034200 (poi rimette la carta com'era).
 passo "carte dal gioco" verifica node_ts db/test/game-cards.test.mts

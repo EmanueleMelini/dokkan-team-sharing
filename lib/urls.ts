@@ -136,6 +136,15 @@ export function profileHref(handle: string, page = 1): string {
   return page > 1 ? `${base}/p/${Math.min(Math.trunc(page), PAGINA_MAX)}` : base
 }
 
+/**
+ * La pagina di un utente nell'area admin: /admin/users/<handle>. C'e' anche
+ * per chi non ha il profilo pubblico (un sospeso), che /users/<handle>
+ * mostrerebbe come 404.
+ */
+export function adminUserHref(handle: string): string {
+  return `/admin/users/${encodeURIComponent(handle)}`
+}
+
 /** Il numero del segmento /p/<n> di un profilo, o null (un 404): solo da 2 a PAGINA_MAX. */
 export function parseProfilePage(raw: unknown): number | null {
   if (typeof raw !== 'string' || !PAGINA.test(raw)) return null

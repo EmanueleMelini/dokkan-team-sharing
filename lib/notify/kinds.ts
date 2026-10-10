@@ -1,6 +1,7 @@
 import type { Region } from '@/lib/queries'
 
-// I tipi di notifica (0028) e la forma di una riga di notification_view.
+// I tipi di notifica (0028, piu' site_activity di 0032) e la forma di una
+// riga di notification_view.
 // Modulo puro, solo tipi importati: lo usano il server, le isole client e
 // i test senza Next.
 //
@@ -16,6 +17,7 @@ export const NOTIFICATION_KINDS = [
   'suspended',
   'suspension_lifted',
   'reports_open',
+  'site_activity',
 ] as const
 
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number]
@@ -26,7 +28,12 @@ export const isNotificationKind = (v: unknown): v is NotificationKind =>
 /** La lista: dove si torna quando il contenuto non c'e' piu' o la riga non si mostra. */
 export const NOTIFICATIONS_PATH = '/notifications'
 
-export type NotificationTarget = 'clear' | 'comment' | 'tip' | 'account' | 'reports'
+/**
+ * Dove punta una riga. 'profile' e 'none' sono solo del feed degli admin
+ * (site_activity, 0032): un iscritto, un handle o una sospensione, e un
+ * account cancellato, che non ha piu' niente da aprire.
+ */
+export type NotificationTarget = 'clear' | 'comment' | 'tip' | 'account' | 'reports' | 'profile' | 'none'
 
 /**
  * Una riga di notification_list / notification_render come la consegna
@@ -55,6 +62,12 @@ export type NotificationRow = {
   content_visible: boolean | null
   visible: boolean
   until: Date | number | null
+  /** site_activity: l'ultima azione del gruppo (site_activity_actions(), 0032); null per gli altri tipi */
+  action: string | null
+  /** site_activity: l'handle di adesso dell'utente di cui parla la riga (iscritto, handle, sospensione) */
+  subject_handle: string | null
+  /** site_activity: il profilo di quell'utente si vede (public_profile, 0026: non chi e' sospeso); null senza soggetto */
+  subject_public: boolean | null
 }
 
 /**

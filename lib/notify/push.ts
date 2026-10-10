@@ -32,6 +32,10 @@ export type PushJobRow = {
   stage_seq: number | null
   stage_name: string | null
   difficulty: string | null
+  /** site_activity (0032); null per gli altri tipi */
+  action: string | null
+  subject_handle: string | null
+  target: string | null
   devices: PushDevice[]
 }
 
@@ -48,7 +52,7 @@ export async function runPush({ limit = 20, env = readPushEnv(), sender, now = D
   if (!env) return { status: 'off', ...VUOTO }
   const jobs = await sql<PushJobRow>(
     `select notification_id::text, kind, group_key, n, actor_handle::text, event_name, stage_seq,
-            stage_name, difficulty, devices
+            stage_name, difficulty, action, subject_handle::text, target, devices
        from push_claim($1::int)`,
     [limit],
   )

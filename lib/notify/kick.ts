@@ -13,6 +13,11 @@ import { runPush } from '@/lib/notify/push'
 // quelle fresche, quindi una push rimasta indietro (un tetto che si e'
 // liberato) parte con la scrittura dopo, di chiunque sia.
 //
+// Per il feed degli admin (site_activity, 0032) e' questo giro a mandare
+// l'azione appena fatta, anche in un gruppo gia' mandato: non c'e'
+// coalescenza e non c'e' un cron delle push. Per questo ogni Server Action
+// che scrive lo chiama (un test lo controlla).
+//
 // Senza chiavi VAPID non parte nemmeno la query.
 
 export function kickPush() {

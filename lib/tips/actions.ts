@@ -58,6 +58,8 @@ export async function postTip(_prev: TipActionState, form: FormData): Promise<Ti
   }
   const evento = await tipEvent(tipId)
   if (evento) invalidateEvent(evento, 'now')
+  // il feed degli admin (0032), se qualcuno l'ha acceso
+  kickPush()
   return { ok: true, tipId }
 }
 
@@ -82,6 +84,7 @@ export async function editTip(_prev: TipActionState, form: FormData): Promise<Ti
     return dbError(e)
   }
   invalidateEvent(evento, 'now')
+  kickPush()
   return { ok: true }
 }
 
@@ -99,6 +102,7 @@ export async function deleteTip(_prev: TipActionState, form: FormData): Promise<
     return dbError(e)
   }
   invalidateEvent(evento, 'now')
+  kickPush()
   return { ok: true }
 }
 
@@ -118,6 +122,7 @@ export async function voteTip(_prev: TipActionState, form: FormData): Promise<Ti
   }
   const evento = await tipEvent(tipId)
   if (evento) invalidateEvent(evento, 'soon')
+  kickPush()
   return { ok: true, score }
 }
 
@@ -141,7 +146,7 @@ export async function reportTip(_prev: ReportActionState, form: FormData): Promi
   } catch (e) {
     return dbError(e)
   }
-  // gli admin hanno una notifica (0028): la push, se l'hanno accesa
+  // gli admin hanno una notifica (0028, e il feed di 0032): la push, se l'hanno accesa
   kickPush()
   return { ok: true, message: REPORT_THANKS }
 }

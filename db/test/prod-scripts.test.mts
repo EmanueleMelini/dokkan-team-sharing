@@ -127,16 +127,36 @@ if (TEST) {
   await d.query('begin')
   await d.query('create role dts_finto_anon nologin')
   const puo = async (firma: string) => (await d.query('select has_function_privilege($1, $2, $3) as ok', ['dts_finto_anon', firma, 'execute'])).rows[0].ok as boolean
+  const mia = async (firma: string) => (await d.query(`select has_function_privilege(current_user, $1, 'execute') as ok`, [firma])).rows[0].ok as boolean
+  const NUOVA = `create function dts_dopo_harden() returns int language sql as 'select 1'`
   const prima = await puo('set_user_role(citext,text)')
+  // la controprova: il default "in schema public" da solo non toglie niente,
+  // una funzione creata dopo resta eseguibile da tutti (via PUBLIC)
+  await d.query('savepoint per_schema')
+  await d.query('alter default privileges in schema public revoke execute on functions from public')
+  await d.query(NUOVA)
+  const perSchema = await puo('dts_dopo_harden()')
+  await d.query('rollback to savepoint per_schema')
   for (const s2 of [...hardenSql(['dts_finto_anon']), ...funzioniNostreSql()]) await d.query(s2)
   const dopo = await puo('set_user_role(citext,text)')
   const tema = await puo('set_theme(uuid,text)')
   const citext = await puo('citext_eq(citext,citext)')
+  // una funzione nata DOPO harden, come quelle delle migrazioni che vengono
+  await d.query(NUOVA)
+  const nuova = await puo('dts_dopo_harden()')
+  const nuovaMia = await mia('dts_dopo_harden()')
+  const globale = (await d.query(`select count(*)::int as n from pg_default_acl
+                                   where defaclrole = (select oid from pg_roles where rolname = current_user)
+                                     and defaclnamespace = 0 and defaclobjtype = 'f'`)).rows[0].n as number
   await d.query('rollback')
   await d.end()
   check('prima di harden il ruolo finto eseguiva set_user_role (via PUBLIC)', prima)
   check('dopo harden non esegue piu\' i nostri verbi', !dopo && !tema)
   check('le funzioni delle estensioni restano eseguibili', citext)
+  check('controprova: la revoca "in schema public" non toglie EXECUTE alle funzioni nuove', perSchema)
+  check('una funzione creata dopo harden non e\' eseguibile dal ruolo finto', !nuova)
+  check('ma dal proprietario si\'', nuovaMia)
+  check('il default e\' quello globale del ruolo (senza schema)', globale === 1, String(globale))
 }
 
 console.log('prod:backup su dokkan_test')

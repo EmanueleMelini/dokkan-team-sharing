@@ -61,7 +61,9 @@ async function cascate() {
   // Set null anche chi ha chiuso una segnalazione e le due persone del
   // registro della moderazione (0024): il registro resta, con gli handle.
   // E l'attore di una notifica (0028): la notifica e' di chi la riceve, e
-  // resta finche' non si legge o scade.
+  // resta finche' non si legge o scade. Il soggetto di una riga del feed
+  // degli admin (0032, subject_id) invece e' a cascata: con l'account se ne
+  // va la riga che parla di lui.
   const SET_NULL = ['clear_team_id_fkey', 'report_resolved_by_fkey',
     'moderation_action_moderator_id_fkey', 'moderation_action_target_author_id_fkey',
     'notification_actor_id_fkey']
@@ -74,7 +76,7 @@ async function cascate() {
   const versoUtente = fk.filter((f) => f.madre === 'app_user').map((f) => f.figlia).sort()
   check('le tabelle che puntano a app_user sono quelle note',
     versoUtente.join(',') === 'auth_account,auth_session,clear,clear_comment,clear_vote,clear_write_log,' +
-      'handle_history,moderation_action,moderation_action,notification,notification,notification_pref,' +
+      'handle_history,moderation_action,moderation_action,notification,notification,notification,notification_pref,' +
       'push_sent,push_sent,push_subscription,report,report,team,tip,tip_vote',
     versoUtente.join(','))
   const trig = await num(

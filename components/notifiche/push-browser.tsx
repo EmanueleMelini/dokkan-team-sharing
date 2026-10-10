@@ -122,7 +122,8 @@ export function PushBrowser({ publicKey, handle, admin, devices, groupsOn }: {
     <div id="browser-notifications" className="scroll-mt-6 space-y-3" aria-busy={inCorso || fase === 'caricamento'}>
       <p className="text-[12px] leading-relaxed text-tenue">
         Off unless you turn it on. A notification says who commented and where, or that a moderator
-        updated one of your posts{admin ? ', or how many reports are open' : ''}. It never shows the text of a post.
+        updated one of your posts{admin ? ', or how many reports are open, or, with Site activity on, who did what and where' : ''}.
+        It never shows the text of a post.
       </p>
       <Stato fase={fase} />
       <div className="flex flex-wrap items-center gap-2">

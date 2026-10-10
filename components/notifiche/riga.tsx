@@ -1,5 +1,5 @@
 import type { Icon } from '@phosphor-icons/react'
-import { ChatCircle, Eye, EyeSlash, Flag, Prohibit, ShieldCheck } from '@phosphor-icons/react/dist/ssr'
+import { ChatCircle, Eye, EyeSlash, Flag, Prohibit, Pulse, ShieldCheck } from '@phosphor-icons/react/dist/ssr'
 import type { NotificationRow } from '@/lib/notify/kinds'
 import { notificationLink, notificationText } from '@/lib/notify/vista'
 
@@ -10,6 +10,7 @@ const ICONE: Record<string, Icon> = {
   suspended: Prohibit,
   suspension_lifted: ShieldCheck,
   reports_open: Flag,
+  site_activity: Pulse,
 }
 
 const quando = new Intl.DateTimeFormat('en-US', {

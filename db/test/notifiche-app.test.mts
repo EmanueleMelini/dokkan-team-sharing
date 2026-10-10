@@ -1,10 +1,13 @@
 // Verifica il lato app delle notifiche (fase 2): lib/notify/kinds.ts
-// uguale a notification_kinds() e ai check delle tabelle, il pallino
+// uguale a notification_kinds() e ai check delle tabelle, le azioni del
+// feed degli admin (lib/notify/attivita.ts, 0032) uguali a
+// site_activity_actions() e al loro check, i loro testi e link, il pallino
 // (hasUnread, viewerUserOf), gli href e i testi della lista
 // (lib/notify/vista.ts) su righe vere di notification_list, le letture e
 // la scrittura di lib/notify/queries.ts, i giorni della privacy uguali a
 // purge_notifications, e le guardie sui file (robots, pagina per utente,
-// niente prefetch, niente pallino nell'HTML del server).
+// niente prefetch, niente pallino nell'HTML del server, la casella del
+// feed solo per gli admin, kickPush dopo ogni scrittura).
 //
 // Gira sul database di test (npm run db:test). Crea solo utenti
 // notifapp+...@example.invalid e li toglie alla fine, anche se qualcosa
@@ -13,6 +16,7 @@ import { readFileSync } from 'node:fs'
 import { db } from '@/lib/db'
 import type { CurrentUser } from '@/lib/dal'
 import { LEGALE } from '@/lib/legale'
+import { SITE_ACTIVITY_ACTIONS } from '@/lib/notify/attivita'
 import { NOTIFICATION_KINDS, hasUnread, isNotificationKind, type NotificationRow } from '@/lib/notify/kinds'
 import { listNotifications, markNotificationsRead, markRead, renderNotification } from '@/lib/notify/queries'
 import { notificationHref, notificationLink, notificationPlace, notificationText } from '@/lib/notify/vista'
@@ -31,6 +35,8 @@ const SUSPEND = 'select mod_suspend_user($1::uuid, $2::uuid, $3::timestamptz, $4
 const UNSUSPEND = 'select mod_unsuspend_user($1::uuid, $2::uuid, null) as ok'
 
 const file = (rel: string) => readFileSync(new URL(`../../${rel}`, import.meta.url), 'utf8')
+const vale = <T,>(nome: string, got: T, atteso: T) =>
+  check(nome, JSON.stringify(got) === JSON.stringify(atteso), JSON.stringify(got) === JSON.stringify(atteso) ? '' : `= ${JSON.stringify(got)}, atteso ${JSON.stringify(atteso)}`)
 const senzaTrattini = (s: string) => !/[–—]/.test(s)
 
 async function tipi() {
@@ -46,6 +52,21 @@ async function tipi() {
     check(`${nome} uguale a NOTIFICATION_KINDS`, nelCheck.join(',') === [...NOTIFICATION_KINDS].sort().join(','), def)
   }
   check('isNotificationKind', isNotificationKind('clear_comment') && !isNotificationKind('vote') && !isNotificationKind(null))
+  check('il feed degli admin e\' l\'ultimo tipo', NOTIFICATION_KINDS[NOTIFICATION_KINDS.length - 1] === 'site_activity')
+
+  // le azioni del feed: la funzione, il check sui dati e il modulo puro
+  const azioni = (await one<{ a: string[] }>('select site_activity_actions() as a')).a
+  check('SITE_ACTIVITY_ACTIONS uguale a site_activity_actions(), nello stesso ordine',
+    azioni.join(',') === SITE_ACTIVITY_ACTIONS.join(','), `${azioni.join(',')} / ${SITE_ACTIVITY_ACTIONS.join(',')}`)
+  const defDati = (await one<{ d: string }>(
+    `select pg_get_constraintdef(oid) as d from pg_constraint
+      where conrelid = 'notification'::regclass and conname = 'notification_activity_data'`)).d
+  // l'elenco dentro ARRAY[...]: il resto del check nomina anche le chiavi ('a', 'n', ...)
+  const lista = defDati.match(/ARRAY\[([^\]]*)\]/)?.[1] ?? ''
+  const nelCheck = [...lista.matchAll(/'([a-z_]+)'::text/g)].map((m) => m[1])
+  check('notification_activity_data elenca le stesse azioni', nelCheck.join(',') === SITE_ACTIVITY_ACTIONS.join(','), defDati)
+  check('e lascia in data solo azione, conteggio, evento e tier',
+    /\(\(\(\(data - 'a'::text\) - 'n'::text\) - 'event'::text\) - 'tier'::text\) = '\{\}'::jsonb/.test(defDati))
 
   // i giorni della privacy sono quelli di purge_notifications
   const args = (await one<{ a: string }>(
@@ -84,7 +105,7 @@ const finta = (x: Partial<NotificationRow>): NotificationRow => ({
   id: '1', kind: 'clear_comment', created_at: new Date(), updated_at: new Date(), read_at: null, n: 1,
   actor_handle: 'Goku', target: 'clear', clear_id: 'c1', comment_id: null, tip_id: null, event_id: '42', reg: 'global',
   tier_id: '7', event_name: 'Some Event', stage_seq: 3, stage_name: null, difficulty: 'super2',
-  content_visible: true, visible: true, until: null, ...x,
+  content_visible: true, visible: true, until: null, action: null, subject_handle: null, subject_public: null, ...x,
 })
 
 function hrefFinti() {
@@ -117,6 +138,65 @@ function hrefFinti() {
   const tutti = NOTIFICATION_KINDS.map((k) => notificationText(finta({ kind: k, n: 2 })))
   check('ogni tipo ha un titolo suo, senza trattini lunghi', tutti.every((t) => t.title !== 'Notification' &&
     senzaTrattini(t.title + (t.detail ?? ''))), JSON.stringify(tutti))
+}
+
+/** Una riga finta del feed degli admin: l'azione, il bersaglio dal prefisso. */
+const attivita = (action: string, x: Partial<NotificationRow> = {}): NotificationRow => finta({
+  kind: 'site_activity', action, actor_handle: 'Bob_9', subject_handle: 'Frank_1', subject_public: true,
+  target: action === 'user_joined' || action === 'handle_changed' || action === 'mod_suspend' || action === 'mod_unsuspend'
+    ? 'profile' : action === 'account_deleted' ? 'none' : action.startsWith('tip_') ? 'tip' : 'clear',
+  tip_id: action.startsWith('tip_') ? 't1' : null, clear_id: action.startsWith('tip_') ? null : 'c1',
+  event_name: 'Extreme Z-Battle: X', stage_seq: 10, difficulty: 'eza_level', ...x,
+})
+
+function feedFinto() {
+  console.log('\n  -- il feed degli admin (site_activity): testi e link su righe finte')
+  vale('un clear nuovo: chi, cosa, dove', notificationText(attivita('clear_posted')),
+    { title: 'Bob_9 posted a clear', detail: 'Extreme Z-Battle: X, Level 10' })
+  vale('tre revisioni', notificationText(attivita('clear_revised', { n: 3 })).title, 'Bob_9 revised a clear 3 times')
+  vale('tre commenti: il numero e l\'ultimo', notificationText(attivita('comment_posted', { n: 3 })),
+    { title: '3 new comments on a clear', detail: 'Extreme Z-Battle: X, Level 10, latest from Bob_9' })
+  vale('i voti, uno per uno', ['clear_upvoted', 'clear_downvoted', 'clear_unvoted'].map((a) => notificationText(attivita(a)).title),
+    ['Bob_9 upvoted a clear', 'Bob_9 downvoted a clear', 'Bob_9 took back a vote on a clear'])
+  vale('quattro cambi di voto', notificationText(attivita('clear_downvoted', { n: 4 })).detail, 'Extreme Z-Battle: X, Level 10, latest: Bob_9 downvoted')
+  vale('Helpful', [notificationText(attivita('tip_helpful')).title, notificationText(attivita('tip_unhelpful')).title],
+    ['Bob_9 found a tip helpful', 'Bob_9 took back Helpful on a tip'])
+  vale('una segnalazione: senza chi l\'ha mandata', notificationText(attivita('report', { actor_handle: null, target: 'comment', comment_id: 'm1' })),
+    { title: 'New report on a comment', detail: 'Extreme Z-Battle: X, Level 10' })
+  check('nemmeno se l\'handle arrivasse', !JSON.stringify(notificationText(attivita('report', { n: 2 }))).includes('Bob_9'))
+  vale('iscritto e handle: quello di adesso', [notificationText(attivita('user_joined')).title, notificationText(attivita('handle_changed')).title],
+    ['Frank_1 joined the site', 'A member changed their handle to Frank_1'])
+  vale('un account cancellato non ha nome', [notificationText(attivita('account_deleted', { subject_handle: null })).title,
+    notificationText(attivita('account_deleted', { n: 3 })).title], ['An account was deleted', '3 accounts were deleted'])
+  vale('la moderazione di un altro admin', ['mod_hide', 'mod_unhide', 'mod_dismiss', 'mod_suspend', 'mod_unsuspend'].map((a) => notificationText(attivita(a)).title),
+    ['Bob_9 hid a clear', 'Bob_9 restored a clear', 'Bob_9 dismissed the reports on a clear', 'Bob_9 suspended Frank_1', "Bob_9 lifted Frank_1's suspension"])
+  check('senza attore: "Someone"', SITE_ACTIVITY_ACTIONS.filter((a) => !['report', 'user_joined', 'handle_changed', 'account_deleted'].includes(a))
+    .every((a) => /Someone/.test(JSON.stringify(notificationText(attivita(a, { actor_handle: null }))))))
+  const testi = SITE_ACTIVITY_ACTIONS.flatMap((a) => [1, 2].map((n) => notificationText(attivita(a, { n }))))
+  check('ogni azione: un titolo suo, senza trattini lunghi', testi.every((t) => t.title && t.title !== 'New activity on the site' &&
+    t.title !== 'Notification' && senzaTrattini(t.title + (t.detail ?? ''))), JSON.stringify(testi))
+
+  const tier = eventHref({ id: '42', tier: '7' })
+  vale('link: il clear pubblicato, la sua ancora', notificationHref(attivita('clear_upvoted')), `${tier}${clearAnchor('c1')}`)
+  vale('link: la tip pubblicata, la sua ancora', notificationHref(attivita('tip_helpful')), `${tier}#tip-t1`)
+  vale('link: contenuto nascosto ora, /admin/hidden (la scheda Tips per una tip)', [
+    notificationHref(attivita('comment_posted', { content_visible: false })),
+    ...['tip_posted', 'tip_edited', 'tip_helpful', 'tip_unhelpful'].map((a) => notificationHref(attivita(a, { content_visible: false })))],
+  ['/admin/hidden', '/admin/hidden?kind=tip', '/admin/hidden?kind=tip', '/admin/hidden?kind=tip', '/admin/hidden?kind=tip'])
+  vale('link: una segnalazione, la coda', notificationHref(attivita('report')), '/admin')
+  vale('link: la moderazione, il registro', ['mod_hide', 'mod_unhide', 'mod_dismiss', 'mod_suspend', 'mod_unsuspend'].map((a) => notificationHref(attivita(a))),
+    ['/admin/log', '/admin/log', '/admin/log', '/admin/log', '/admin/log'])
+  vale('link: iscritto e handle, il profilo di adesso', [notificationHref(attivita('user_joined')), notificationHref(attivita('handle_changed'))],
+    ['/users/Frank_1', '/users/Frank_1'])
+  vale('link: iscritto e handle senza profilo pubblico (sospeso), la sua pagina di /admin', [
+    notificationHref(attivita('user_joined', { subject_public: false })),
+    notificationHref(attivita('handle_changed', { subject_public: false, subject_handle: 'Frank 1/x' })),
+    notificationHref(attivita('handle_changed', { subject_public: null }))],
+  ['/admin/users/Frank_1', '/admin/users/Frank%201%2Fx', '/admin/users/Frank_1'])
+  vale('link: contenuti e account cancellati, la lista', ['clear_deleted', 'tip_deleted', 'account_deleted'].map((a) =>
+    notificationHref(attivita(a, { clear_id: null, tip_id: null }))), ['/notifications', '/notifications', '/notifications'])
+  vale('link: non piu\' admin (visible false), la lista', notificationHref(attivita('clear_posted', { visible: false })), '/notifications')
+  vale('link: senza soggetto, la lista', notificationHref(attivita('user_joined', { subject_handle: null })), '/notifications')
 }
 
 async function righeVere() {
@@ -233,6 +313,50 @@ function guardieFile() {
     /giorniNotificheNonLette/.test(privacy) && /<strong>Notifications\.<\/strong>/.test(privacy))
   const settings = file('app/settings/page.tsx')
   check('Settings ha la sezione #notifications', /id="notifications"/.test(settings))
+
+  console.log('\n  -- il feed degli admin (0032): chi lo vede, chi lo accende, chi fa partire le push')
+  const blocco = settings.match(/\{user\.role === 'admin' && \(\s*<>\s*<h3[^>]*>Site activity<\/h3>[\s\S]*?<\/>\s*\)\}/)?.[0] ?? ''
+  check('Settings: la casella "Site activity" solo dentro user.role === \'admin\'',
+    /<AttivitaSito on=\{attivita\} \/>/.test(blocco) && (settings.match(/<AttivitaSito\b/g) ?? []).length === 1, blocco.slice(0, 80))
+  check('Settings: lo stato si legge solo per gli admin', /admin \? siteActivityOn\(user\.id\) : false/.test(settings))
+  const azione = file('lib/notify/actions.ts')
+  const setSA = azione.slice(azione.indexOf('export async function setSiteActivityAction'))
+  check('setSiteActivityAction: la sessione, poi rifiuta chi non e\' admin prima del database',
+    /requireOnboardedUser\('\/settings'\)/.test(setSA) && setSA.indexOf("if (on && user.role !== 'admin') return { error: SOLO_ADMIN }") > 0 &&
+    setSA.indexOf("if (on && user.role !== 'admin')") < setSA.indexOf('set_notification_pref'))
+  check('setSiteActivityAction: lista e push insieme, mai l\'email', /unnest\(array\['list', 'push'\]\)/.test(setSA) && !/'email'/.test(setSA) &&
+    /notification_pref_admin_only/.test(setSA))
+  const casella = file('components/notifiche/attivita-sito.tsx')
+  check('la casella: "All site activity", un form con Save, senza trattini lunghi',
+    casella.includes('All site activity') && /name="activity"/.test(casella) && /useActionState/.test(casella) && senzaTrattini(casella) &&
+    /Never by email/.test(casella))
+  const iscrivi = file('lib/notify/push-actions.ts')
+  check('il primo "Turn on" ignora il feed e non lo accende', /primaIscrizione\(await pushKindsOn\(user\.id\)\)/.test(iscrivi) &&
+    /kindsPrimaIscrizione\(user\.role === 'admin'\)/.test(iscrivi))
+  check('/notifications: una sezione a parte per il feed', /titolo="Site activity"/.test(pagina) && /n\.kind !== 'site_activity'/.test(pagina))
+  check('/notifications: segna lette anche quelle oltre LIST_LIMIT (markListRead, non markNotificationsRead)',
+    /await markListRead\(user\.id, nonLette\.map/.test(pagina) && !/markNotificationsRead/.test(pagina))
+  check('nessun trattino lungo nei file nuovi', ['lib/notify/attivita.ts', 'lib/notify/luogo.ts', 'app/notifications/page.tsx', 'app/settings/page.tsx']
+    .every((f) => senzaTrattini(file(f))))
+
+  // Ogni scrittura che puo' creare una riga del feed (o un'altra notifica)
+  // fa partire il giro delle push dopo, nella stessa Server Action.
+  const SCRITTURE = /\b(submit_clear_from_builder|revise_clear_from_builder|delete_clear|vote_clear_version|comment_clear_version|post_tip|edit_tip|delete_tip|vote_tip|report_content|mod_set_clear_status|mod_set_comment_status|mod_set_tip_status|mod_dismiss_reports|mod_suspend_user|mod_unsuspend_user|complete_onboarding|change_handle|delete_account)\(/
+  const senza: string[] = []
+  let viste = 0
+  for (const f of ['lib/clears/actions.ts', 'lib/tips/actions.ts', 'lib/auth/actions.ts', 'lib/moderation/actions.ts', 'lib/moderation/report-actions.ts']) {
+    const src = file(f)
+    const pezzi = src.split(/(?=^export async function )/m).filter((p) => p.startsWith('export async function '))
+    for (const p of pezzi) {
+      const m = SCRITTURE.exec(p)
+      if (!m) continue
+      viste++
+      const nome = p.match(/^export async function (\w+)/)?.[1]
+      if (p.indexOf('kickPush()', m.index) < 0) senza.push(`${f}:${nome}`)
+    }
+  }
+  check('ogni Server Action che scrive chiama kickPush() dopo la scrittura (20 azioni)', viste === 20 && senza.length === 0,
+    `${viste} viste${senza.length ? `, senza: ${senza.join(', ')}` : ''}`)
 }
 
 async function pulizia() {
@@ -244,6 +368,7 @@ try {
   await tipi()
   pallino()
   hrefFinti()
+  feedFinto()
   await righeVere()
   guardieFile()
 } finally {

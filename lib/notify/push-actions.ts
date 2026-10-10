@@ -5,7 +5,7 @@ import { DatabaseError } from 'pg'
 import { sql, sqlOne } from '@/lib/db'
 import { currentUser } from '@/lib/dal'
 import { pushEndpointOk } from '@/lib/notify/endpoint'
-import { pushGroup, pushGroupsFor } from '@/lib/notify/push-kinds'
+import { kindsPrimaIscrizione, primaIscrizione, pushGroup } from '@/lib/notify/push-kinds'
 import { readPushEnv } from '@/lib/notify/push-env'
 import { pushDeviceListed, pushKindsOn, sendTestPush, type TestPushResult } from '@/lib/notify/push'
 
@@ -60,9 +60,11 @@ async function iscrivi(userId: string, s: PushSubscriptionInput): Promise<PushAc
 
 /**
  * "Turn on for this device": iscrive il dispositivo. La prima volta (nessun
- * tipo acceso) accende anche tutti i gruppi che l'utente vede: il clic e'
- * il consenso, e un dispositivo iscritto che non riceve niente sarebbe un
- * interruttore rotto. Dopo, i gruppi restano come li ha lasciati.
+ * tipo dei gruppi acceso) accende anche tutti i gruppi che l'utente vede: il
+ * clic e' il consenso, e un dispositivo iscritto che non riceve niente
+ * sarebbe un interruttore rotto. Dopo, i gruppi restano come li ha
+ * lasciati. Il feed degli admin (PUSH_SEPARATE) non conta e non si accende
+ * da qui: ha il suo interruttore.
  */
 export async function subscribePushAction(input: unknown): Promise<PushActionResult> {
   const user = await chi()
@@ -71,8 +73,8 @@ export async function subscribePushAction(input: unknown): Promise<PushActionRes
   if (!s) return { ok: false, error: 'This browser gave a subscription the site cannot use.' }
   const r = await iscrivi(user.id, s)
   if (!r.ok) return r
-  if ((await pushKindsOn(user.id)).length === 0) {
-    const kinds = pushGroupsFor(user.role === 'admin').flatMap((g) => g.kinds)
+  if (primaIscrizione(await pushKindsOn(user.id))) {
+    const kinds = kindsPrimaIscrizione(user.role === 'admin')
     await sql(
       "select set_notification_pref($1::uuid, k, 'push', true) from unnest($2::text[]) as k",
       [user.id, kinds],

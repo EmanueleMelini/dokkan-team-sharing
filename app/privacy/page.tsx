@@ -11,7 +11,8 @@ export const metadata: Metadata = {
 // Ogni frase qui sotto descrive quello che il codice fa davvero (tabelle
 // app_user, auth_*, clear_*, report, moderation_action, notification,
 // email_quota, push_subscription, push_sent; lib/auth/config.ts,
-// lib/notify/digest.ts, lib/notify/payload.ts, lib/notify/push-client.ts):
+// lib/notify/digest.ts, lib/notify/payload.ts, lib/notify/push-client.ts,
+// lib/notify/attivita.ts):
 // se cambia il codice, va cambiata anche questa pagina.
 export default function Privacy() {
   const mail = `mailto:${LEGALE.contatto}`
@@ -80,6 +81,21 @@ export default function Privacy() {
           basis as your account.
         </li>
         <li>
+          <strong>Site activity for moderators.</strong> A moderator can turn on, in Settings, a feed of
+          what happens on the site. For each action another member takes (posting, editing or deleting
+          a clear or a tip, commenting, voting, marking a tip Helpful, reporting, joining, changing their
+          handle, deleting their account) and for the actions of other moderators, that moderator gets
+          a notification which stores who acted (a link to the account, shown with its current handle),
+          what they did and where: the post, or for a deleted post only the event and stage. For a
+          report it stores only the post, never who sent it. It never stores the text of a post or
+          the reason or details of a report, and it never goes by email. When an account is deleted,
+          its handle no longer appears in any notification: the ones about that person or their posts
+          are deleted, and in the others the person shows up only as &quot;Someone&quot;. If a
+          moderator stops being one, the feed is turned off and its notifications are deleted. These
+          notifications are kept like the others, below. This helps moderators keep the site safe
+          and fair (legitimate interest, GDPR Art. 6(1)(f)).
+        </li>
+        <li>
           <strong>Browser notifications.</strong> Off unless you turn them on in Settings, on each
           device separately. If you do, the site stores what your browser gives it for that device:
           the address of its push service (Google for Chrome and Android, Apple for Safari and
@@ -88,9 +104,10 @@ export default function Privacy() {
           Android&quot;, when it was added and last confirmed, and whether recent deliveries worked.
           It also logs when a notification was sent, to whom and because of which account, to limit
           how many go out. A notification says who commented and on which event, that a moderator
-          updated one of your posts or your account, or how many reports are open; it never shows
-          the text of a post. The push service sees when a notification reaches your device, but not
-          what it says. Your consent is the legal basis (GDPR Art. 6(1)(a)). You can withdraw it at
+          updated one of your posts or your account, or how many reports are open, and for a
+          moderator with the site activity feed on, who did what and where; it never shows the text
+          of a post or who sent a report. The push service sees when a notification reaches your
+          device, but not what it says. Your consent is the legal basis (GDPR Art. 6(1)(a)). You can withdraw it at
           any time: turn notifications off or remove a device in Settings, or block notifications
           for this site in your browser. Signing out also removes the device you sign out from.
         </li>

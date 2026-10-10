@@ -92,6 +92,8 @@ export async function submitClear(_prev: ClearActionState, form: FormData): Prom
   }
   const w = await whereIsClear(clearId)
   if (w) afterClearWrite('submit', { eventId: w.event_id, cardIds: await clearCardIds(clearId), handles: [user.handle] })
+  // il feed degli admin (0032): after() gira anche dopo il redirect
+  kickPush()
   redirect(w ? await clearHref(w, clearId) : '/events')
 }
 
@@ -117,6 +119,7 @@ export async function reviseClear(_prev: ClearActionState, form: FormData): Prom
   const w = await whereIsClear(clearId)
   // le carte di tutte le versioni: quelle tolte e quelle nuove
   if (w) afterClearWrite('revise', { eventId: w.event_id, cardIds: await clearCardIds(clearId), handles: [user.handle] })
+  kickPush()
   redirect(w ? await clearHref(w, clearId) : '/events')
 }
 
@@ -133,6 +136,7 @@ export async function deleteClear(_prev: ClearActionState, form: FormData): Prom
     return dbError(e)
   }
   if (w) afterClearWrite('delete', { eventId: w.event_id, cardIds: carte, handles: [user.handle] })
+  kickPush()
   // Dalla pagina di modifica (un clear nascosto non e' nella lista): si
   // torna all'evento. Il form dice solo se tornare; dove, lo dice il database.
   if (w && form.get('dopo') === 'evento') redirect(eventHref({ id: w.event_id, reg: w.reg, tier: w.tier_id }))
@@ -157,6 +161,8 @@ export async function voteClear(_prev: ClearActionState, form: FormData): Promis
   }
   const w = await whereIsVersion(versionId)
   if (w) afterClearWrite('vote', { eventId: w.event_id })
+  // il feed degli admin (0032): anche un voto e' un'azione
+  kickPush()
   return { ok: true, score }
 }
 
@@ -181,7 +187,7 @@ export async function addComment(_prev: ClearActionState, form: FormData): Promi
   }
   const w = await whereIsVersion(versionId)
   if (w) afterClearWrite('comment', { eventId: w.event_id })
-  // il trigger di 0028 puo' aver avvisato l'autore del clear
+  // l'autore del clear (0028) e il feed degli admin (0032)
   kickPush()
   return { ok: true, commentId }
 }

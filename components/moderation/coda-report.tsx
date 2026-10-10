@@ -3,6 +3,7 @@ import { AzioniReport } from '@/components/moderation/azioni-report'
 import { soloGiorno } from '@/lib/date'
 import { REASON_LABELS, type ReportReason } from '@/lib/moderation/reasons'
 import type { GruppoReport } from '@/lib/moderation/queries'
+import { adminUserHref } from '@/lib/urls'
 
 // La coda delle segnalazioni: una riga per bersaglio. Server component;
 // i bottoni sono l'isola AzioniReport. Ogni testo che arriva dagli utenti
@@ -10,7 +11,7 @@ import type { GruppoReport } from '@/lib/moderation/queries'
 
 const etichetta = (r: string) => REASON_LABELS[r as ReportReason] ?? r
 
-export const utenteHref = (handle: string) => `/admin/users/${encodeURIComponent(handle)}`
+export const utenteHref = adminUserHref
 
 function Badge({ children, tono = 'neutro' }: { children: React.ReactNode; tono?: 'neutro' | 'allarme' }) {
   const c = tono === 'allarme' ? 'border-str text-str' : 'border-linea-forte text-tenue'

@@ -22,10 +22,25 @@ if (!db.listenerCount('error')) {
   db.on('error', (err) => console.error('[db] connessione inattiva persa:', err.message))
 }
 
-/** Esegue una query e restituisce le righe già tipizzate. */
+/**
+ * Esegue una query e restituisce le righe già tipizzate.
+ *
+ * Un deadlock (40P01) si riprova una volta. Ogni chiamata è una sola
+ * istruzione in autocommit sulla pool, e Postgres la annulla per intero:
+ * riprovarla è come se l'utente avesse cliccato di nuovo. Succede, raro,
+ * quando due scritture insieme bloccano le stesse righe degli admin col
+ * feed dell'attività acceso in ordini diversi (0032, per esempio un
+ * moderatore che nasconde una tip mentre qualcuno la vota).
+ */
 export async function sql<T>(text: string, params: unknown[] = []): Promise<T[]> {
-  const res = await db.query(text, params)
-  return res.rows as T[]
+  try {
+    const res = await db.query(text, params)
+    return res.rows as T[]
+  } catch (e) {
+    if ((e as { code?: unknown } | null)?.code !== '40P01') throw e
+    const res = await db.query(text, params)
+    return res.rows as T[]
+  }
 }
 
 /** La prima riga, o null. Per le query che ne attendono al massimo una. */

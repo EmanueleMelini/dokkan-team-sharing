@@ -34,7 +34,14 @@ export function hardenSql(roles) {
 // lancia lo script (le nostre) e fuori dalle estensioni: quelle di citext,
 // pg_trgm e btree_gist stanno in public ma sono di supabase_admin, e senza il
 // loro EXECUTE il sito smetterebbe di confrontare gli handle. Il proprietario
-// tiene il suo EXECUTE; la riga dei default copre le funzioni future.
+// tiene il suo EXECUTE.
+//
+// La riga dei default copre le funzioni future (le migrazioni dopo). Deve
+// essere quella globale del ruolo, senza "in schema": il default che da'
+// EXECUTE a PUBLIC e' globale, e un default per schema puo' solo
+// aggiungere permessi a quello, mai toglierli (in schema public la revoca
+// non fa niente). Vale per le funzioni che crea chi lancia lo script, in
+// ogni schema: sono comunque le nostre.
 export function funzioniNostreSql() {
   return [
     `do $$ declare f record; begin
@@ -45,7 +52,7 @@ export function funzioniNostreSql() {
                                      and d.objid = p.oid and d.deptype = 'e')
        loop execute format('revoke execute on function %s from public', f.firma); end loop;
      end $$`,
-    'alter default privileges in schema public revoke execute on functions from public',
+    'alter default privileges for role current_user revoke execute on functions from public',
   ]
 }
 

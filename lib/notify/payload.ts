@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { activityText } from '@/lib/notify/attivita'
 import { notificationLink, notificationPlace } from '@/lib/notify/vista'
 
 // Il testo di una push e il suo payload. Modulo puro (solo node:crypto):
@@ -13,6 +14,8 @@ import { notificationLink, notificationPlace } from '@/lib/notify/vista'
 //   - la moderazione: una frase generica, il dettaglio e' nella lista del
 //     sito, che e' privata;
 //   - gli admin: "N open reports";
+//   - il feed degli admin (site_activity, 0032): lo stesso minimo della
+//     lista, chi, cosa e dove ("bob upvoted a clear"), mai chi segnala;
 //   - mai il testo di un post.
 
 /** Il tetto del payload in byte, prima della cifratura (i servizi ne accettano 4096). */
@@ -41,6 +44,10 @@ export type PushTextFields = {
   stage_seq: number | null
   stage_name: string | null
   difficulty: string | null
+  /** site_activity (0032): l'ultima azione, l'handle di chi ne e' oggetto, il bersaglio */
+  action?: string | null
+  subject_handle?: string | null
+  target?: string | null
 }
 
 export type PushJobFields = PushTextFields & { notification_id: string; group_key: string }
@@ -71,6 +78,11 @@ export function pushText(j: PushTextFields): { title: string; body: string } {
   if (j.kind === 'reports_open') {
     const n = Math.max(1, j.n)
     return { title: n === 1 ? '1 open report' : `${n} open reports`, body: 'Open the moderation queue.' }
+  }
+  if (j.kind === 'site_activity') {
+    // il titolo della lista; il corpo e' il luogo (e chi ha fatto l'ultima), se c'e'
+    const t = activityText({ ...j, event_id: null })
+    return { title: t.title, body: t.detail ?? 'Open it to see more.' }
   }
   return { title: 'You have new activity', body: 'Open it to see what is new.' }
 }

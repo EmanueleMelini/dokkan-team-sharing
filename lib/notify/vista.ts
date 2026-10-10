@@ -1,9 +1,11 @@
-import { DIFFICOLTA } from '@/lib/livelli'
 import { fineInParole, fineSospensione } from '@/lib/moderation/sospensione'
 import { clearAnchor, editClearHref, eventHref } from '@/lib/urls'
+import { activityHref, activityText } from '@/lib/notify/attivita'
 import { NOTIFICATIONS_PATH, type NotificationRow } from '@/lib/notify/kinds'
+import { notificationPlace } from '@/lib/notify/luogo'
 
 export { NOTIFICATIONS_PATH }
+export { notificationPlace, type NotificationPlaceFields } from '@/lib/notify/luogo'
 
 // Dove porta una notifica e come si legge nella lista: funzioni pure su una
 // riga di notification_view, cosi' la lista, la rotta /notifications/<id>
@@ -13,6 +15,8 @@ export { NOTIFICATIONS_PATH }
 // Il testo dei post non c'e' mai: la riga non lo porta. La lista e'
 // privata, quindi qui la moderazione si dice per esteso; push ed email
 // useranno frasi generiche, perche' si leggono anche sullo schermo bloccato.
+// Il feed degli admin (site_activity, 0032) ha testi e link suoi, in
+// lib/notify/attivita.ts.
 
 
 /** L'unico link che lista, push ed email usano: segna letta e reindirizza. */
@@ -29,6 +33,7 @@ export const notificationLink = (id: string) => `${NOTIFICATIONS_PATH}/${id}`
  * Senza i pezzi che servono si torna alla lista, mai a un URL inventato.
  */
 export function notificationHref(v: NotificationRow): string {
+  if (v.kind === 'site_activity') return activityHref(v)
   if (!v.visible) return NOTIFICATIONS_PATH
   switch (v.target) {
     case 'account':
@@ -47,25 +52,14 @@ export function notificationHref(v: NotificationRow): string {
       if (v.target === 'clear' && v.content_visible === false) return editClearHref(v.event_id, v.clear_id)
       return `${eventHref({ id: v.event_id, reg: v.reg ?? 'global', tier: v.tier_id })}${clearAnchor(v.clear_id)}`
     }
+    // solo del feed degli admin, che ha gia' risposto sopra
+    case 'profile':
+    case 'none':
+      return NOTIFICATIONS_PATH
   }
 }
 
 const COSA: Record<string, string> = { clear: 'clear', comment: 'comment', tip: 'tip' }
-
-/** I campi che servono a dire dove sta il contenuto: li hanno anche le righe del digest. */
-export type NotificationPlaceFields = Pick<NotificationRow, 'event_id' | 'event_name' | 'stage_seq' | 'stage_name' | 'difficulty'>
-
-/** "Event name, Stage 3, Super 2": dove sta il contenuto, o null. */
-export function notificationPlace(v: NotificationPlaceFields): string | null {
-  if (!v.event_name && !v.event_id) return null
-  const evento = v.event_name ?? `Event ${v.event_id}`
-  if (!v.difficulty) return evento
-  if (v.difficulty === 'eza_level') return `${evento}, Level ${v.stage_seq ?? ''}`.trim()
-  const stage = v.stage_name ?? (v.stage_seq != null ? `Stage ${v.stage_seq}` : null)
-  const diff = DIFFICOLTA[v.difficulty] ?? v.difficulty
-  // un evento di uno stage solo ha spesso lo stage con lo stesso nome: una volta basta
-  return stage && stage !== evento ? `${evento}, ${stage}, ${diff}` : `${evento}, ${diff}`
-}
 
 export type NotificationText = { title: string; detail: string | null }
 
@@ -104,6 +98,8 @@ export function notificationText(v: NotificationRow): NotificationText {
         title: v.n > 1 ? `${v.n} open reports to review` : 'A new report to review',
         detail: `Open the moderation queue to handle ${v.n > 1 ? 'them' : 'it'}.`,
       }
+    case 'site_activity':
+      return activityText(v)
     default:
       return { title: 'Notification', detail: null }
   }

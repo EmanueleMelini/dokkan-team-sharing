@@ -6,6 +6,8 @@
 //     commento; la moderazione generica;
 //   - nessun client pg in uso mentre si manda (la pool resta libera);
 //   - 410 toglie il dispositivo, 201 lo segna riuscito;
+//   - il feed degli admin (site_activity, 0032): chi, cosa e dove, e il
+//     Topic del suo gruppo;
 //   - senza chiavi VAPID il giro non tocca il database.
 //
 // Gira dentro npm run db:test. Crea solo utenti pushrun+...@example.invalid
@@ -115,6 +117,26 @@ async function prove() {
   check('moderazione: frase generica, senza evento', i2[0]?.payload.title === 'A moderator updated one of your posts' &&
     !String(i2[0]?.payload.body).includes(' In '), JSON.stringify(i2[0]?.payload))
   check('il 410 toglie il dispositivo', r2.removed >= 1 && !(await pushDeviceListed(autore, ep2)) && await pushDeviceListed(autore, ep1))
+
+  console.log('\n  -- runPush: il feed degli admin (site_activity, 0032)')
+  await db.query("select set_notification_pref($1::uuid, 'site_activity', c, true) from unnest(array['list', 'push']) as c", [admin])
+  const epAdmin = await iscrivi(admin)
+  // rimostrato dall'admin stesso: nel suo feed non entra (mai a se stessi)
+  await db.query('select mod_set_clear_status($1::uuid, $2::uuid, $3, null)', [admin, clear, 'published'])
+  await db.query('select vote_clear_version($1::uuid, $2::uuid, 1::smallint)', [commenta, versione])
+  const g = finto(() => 201)
+  await runPush({ env, sender: g.sender })
+  const allAdmin = mie(g.inviate).filter((x) => x.device.endpoint === epAdmin)
+  const pf = allAdmin[0]?.payload ?? {}
+  const nf = (await one<{ id: string }>(
+    `select id::text from notification where recipient_id = $1 and kind = 'site_activity' and group_key = $2`, [admin, `act:clear_vote:${clear}`]))?.id
+  check('il voto arriva all\'admin col feed acceso: una push, il suo testo', allAdmin.length === 1 && pf.kind === 'site_activity' &&
+    pf.title === 'pr_commenta upvoted a clear' && typeof pf.body === 'string' && pf.body.length > 0 && pf.body !== 'Open it to see more.',
+  JSON.stringify(pf))
+  check('url e topic del gruppo del feed', pf.url === `/notifications/${nf}` && allAdmin[0]?.topic === pushTopic(`act:clear_vote:${clear}`))
+  check('nessuna push del feed per la sua stessa azione', !mie(g.inviate).some((x) => x.device.endpoint === epAdmin &&
+    /restored|unhide/i.test(String(x.payload.title))))
+  check('il feed non scrive push_sent', await num('select count(*) from push_sent where recipient_id = $1', [admin]) === 0)
 
   console.log('\n  -- Settings: dispositivi e prova')
   const lista = await pushDevicesOf(autore)

@@ -5,6 +5,7 @@ import { ChangeHandle } from '@/components/auth/change-handle'
 import { HandleLink } from '@/components/handle-link'
 import { DeleteAccount } from '@/components/auth/delete-account'
 import { DigestEmail } from '@/components/notifiche/digest-email'
+import { AttivitaSito } from '@/components/notifiche/attivita-sito'
 import { BannerSospeso } from '@/components/moderation/banner-sospeso'
 import { LinkProvider } from '@/components/auth/link-provider'
 import { ProviderLogo } from '@/components/auth/provider-logo'
@@ -21,7 +22,7 @@ import { hiddenClearsOf } from '@/lib/clears'
 import { nextHandleChange } from '@/lib/auth/handle-change'
 import { handleChangedAt } from '@/lib/auth/handle-state'
 import { soloGiorno } from '@/lib/date'
-import { emailDigestOn } from '@/lib/notify/queries'
+import { emailDigestOn, siteActivityOn } from '@/lib/notify/queries'
 import { PushBrowser } from '@/components/notifiche/push-browser'
 import { pushDevicesOf, pushKindsOn } from '@/lib/notify/push'
 import { readPushEnv } from '@/lib/notify/push-env'
@@ -45,9 +46,12 @@ export default async function SettingsPage({ searchParams }: PageProps<'/setting
   // Action e l'hook di /link-social, perche' la pagina puo' restare aperta.
   // Le push solo con le chiavi VAPID: senza, la riga Browser non c'e'.
   const push = readPushEnv()
-  const [linked, { email, verified }, fresh, nascosti, cambiato, digest, dispositivi, pushKinds] = await Promise.all([
+  const admin = user.role === 'admin'
+  const [linked, { email, verified }, fresh, nascosti, cambiato, digest, dispositivi, pushKinds, attivita] = await Promise.all([
     linkedProviderIds(), accountEmail(), sessionIsFresh(), hiddenClearsOf(user.id), handleChangedAt(user.id),
     emailDigestOn(user.id), push ? pushDevicesOf(user.id) : [], push ? pushKindsOn(user.id) : [],
+    // il feed degli admin (0032): agli altri la riga non si mostra, e la query non parte
+    admin ? siteActivityOn(user.id) : false,
   ])
   const prossimoCambio = nextHandleChange(cambiato)
   const error = authErrorMessage(one(sp.error))
@@ -106,8 +110,8 @@ export default async function SettingsPage({ searchParams }: PageProps<'/setting
         </div>
       </section>
 
-      {/* Cosa arriva nella lista, poi le push del browser (0031) e il
-          digest email (0029), spenti per difetto. */}
+      {/* Cosa arriva nella lista, il feed degli admin (0032), poi le push
+          del browser (0031) e il digest email (0029), spenti per difetto. */}
       <section className="mt-8 max-w-lg" aria-labelledby="notifications">
         <h2 id="notifications" className="scroll-mt-6 text-[13px] font-semibold text-inchiostro">
           Notifications
@@ -132,6 +136,17 @@ export default async function SettingsPage({ searchParams }: PageProps<'/setting
             </li>
           )}
         </ul>
+        {/* Solo per gli admin, spento per difetto: lo rifiutano anche la
+            Server Action e set_notification_pref */}
+        {user.role === 'admin' && (
+          <>
+            <h3 className="mt-5 text-[12px] font-medium text-inchiostro">Site activity</h3>
+            <p className="mt-0.5 text-[12px] leading-relaxed text-tenue">Only for moderators.</p>
+            <div className="mt-3 border border-linea rounded-[var(--raggio)] bg-superficie px-4 py-3">
+              <AttivitaSito on={attivita} />
+            </div>
+          </>
+        )}
         {push && (
           <>
             <h3 className="mt-5 text-[12px] font-medium text-inchiostro">Browser notifications</h3>

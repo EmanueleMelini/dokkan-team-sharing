@@ -87,6 +87,9 @@ async function regole() {
   const nuovo = await one<{ on: Date | null; v: number }>(
     'select notify_digest_on_at as on, notify_token_v as v from app_user where id = $1', [await utente(P, 'dg_default')])
   check('un utente nuovo ha il digest spento e i link alla versione 1', nuovo.on === null && nuovo.v === 1)
+  // il feed degli admin (0032) non va mai per email: lo prova sulle righe vere db/test/attivita.test.mts
+  const src = (await one<{ s: string }>(`select prosrc as s from pg_proc where proname = 'digest_due'`)).s
+  check('digest_due tiene fuori site_activity dagli items', /r\.kind <> 'site_activity'/.test(src))
 }
 
 /** Il budget, in una transazione che si annulla alla fine. */
