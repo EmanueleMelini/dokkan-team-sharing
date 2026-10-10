@@ -338,6 +338,32 @@ try {
       check('nessuna missione per un evento che non ne ha', (await Q.getMissions(T.ricerca, null)).length === 0)
     })
 
+    await sezione('getMissions: i premi carta portano il tipo, per il segnaposto', async () => {
+      // Il database di test non ha miniature: un premio carta qui e' proprio
+      // il caso del segnaposto (components/missioni.tsx, la banda del tipo).
+      const [m] = await righe<{ ev: string; run: string | null; type: string }>(`
+        select m.event_id::text as ev, m.run_id::text as run, c.type::text as type
+        from mission_reward r join mission m on m.id = r.mission_id
+        join game_item gi on gi.item_type = r.item_type and gi.item_id = r.item_id
+        join card c on c.id = gi.card_id
+        where c.thumb_key is null
+        order by m.event_id, m.id limit 1`)
+      if (!check('c\'e\' un premio carta senza miniatura', !!m)) return
+      const premi = (await Q.getMissions(m.ev, m.run)).flatMap((x) => x.rewards)
+      const carte = premi.filter((r) => r.card)
+      const attese = await valore<number>(`
+        select count(*)::int from mission_reward r join mission m on m.id = r.mission_id
+        join game_item gi on gi.item_type = r.item_type and gi.item_id = r.item_id
+        where m.event_id = $1::bigint and (m.run_id is null or m.run_id = $2::bigint) and gi.card_id is not null`, [m.ev, m.run])
+      check('card c\'e\' su tutti e soli i premi che sono carte', carte.length === attese && premi.length > carte.length,
+        `${carte.length} carte su ${premi.length} premi, attese ${attese}`)
+      check('...e un premio carta senza miniatura ha il tipo della carta',
+        carte.some((r) => r.icon_key === null && r.card?.type === m.type), m.type)
+      tutte('ogni premio carta ha un tipo fra i cinque, e niente altro', carte,
+        (r) => ['AGL', 'TEQ', 'INT', 'STR', 'PHY'].includes(r.card!.type) && Object.keys(r.card!).join() === 'type')
+      tutte('gli altri premi hanno card null', premi.filter((r) => !r.card), (r) => r.card === null)
+    })
+
     await sezione('copertina e legami fra EZA e Super EZA', async () => {
       // Il database di test non scarica le immagini: nessuna carta ha una
       // miniatura, e null contro null passerebbe anche con il join rotto.
@@ -350,8 +376,8 @@ try {
         order by e.id limit 1`)
       if (check('c\'e\' un evento senza banner con una carta di copertina', !!cop)) {
         const finta = `test/copertina-${cop.card}.webp`
-        await db.query(`insert into asset (key, kind, content_type, byte_size, checksum)
-                        values ($1, 'card_thumb', 'image/webp', 1, 'test') on conflict (key) do nothing`, [finta])
+        await db.query(`insert into asset (key, kind, content_type, byte_size, checksum, source)
+                        values ($1, 'card_thumb', 'image/webp', 1, 'test', 'wiki') on conflict (key) do nothing`, [finta])
         await db.query('update card set thumb_key = $1 where id = $2::bigint', [finta, cop.card])
         try {
           const det = await Q.getEvent(cop.ev, 'global')

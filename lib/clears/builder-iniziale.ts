@@ -37,7 +37,7 @@ export function statoDaClear(c: ClearForEdit): BuilderStato {
         build: buildDaClear(k.build),
         carta: {
           id: Number(k.card_id), name: k.name ?? `Card ${k.card_id}`, epithet: k.epithet,
-          type: k.type, class: k.class, thumb: assetUrl(k.thumb_key),
+          type: k.type, class: k.class, thumb: assetUrl(k.thumb_key), rarity: k.rarity,
         },
       }
     }

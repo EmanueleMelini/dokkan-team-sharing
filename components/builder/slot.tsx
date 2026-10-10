@@ -1,7 +1,7 @@
 'use client'
 
 import { ArrowSquareOut, Plus, X } from '@phosphor-icons/react/dist/ssr'
-import { Miniatura } from '@/components/builder/miniatura'
+import { Miniatura, TipoSenzaMiniatura } from '@/components/builder/miniatura'
 import { buildPiena, type BuildStato, type SlotStato } from '@/lib/clears/builder-stato'
 import type { SlotRole } from '@/lib/clears/validate'
 import { cardHref } from '@/lib/urls'
@@ -57,8 +57,10 @@ export function Slot({ slot, dove, onApri, onSvuota, onRuolo, onBuild }: Props) 
             <span className="min-w-0 flex-1">
               <span className="block text-[12px] font-medium text-inchiostro leading-tight truncate" title={carta.name}>{carta.name}</span>
               {carta.epithet && <span className="block text-[11px] text-tenue leading-tight truncate">{carta.epithet}</span>}
-              <span className="sr-only">. Replace the card in {dove}</span>
             </span>
+            {/* senza miniatura il riquadro non dice tipo e classe: accanto */}
+            <TipoSenzaMiniatura carta={carta} />
+            <span className="sr-only">. Replace the card in {dove}</span>
           </>
         ) : (
           <>

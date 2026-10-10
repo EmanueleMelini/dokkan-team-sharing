@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # npm run db:test: tutte le verifiche, in fila, su un database di test.
 #
-#   reset -> schema -> API di scrittura -> account -> id delle carte dal wiki ->
-#   configurazione di produzione (pool, TLS, cron, IP) ->
+#   reset -> schema -> API di scrittura -> account -> id delle carte dal wiki
+#   (anche le pagine abbozzate) -> immagini (i job anche senza pagina, la
+#   CDN, la provenienza, i limiti di spazio) -> fonti fresche e copia del
+#   datamine -> configurazione di produzione (pool, TLS, cron, IP) ->
 #   import dei dati veri (carte del wiki, poi quelle solo nel gioco) -> query
 #   delle pagine (lib/queries.ts vero) -> parametri dell'URL (lib/parametri.ts)
 #   -> URL degli eventi (lib/urls.ts) -> filtri dei clear (parametri)
@@ -14,7 +16,8 @@
 #   -> settings dell'account (0019: scollegare, cancellare l'account)
 #   -> moderazione (0024: segnalazioni, nascosti, sospensioni, registro,
 #   letture di /admin, il lato di chi usa il sito) -> tip (0025)
-#   -> profili pubblici e cambio di handle (0026) -> temi (0027)
+#   -> profili pubblici e cambio di handle (0026) -> temi (0027) ->
+#   segnaposto delle immagini (lib/segnaposto.ts, i contrasti nei temi)
 #   -> notifiche nel sito (0028) e il loro lato app (lib/notify)
 #   -> digest email (0029: budget, selezione, disiscrizione) e il suo lato
 #   app (lib/notify: token, testi, cron, one-click)
@@ -27,8 +30,8 @@
 #   -> finestre degli eventi dal
 #   gioco (load-windows) -> eventi creati dal gioco (load-game-events) ->
 #   stage delle riedizioni -> classificazione (story, SBR, archivi) ->
-#   missioni dal gioco (load-missions) -> aggiornamento settimanale
-#   (weekly-data)
+#   missioni dal gioco (load-missions) -> aggiornamento settimanale e giro
+#   giornaliero delle immagini (weekly-data, daily-images, 0033)
 #
 # Gira su dokkan_test, o su TEST_DATABASE_URL se c'e' (il nome deve finire
 # per _test): il database di sviluppo non si tocca. Prima db:test lo
@@ -74,6 +77,15 @@ passo "account" verifica node_ts db/test/auth.test.mts
 # Funzioni pure, niente database: come load-cards e fetch-assets ricavano
 # l'id di una carta dalla pagina del wiki (db/import/wiki-card.mjs).
 passo "id delle carte dal wiki" verifica node db/test/wiki-card.test.mjs
+# Funzioni pure: i job di fetch-assets anche per le carte senza pagina (i
+# nomi per convenzione del wiki), le risposte della CDN e i ritenti, la
+# provenienza (0033) e i limiti di spazio (db/import/asset-limits.mjs).
+passo "immagini: job, limiti, provenienza" verifica node db/test/assets.test.mjs
+# Funzioni pure e richieste finte: le soglie di db/prod/freshness.mjs (il
+# gioco andato avanti e il datamine no) e i nomi dell'archivio privato del
+# datamine; push su un repo ops non privato non carica niente, e senza
+# OPS_ARCHIVE_TOKEN dice una notice ed esce 0.
+passo "freschezza delle fonti e archivio del datamine" verifica node db/test/fonti.test.mjs
 # La configurazione di produzione (lib/db-config.ts, lib/cron.ts, l'header
 # dell'IP in lib/auth/env.ts): funzioni pure, poi la rotta /api/cron/purge
 # vera. Crea solo l'utente cronpurge_test e lo toglie.
@@ -181,6 +193,10 @@ passo "profili pubblici" verifica node_ts db/test/profiles.test.mts
 # script del <head> su un document finto, e set_theme. Crea solo utenti
 # themetest+ e li toglie.
 passo "temi" verifica node_ts db/test/temi.test.mts
+# I segnaposto delle immagini (lib/segnaposto.ts, components/segnaposto.tsx):
+# la scelta, l'iniziale, i colori del marchio con i contrasti in tutti i
+# temi, e niente icone del wiki. Funzioni pure e file, niente database.
+passo "segnaposto delle immagini" verifica node_ts db/test/segnaposto.test.mts
 # Le notifiche nel sito (0028): i trigger su commenti, registro della
 # moderazione e segnalazioni (il destinatario giusto e nessun altro, mai a
 # se stessi, mai a chi segnala ne' a chi e' segnalato, il sospeso che
@@ -290,12 +306,18 @@ passo "classificazione" verifica node_ts db/test/classification.test.mts
 # puntano. Rilancia load-missions, poi confronta un evento con i CSV,
 # controlla corse, premi e nomi, e che un secondo giro non cambi niente.
 passo "missioni" verifica node_ts db/test/missions.test.mts
-# L'aggiornamento settimanale (.github/workflows/weekly-data.yml, 0023): i
-# limiti di compare.mjs, i controlli sulle sorgenti, il commit del datamine
-# e il token, la scelta delle immagini, il mirror, le maschere dei log; poi
+# L'aggiornamento settimanale (.github/workflows/weekly-data.yml, 0023) e
+# il giro giornaliero delle immagini (daily-images.yml): i limiti di
+# compare.mjs, i controlli sulle sorgenti, il commit del datamine e il
+# token, la scelta delle immagini, il mirror, le maschere dei log, la
+# guardia della cache di Actions (cache-check.mjs: solo fonti pubbliche); poi
 # snapshot.mjs vero (un dry-run non scrive), un clear vero e load-events,
 # load-game-events e load-missions rilanciati dalla cache senza che i dati
-# degli utenti cambino, migrate --check, import_run e la forma del workflow.
+# degli utenti cambino, migrate --check, import_run (i giri delle sole
+# immagini non sono "l'ultimo import"), le immagini mancanti anche senza
+# pagina, i vincoli della provenienza (0033, in transazioni annullate) e la
+# forma dei due workflow (permessi job per job, i passi Decide eseguiti
+# davvero).
 # Crea solo weeklytest+weekly_author e il database <test>_mc_test, e li toglie.
 passo "aggiornamento settimanale" verifica node_ts db/test/weekly-data.test.mts
 

@@ -6,6 +6,14 @@
 // stesso risultato nel giro di prova della CI e nell'applicazione vera.
 //
 //   PROD_DATABASE_URL=... PROD_DATABASE_CA_CERT=... npm run prod:update -- --yes
+//   ... npm run prod:update -- --images-only --yes
+//
+// --images-only e' il giro giornaliero delle immagini (daily-images.yml):
+// solo fetch-assets --offline (PIPELINE_IMAGES), che adotta i file appena
+// pubblicati e li collega. Stesso lucchetto, stesso controllo dello schema,
+// stesso rinfresco delle pagine; in import_run si chiude con summary.mode
+// 'images' e senza commit del datamine, perche' di dati non ne importa:
+// last-run.mjs non lo prende per l'ultimo import.
 //
 // Il giro si registra in import_run (0023): un secondo prod:update, dal
 // Mac o dalla CI, mentre questo e' in corso si rifiuta. ASSET_DIR passa
@@ -19,13 +27,15 @@ import { spawnSync } from 'node:child_process'
 import { join } from 'node:path'
 import pg from 'pg'
 import { describeInputs } from './inputs.mjs'
-import { PIPELINE, stepNames } from './pipeline.mjs'
+import { PIPELINE, PIPELINE_IMAGES, stepNames } from './pipeline.mjs'
 import { ROOT, prepare, runNode } from './target.mjs'
 
 const CI = process.env.GITHUB_ACTIONS === 'true'
 const warn = (msg) => console.log(CI ? `::warning::${msg}` : `  attenzione: ${msg}`)
 
-const { url, env, info } = prepare('prod:update', stepNames(PIPELINE))
+const IMAGES_ONLY = process.argv.includes('--images-only')
+const STEPS = IMAGES_ONLY ? PIPELINE_IMAGES : PIPELINE
+const { url, env, info } = prepare(IMAGES_ONLY ? 'prod:update --images-only' : 'prod:update', stepNames(STEPS))
 // lo schema deve essere gia' quello del codice: un import su uno schema
 // vecchio fallirebbe a meta', meglio dirlo prima
 runNode('db/prod/check-schema.mjs', [], env)
@@ -56,18 +66,23 @@ console.log(`  import_run ${runId} aperto`)
 const inputs = describeInputs()
 const t0 = Date.now()
 async function finish(status, extra) {
-  const summary = { steps: PIPELINE.length, duration_s: Math.round((Date.now() - t0) / 1000),
-                    wiki_sha: inputs.wiki_sha, wiki_pages: inputs.wiki_pages,
-                    event_pages: inputs.event_pages, ...extra }
+  const duration_s = Math.round((Date.now() - t0) / 1000)
+  const summary = IMAGES_ONLY
+    ? { mode: 'images', steps: STEPS.length, duration_s, ...extra }
+    : { mode: 'full', steps: STEPS.length, duration_s,
+        wiki_sha: inputs.wiki_sha, wiki_pages: inputs.wiki_pages,
+        event_pages: inputs.event_pages, ...extra }
+  // un giro delle immagini non ha importato nessun commit: niente date
+  const fonti = IMAGES_ONLY ? [null, null, null]
+    : [inputs.datamine_commit, inputs.datamine_committed_at, inputs.wiki_fetched_at]
   try {
-    await sql('select import_run_end($1, $2, $3, $4, $5, $6)',
-      [runId, status, summary, inputs.datamine_commit, inputs.datamine_committed_at, inputs.wiki_fetched_at])
+    await sql('select import_run_end($1, $2, $3, $4, $5, $6)', [runId, status, summary, ...fonti])
   } catch (err) {
     warn(`import_run ${runId} not closed: ${err.message}`)
   }
 }
 
-for (const [script, args] of PIPELINE) {
+for (const [script, args] of STEPS) {
   console.log(`\n  ---- ${script} ${args.join(' ')}`.trimEnd())
   const r = spawnSync(process.execPath, [join(ROOT, script), ...args], { stdio: 'inherit', env, cwd: ROOT })
   if (r.status !== 0) {

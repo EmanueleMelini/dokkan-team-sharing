@@ -273,6 +273,57 @@
   --phy: #5d2f0d;
 }
 
+/*
+ * I colori del marchio "Anello Ki" (components/brand/marchio.tsx) e della
+ * banda del tipo nei segnaposto delle carte (components/segnaposto.tsx,
+ * con la classe colori-marchio). Sono FISSI e non seguono i token dei temi:
+ * un tema colorato potrebbe rendere due settori uguali, o un settore uguale
+ * allo sfondo. --marchio-1 ... --marchio-5 sono i settori AGL TEQ INT STR
+ * PHY, --marchio-0 il disco del leader; i valori vengono dagli SVG di
+ * scripts/brand/svg/ (genera.mjs e db/test/segnaposto.test.mts controllano
+ * che coincidano).
+ *
+ * Due varianti, scelte solo dal CSS: la scura con un tema scuro su <html>,
+ * oppure con il sistema scuro quando data-theme manca o e' "system". Un id
+ * sconosciuto resta chiaro. Un tema scuro nuovo va aggiunto alla lista qui
+ * sotto (il test lo pretende). Gli id stanno senza virgolette: scritto con
+ * le virgolette, un pezzo della lista sembrerebbe il blocco di un tema ai
+ * test che leggono questo file.
+ *
+ * Qui, una volta sola, e non in uno <style> del componente: ogni
+ * segnaposto ne metteva una copia nel payload RSC delle pagine in cache.
+ */
+.marchio,
+.colori-marchio {
+  --marchio-1: #2f6fc4;
+  --marchio-2: #2e7d5b;
+  --marchio-3: #6b4b9e;
+  --marchio-4: #b03a2e;
+  --marchio-5: #a85414;
+  --marchio-0: #7a5c00;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) :is(.marchio, .colori-marchio),
+  :root[data-theme=system] :is(.marchio, .colori-marchio) {
+    --marchio-1: #6fa8e8;
+    --marchio-2: #5fc79a;
+    --marchio-3: #a98bdb;
+    --marchio-4: #e8836f;
+    --marchio-5: #e0a651;
+    --marchio-0: #f8da5e;
+  }
+}
+
+:root:is([data-theme=dark], [data-theme=notte-agl], [data-theme=nebulosa-int], [data-theme=brace-str], [data-theme=lr-oro], [data-theme=oled]) :is(.marchio, .colori-marchio) {
+  --marchio-1: #6fa8e8;
+  --marchio-2: #5fc79a;
+  --marchio-3: #a98bdb;
+  --marchio-4: #e8836f;
+  --marchio-5: #e0a651;
+  --marchio-0: #f8da5e;
+}
+
 @theme inline {
   --color-sfondo: var(--sfondo);
   --color-superficie: var(--superficie);

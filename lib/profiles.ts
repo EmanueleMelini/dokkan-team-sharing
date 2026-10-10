@@ -97,6 +97,8 @@ export type ProfileCard = {
   role: string
   thumb_key: string | null
   name: string | null
+  /** il tipo, per il segnaposto di una carta senza miniatura */
+  type: string
 }
 
 export type ProfileClear = {
@@ -155,7 +157,7 @@ export async function listUserClears(
             coalesce((
               select json_agg(json_build_object(
                        'card_id', cl.card_id::text, 'rot', cl.rotation_index, 'pos', cl.pos,
-                       'role', cl.role, 'thumb_key', cd.thumb_key, 'name', ct.name)
+                       'role', cl.role, 'thumb_key', cd.thumb_key, 'name', ct.name, 'type', cd.type::text)
                      order by cl.rotation_index, cl.pos)
               from clear_card cl
               join card cd on cd.id = cl.card_id

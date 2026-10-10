@@ -1,18 +1,27 @@
 # L'aggiornamento settimanale dei dati di gioco.
 #
-# 1. scarica wiki e datamine (cache della settimana prima come ripiego);
+# 1. scarica wiki e datamine (cache della settimana prima come ripiego;
+#    se il datamine non arriva, l'ultima fotografia buona e nessuna
+#    applicazione), e guarda se le fonti sono fresche (freshness.mjs);
 # 2. fa un giro di prova completo su una copia della produzione, dentro il
 #    runner, e lo confronta riga per riga con i limiti di db/prod/limits.json;
 # 3. immagini nuove: le chiede al wiki, e se arrivano ripubblica l'albero
-#    completo su Cloudflare Pages (prima che una riga le usi);
+#    completo su Cloudflare Pages (prima che una riga le usi), entro i
+#    limiti di spazio di db/import/asset-limits.mjs;
 # 4. applica alla produzione con le stesse cache;
-# 5. scrive il riepilogo del job.
+# 5. scrive il riepilogo del job (lo spazio ogni settimana, anche senza
+#    niente di nuovo), e archivia la fotografia del datamine nel repo
+#    privato ops se c'e' il secret facoltativo OPS_ARCHIVE_TOKEN.
 # La produzione non si scrive mai prima che il giro di prova sia passato.
+# Le immagini che la CDN del wiki non da' (un 403) le riprova ogni giorno
+# daily-images.yml, che usa lo stesso gruppo di concorrenza.
 #
-# Il repository e' pubblico: log, riepiloghi e artifact li legge chiunque.
-# Quindi niente trigger pull_request (le fork non vedono mai i secret), i
-# secret stanno nell'environment "production" (solo il branch main), il
-# dump si carica solo cifrato con age, e le parti di PROD_DATABASE_URL si
+# Il repository e' pubblico: log, riepiloghi e artifact li legge chiunque,
+# e la cache di Actions la ripristina anche un giro pull_request (pure di
+# una fork). Quindi niente trigger pull_request (le fork non vedono mai i
+# secret), i secret stanno nell'environment "production" (solo il branch
+# main), il dump si carica solo cifrato con age, nella cache vanno solo le
+# fonti pubbliche (cache-check.mjs), e le parti di PROD_DATABASE_URL si
 # mascherano prima di ogni comando che le potrebbe stampare.
 #
 # Applica davvero: a mano con dry_run spento, dal cron solo con la
@@ -134,8 +143,10 @@ jobs:
           key: import-cache-${{ github.run_id }}
           restore-keys: import-cache-
 
-      # la cache di Actions sparisce dopo 7 giorni senza uso, cioe' proprio
-      # a cadenza settimanale: di riserva l'artifact dell'ultimo giro riuscito
+      # la cache di Actions sparisce dopo 7 giorni senza uso (il giornaliero
+      # la legge ogni giorno): di riserva l'artifact dell'ultimo giro
+      # riuscito, che pero' ha solo il wiki. Il datamine di ripiego viene
+      # dalla cache o dall'archivio privato (Datamine fallback)
       - name: Fall back to the last successful run's artifact
         if: steps.cache.outputs.cache-matched-key == ''
         env:
@@ -174,15 +185,52 @@ jobs:
             echo "- Wiki unreachable: used the cached copy." >> "$RUNNER_TEMP/attention.md"
           fi
 
-      # il datamine invece deve arrivare: senza, l'import non ha senso
+      # il datamine invece deve arrivare: senza, l'import non ha senso. Se
+      # non arriva si tiene l'ultima fotografia buona (sotto) e non si applica
       - name: Fetch the datamine
         id: datamine
+        continue-on-error: true
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: node db/import/fetch-datamine.mjs --fresh --strict
 
+      # Il repo del datamine sparito, un 404, l'API giu': la fotografia della
+      # settimana prima, o quella dell'archivio privato (datamine-archive.mjs).
+      # Mai dati nuovi a meta': questo giro non applica niente (Decide).
+      - name: Datamine fallback
+        if: steps.datamine.outcome != 'success'
+        env:
+          OPS_ARCHIVE_TOKEN: ${{ secrets.OPS_ARCHIVE_TOKEN }}
+        run: |
+          # un download --fresh fermato a meta' mescolerebbe due commit
+          rm -rf db/import/.cache/datamine
+          from=
+          if [ -s db/import/.cache.prev/datamine/_snapshot.json ]; then
+            mkdir -p db/import/.cache
+            cp -a db/import/.cache.prev/datamine db/import/.cache/datamine
+            from="the previous cache"
+          elif [ -n "$OPS_ARCHIVE_TOKEN" ] && node db/prod/datamine-archive.mjs restore; then
+            from="the private archive"
+          fi
+          if [ ! -s db/import/.cache/datamine/_snapshot.json ]; then
+            echo "::error::the datamine is unreachable and there is no last good snapshot (cache or private archive)"
+            exit 1
+          fi
+          snap=$(node -e "const s=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'));console.log(String(s.commit).slice(0,7)+' of '+String(s.committed_at).slice(0,10))" db/import/.cache/datamine/_snapshot.json)
+          echo "DATAMINE_MODE=fallback" >> "$GITHUB_ENV"
+          echo "::warning::datamine unreachable: kept the last good snapshot $snap ($from); nothing is applied this run"
+          echo "- Datamine unreachable: kept the last good snapshot $snap from $from; nothing was applied." >> "$RUNNER_TEMP/attention.md"
+
       - name: Sanity check of the sources
+        id: sanity
         run: node db/prod/sanity.mjs
+
+      # Il gioco e' andato avanti e il datamine no? Avvisa, non ferma mai
+      - name: Freshness of the sources
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node db/prod/freshness.mjs --out "$RUNNER_TEMP/freshness.md" --attention "$RUNNER_TEMP/attention.md"
 
       - name: Anything new since the last import?
         id: skip
@@ -196,6 +244,13 @@ jobs:
           CHANGED: ${{ steps.skip.outputs.changed }}
           LAST_OK: ${{ steps.skip.outputs.last_ok }}
         run: |
+          # con la fotografia di ripiego non si applica niente, nemmeno con force
+          if [ "${DATAMINE_MODE:-}" = fallback ]; then
+            echo "GO=false" >> "$GITHUB_ENV"
+            { echo "## Weekly data update, $(date -u +%F)"; echo
+              echo "Datamine unreachable: the last good snapshot was kept and nothing was applied."; } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
           if [ "$CHANGED" = true ] || [ "$FORCE" = true ]; then echo "GO=true" >> "$GITHUB_ENV"; exit 0; fi
           echo "GO=false" >> "$GITHUB_ENV"
           { echo "## Weekly data update, $(date -u +%F)"; echo
@@ -261,6 +316,7 @@ jobs:
           node db/prod/snapshot.mjs --out "$RUNNER_TEMP/after.json"
 
       - name: Compare and enforce the limits
+        id: compare
         if: env.GO == 'true'
         run: |
           flags=()
@@ -287,15 +343,20 @@ jobs:
         run: node db/prod/missing-assets.mjs --json "$RUNNER_TEMP/missing.json"
 
       # Solo i job senza riga, una volta, senza ritentare i 403: insistere
-      # contro un controllo anti-bot e' come lo si fa salire.
+      # contro un controllo anti-bot e' come lo si fa salire. Al primo 403
+      # fetch-assets smette, e il giro giornaliero riprova domani. Il
+      # manifesto (fuori dall'albero, mai pubblicato) da' alla produzione la
+      # stessa provenienza delle righe del giro di prova.
       - name: Download new images from the wiki
         id: download
         if: env.GO == 'true' && steps.images.outputs.pending != '0'
         env:
           DATABASE_URL: ${{ env.REHEARSAL_URL }}
           ASSET_DIR: ${{ runner.temp }}/new
+          ASSET_MANIFEST: ${{ runner.temp }}/new-assets.jsonl
         run: |
-          node db/import/fetch-assets.mjs --missing || echo "::warning::fetch-assets --missing failed: images stay pending"
+          node db/import/fetch-assets.mjs --missing --report "$RUNNER_TEMP/images-report.json" \
+            || echo "::warning::fetch-assets --missing failed: images stay pending"
           n=$(find "$ASSET_DIR" -type f | wc -l | tr -d ' ')
           echo "downloaded=$n" >> "$GITHUB_OUTPUT"
           if [ "$n" -gt 0 ]; then
@@ -315,6 +376,12 @@ jobs:
           min=$(node -e "console.log(JSON.parse(require('fs').readFileSync(process.argv[1], 'utf8')).tables.asset.count)" "$RUNNER_TEMP/before.json")
           node db/prod/mirror-assets.mjs --from "$ASSET_BASE_URL" --to "$RUNNER_TEMP/tree" \
             --extra "$RUNNER_TEMP/new" --min-files "$min"
+
+      # wrangler non controlla prima: oltre 20.000 file o 25 MiB per file
+      # fallirebbe a meta'. Qui si rifiuta prima di toccare qualcosa.
+      - name: Storage guard
+        if: env.GO == 'true' && env.APPLY == 'true' && fromJSON(steps.download.outputs.downloaded || '0') > 0
+        run: node db/prod/storage.mjs --tree "$RUNNER_TEMP/tree" --guard --out "$RUNNER_TEMP/storage-deploy.md"
 
       - name: Deploy the images to Cloudflare Pages
         if: env.GO == 'true' && env.APPLY == 'true' && fromJSON(steps.download.outputs.downloaded || '0') > 0
@@ -351,9 +418,15 @@ jobs:
           node db/prod/missing-assets.mjs --out "$RUNNER_TEMP/images.md" \
             --downloaded "$DOWNLOADED" --deployed "${ASSETS_DEPLOYED:-false}" >> "$RUNNER_TEMP/images.log"
           cat "$RUNNER_TEMP/images.md" >> "$GITHUB_STEP_SUMMARY"
-          pending=$(node -e "const m=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'));console.log(m.pending)" "$RUNNER_TEMP/missing.json")
-          if [ "$pending" -gt 0 ]; then
-            echo "- Images pending: $pending before this run, downloaded $DOWNLOADED (the wiki CDN often answers 403 to datacenter IPs; run npm run db:assets on the Mac)." >> "$RUNNER_TEMP/attention.md"
+          # lo spazio, contro i limiti di Pages e il budget degli animati
+          node db/prod/storage.mjs --out "$RUNNER_TEMP/storage.md" --attention "$RUNNER_TEMP/attention.md"
+          cat "$RUNNER_TEMP/storage.md" >> "$GITHUB_STEP_SUMMARY"
+          if [ -s "$RUNNER_TEMP/storage-deploy.md" ]; then cat "$RUNNER_TEMP/storage-deploy.md" >> "$GITHUB_STEP_SUMMARY"; fi
+          # Un 403 della CDN non si aggira e non si chiede di riscaricare dal
+          # Mac: il runner di solito ci riesce, e il giro giornaliero riprova
+          read -r challenged transient < <(node -e "let r={};try{r=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'))}catch{};console.log((r.challenged||0)+' '+(r.transient_failed||0))" "$RUNNER_TEMP/images-report.json")
+          if [ "${challenged:-0}" -gt 0 ] || [ "${transient:-0}" -gt 0 ]; then
+            echo "- Images: the wiki CDN challenged $challenged downloads (403) and $transient failed after retries; the daily image pass retries tomorrow, the challenge is never bypassed." >> "$RUNNER_TEMP/attention.md"
           fi
 
       # Le stesse cache del giro di prova: datamine fissato da _snapshot.json,
@@ -366,6 +439,7 @@ jobs:
           PROD_DATABASE_CA_CERT: ${{ runner.temp }}/supabase-ca.crt
           PROD_SITE_URL: ${{ vars.PROD_SITE_URL }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          ASSET_MANIFEST: ${{ runner.temp }}/new-assets.jsonl
         run: |
           tree="$RUNNER_TEMP/empty"
           if [ "${ASSETS_DEPLOYED:-}" = true ]; then tree="$RUNNER_TEMP/tree"; fi
@@ -389,30 +463,81 @@ jobs:
           fi
           { echo "### Applied to production"; echo; echo "Post-check done, warnings below if any."; echo; } >> "$GITHUB_STEP_SUMMARY"
 
-      # Dati pubblici (wiki CC BY-SA, datamine): vanno bene in un repository
-      # pubblico. Solo se il datamine e' arrivato intero, mai una cache a meta'.
-      - name: Save the import cache
+      # La cache di Actions non e' privata: un giro pull_request, anche
+      # quello di una fork con un suo workflow, ripristina le cache del
+      # branch base. Ci stanno solo copie di fonti pubbliche, il wiki e il
+      # datamine (i CSV di un repository pubblico su GitHub: nessun segreto),
+      # mai un secret, un dump o un dato della produzione. Lo controlla
+      # cache-check.mjs, e con un file fuori elenco non si salva ne' si
+      # carica niente (il giro diventa rosso).
+      - name: Check the import cache holds only public sources
+        id: cache-check
         if: always() && steps.datamine.outcome == 'success'
+        run: node db/prod/cache-check.mjs
+
+      # Solo se il datamine e' arrivato intero: mai una cache a meta', ne'
+      # la fotografia di ripiego
+      - name: Save the import cache
+        if: always() && steps.datamine.outcome == 'success' && steps.cache-check.outcome == 'success'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: db/import/.cache
           key: import-cache-${{ github.run_id }}-${{ github.run_attempt }}
 
+      # L'artifact invece lo scarica chiunque abbia un account GitHub: solo
+      # il wiki (CC BY-SA). I CSV del datamine non li ripubblichiamo noi, la
+      # loro copia durevole e' nel repo privato ops (il passo dopo).
       - name: Upload the import cache
-        if: always() && steps.datamine.outcome == 'success'
+        if: always() && steps.datamine.outcome == 'success' && steps.cache-check.outcome == 'success'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: import-cache
-          path: db/import/.cache
+          path: |
+            db/import/.cache
+            !db/import/.cache/datamine
+            !db/import/.cache/datamine/**
           retention-days: 30
           include-hidden-files: true
           overwrite: true
           if-no-files-found: error
 
+      # Una copia privata e durevole dei commit del datamine buoni
+      # (db/prod/datamine-archive.mjs), nel repo privato ops: LATEST.json e'
+      # l'ultima fotografia buona del ripiego. Buona vuol dire arrivata
+      # intera, passata dal controllo delle sorgenti e, se era nuova, dal
+      # giro di prova con i limiti (GO=false qui e' "lo stesso commit
+      # dell'ultimo import": il ripiego ha gia' tolto il datamine sopra).
+      # Facoltativa: senza il secret OPS_ARCHIVE_TOKEN dice una notice.
+      - name: Archive the datamine snapshot
+        if: >-
+          always() && steps.datamine.outcome == 'success' && steps.sanity.outcome == 'success'
+          && (env.GO == 'false' || (env.GO == 'true' && steps.compare.outcome == 'success'))
+        continue-on-error: true
+        env:
+          OPS_ARCHIVE_TOKEN: ${{ secrets.OPS_ARCHIVE_TOKEN }}
+        run: node db/prod/datamine-archive.mjs push
+
+      # Lo spazio nel riepilogo ogni settimana, anche senza niente di nuovo
+      # (GO=false), col ripiego del datamine o con un giro fermato prima
+      # delle immagini: se "Images summary" non l'ha scritto, qui dalla
+      # produzione in sola lettura (una transazione read only, come il piano
+      # del giornaliero). Solo informazione: non ferma mai il giro.
+      - name: Storage summary
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          PROD_DATABASE_CA_CERT: ${{ runner.temp }}/supabase-ca.crt
+        run: |
+          if [ -s "$RUNNER_TEMP/storage.md" ]; then exit 0; fi
+          node db/prod/storage.mjs --prod --out "$RUNNER_TEMP/storage.md" --attention "$RUNNER_TEMP/attention.md"
+          cat "$RUNNER_TEMP/storage.md" >> "$GITHUB_STEP_SUMMARY"
+
       - name: Needs attention
         if: always()
         run: |
           rm -f "$RUNNER_TEMP/prod.dump"
+          if [ -s "$RUNNER_TEMP/freshness.md" ]; then cat "$RUNNER_TEMP/freshness.md" >> "$GITHUB_STEP_SUMMARY"; fi
           if [ -s "$RUNNER_TEMP/attention.md" ]; then
             { echo "### Needs attention"; echo; cat "$RUNNER_TEMP/attention.md"; echo; } >> "$GITHUB_STEP_SUMMARY"
           fi

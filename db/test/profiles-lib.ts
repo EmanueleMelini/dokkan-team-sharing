@@ -135,6 +135,13 @@ export async function lista(ctx: Contesto) {
   vale('la squadra di partenza: le sette carte, leader prima', [riga.cards.length, riga.cards[0]?.role, riga.cards.at(-1)?.role],
     [7, 'leader', 'friend'])
   check('...con miniatura e nome', riga.cards.every((k) => 'thumb_key' in k && 'name' in k && /^\d+$/.test(k.card_id)))
+  // il tipo serve al segnaposto di una carta senza miniatura (riga-clear.tsx)
+  const tipi = new Map((await db.query<{ id: string; type: string }>(
+    'select id::text, type::text from card where id = any($1::bigint[])', [riga.cards.map((k) => k.card_id)])).rows
+    .map((r) => [r.id, r.type]))
+  check('...e il tipo della carta, uno dei cinque', riga.cards.length > 0 && riga.cards.every((k) =>
+    ['AGL', 'TEQ', 'INT', 'STR', 'PHY'].includes(k.type) && k.type === tipi.get(k.card_id)),
+    riga.cards.map((k) => `${k.card_id}:${k.type}`).join(' '))
   const rivisto = [...p1, ...p2].find((c) => c.id === ids[0])
   vale('il clear rivisto ha due versioni', rivisto?.versions, 2)
 

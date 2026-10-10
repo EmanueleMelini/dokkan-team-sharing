@@ -2,6 +2,7 @@ import Image from 'next/image'
 import { CaretRight } from '@phosphor-icons/react/dist/ssr'
 import { assetUrl } from '@/lib/db'
 import { soloGiorno } from '@/lib/date'
+import { SegnapostoCarta } from '@/components/segnaposto'
 import type { MissionRow } from '@/lib/queries'
 
 const numero = new Intl.NumberFormat('en-US')
@@ -44,7 +45,14 @@ export function Missioni({ missioni }: { missioni: MissionRow[] }) {
                     const icona = assetUrl(r.icon_key)
                     return (
                       <span key={i} className="inline-flex items-center gap-1">
-                        {icona && <Image src={icona} alt="" width={16} height={16} className="rounded-[2px]" />}
+                        {icona ? (
+                          <Image src={icona} alt="" width={16} height={16} className="rounded-[2px]" />
+                        ) : r.card && (
+                          // una carta senza miniatura: la sola banda del tipo,
+                          // il nome e' scritto accanto. Gli altri premi senza
+                          // icona restano solo testo.
+                          <SegnapostoCarta name={r.name} type={r.card.type} size={16} />
+                        )}
                         {r.name}
                         <span className="numeri text-tenue">x{numero.format(r.quantity)}</span>
                       </span>

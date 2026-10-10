@@ -87,3 +87,43 @@ export function pickGameCards(rows, covered, now = new Date()) {
   skipped.sort((a, b) => a.id - b.id)
   return { cards, skipped }
 }
+
+/**
+ * Ogni unita' del datamine, SENZA i filtri di pickGameCards: anche quelle
+ * non ancora uscite (open_at 2038 o nel futuro), le copie, le righe alla
+ * data minima del lancio, gli oggetti, e quelle che una pagina wiki ha
+ * gia'. Per ognuna i nomi, i tipi, le classi e i giorni di TUTTE le sue
+ * righe, e la rarita' della base: la forma Z-awakened sale di una (1034130
+ * e' SSR, 1034131 UR), ma il wiki scrive sempre quella della base (1487
+ * pagine su 1487 con le due rarita' diverse, il 10 ottobre 2026).
+ *
+ * Serve alle pagine abbozzate (matchStub in wiki-card.mjs): una candidata
+ * unica fra le carte uscite non basta, se nel gioco c'e' un'altra carta con
+ * lo stesso nome, tipo, classe e rarita' che pickGameCards ha tolto (la
+ * gemella non ancora uscita) o che ha gia' una pagina.
+ * @returns {{ id: number, names: string[], types: string[], classes: string[], rarity: string | null, days: (string | null)[] }[]}
+ */
+export function gameUnits(rows) {
+  const units = new Map()
+  for (const r of rows) {
+    if (!isPlayable(r) || !UNIT_PREFIX.test(r.id)) continue
+    const u = unitOf(r.id)
+    if (!units.has(u)) units.set(u, [])
+    units.get(u).push(r)
+  }
+  const uniq = (a) => [...new Set(a.filter(Boolean))]
+  return [...units.values()].map((list) => {
+    list.sort((a, b) => Number(a.id) - Number(b.id))
+    const els = list.map((r) => decodeElement(r.element)).filter(Boolean)
+    return {
+      id: Number(list[0].id),
+      names: uniq(list.map((r) => cleanName(r.name))),
+      types: uniq(els.map((e) => e.type)),
+      classes: uniq(els.map((e) => e.cls)),
+      rarity: decodeRarity(list[0].rarity),
+      // il giorno UTC di open_at, come global_release; null se non si sa
+      // (vuoto, o la data finta del 2038 delle carte non ancora uscite)
+      days: list.map((r) => (r.open_at && !isSentinel(r.open_at) ? r.open_at.slice(0, 10) : null)),
+    }
+  })
+}

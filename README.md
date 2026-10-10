@@ -24,8 +24,10 @@ I numeri sono quelli di `dokkan_dev` al 9 ottobre 2026; schema e verifiche anche
   migrazioni
 - **2697 carte**: 2651 dal wiki, con link skill, categorie, statistiche e
   date di uscita separate per Japan e Global, più 46 che ha solo il gioco
-  (senza epiteto). 662 hanno l'EZA, 299 anche la Super EZA. I testi
-  completi delle skill sono 10.705 righe di `card_skill` (sezione sul 0022)
+  (senza epiteto). Dal prossimo import 2652 e 45: la pagina abbozzata di
+  1034150 ora trova la sua carta (sezione "Le pagine abbozzate"). 662 hanno
+  l'EZA, 299 anche la Super EZA. I testi completi delle skill sono 10.705
+  righe di `card_skill` (sezione sul 0022)
 - **792 eventi**: 600 dal wiki (100 storia, 208 challenge, 152 Extreme
   Z-Battle, 114 limited, 20 bonus, 6 altri), banner compresi, e **192 dal
   gioco** che il wiki non documenta (2025-2026: 14 storia, 71 challenge, 86
@@ -38,11 +40,16 @@ I numeri sono quelli di `dokkan_dev` al 9 ottobre 2026; schema e verifiche anche
 - **8857 Skill Orb** (2214 bronzo, 2824 argento, 3819 oro), ognuna con la
   sua regola su chi la monta: 1852 per tipo e classe, 5042 per categoria,
   1825 per lista di carte, 138 per nome
-- **6246 immagini** ospitate da noi
-- **2267 verifiche automatiche** in `db:test`: 42 passi, di cui 9
-  preparano il database e 33 sono suite di verifica, tutte verdi, su un
-  database a parte che non è quello di sviluppo. In più `test:smoke` (57
-  controlli contro `next start`) e `test:auth-smoke` sul sito che gira
+- **6246 immagini** ospitate da noi, 1245 MB: 6247 file con `_headers`, il
+  31% dei 20.000 che Cloudflare Pages accetta in un deploy (sezione "Spazio
+  e limiti"). Una carta o un evento senza immagine mostra un segnaposto
+  fatto con i colori del marchio (sezione "Segnaposto delle immagini")
+- **Più di tremila verifiche automatiche** in `db:test`, tutte verdi, su
+  un database a parte che non è quello di sviluppo: alcuni passi preparano
+  il database, gli altri sono suite di verifica (l'elenco è
+  `db/test/run.sh`, e il riepilogo finale dice l'esito di ognuno; ogni
+  suite stampa i suoi PASS). In più `test:smoke` (i controlli contro
+  `next start`) e `test:auth-smoke` sul sito che gira
 
 Tre regole recenti da sapere:
 
@@ -103,13 +110,18 @@ fila:
 load-cards → load-game-cards → load-events → load-datamine → load-game-events → load-windows → load-missions → load-equipment → fetch-assets
 ```
 
-Il ciclo completo dura **cinque secondi**: le immagini sono già sul disco e
-il wikitext è in cache. Al wiki parte una richiesta sola: `fetch-assets`
-rilegge a ogni giro il template degli oggetti premio (e chiede solo i file
-che sul disco non trova).
+Il ciclo completo dura **pochi secondi**: le immagini sono già sul disco e
+il wikitext è in cache. Al wiki partono poche richieste: `fetch-assets`
+rilegge a ogni giro il template degli oggetti premio, e chiede all'API
+(`imageinfo`, 50 nomi per richiesta) i file delle carte che un'immagine non
+ce l'hanno ancora, anche di quelle senza pagina, con i nomi per convenzione
+del wiki (sezione "Le carte senza pagina: i nomi per convenzione"). Quelli
+che il wiki ha li scarica, gli altri li riprova al giro dopo.
 
 In produzione la fila è la stessa con `fetch-assets --offline` spostato
-dopo `load-datamine` (`db/prod/pipeline.mjs`).
+dopo `load-datamine` (`db/prod/pipeline.mjs`). Il giro delle sole immagini
+(`prod:update -- --images-only`, sezione "Il giro giornaliero delle
+immagini") ha solo `fetch-assets --offline` (`PIPELINE_IMAGES`).
 
 ### I test, e perché girano su un database a parte
 
@@ -117,22 +129,31 @@ dopo `load-datamine` (`db/prod/pipeline.mjs`).
 **`dokkan_test`**, un database che esiste solo per questo:
 
 1. lo ricrea da zero con le migrazioni e la fixture (`db/reset.mjs --fixture`);
-2. verifica **schema e vincoli** (`schema.test.sh`, 28 controlli) e
-   **l'API di scrittura** (`write_api.test.sh`, 68);
+2. verifica **schema e vincoli** (`schema.test.sh`) e
+   **l'API di scrittura** (`write_api.test.sh`, 68), poi le funzioni pure
+   dell'import: l'id delle carte dal wiki e le pagine abbozzate
+   (`wiki-card.test.mjs`), i job delle immagini anche senza pagina, le
+   risposte della CDN e i ritenti, la provenienza e i limiti di spazio
+   (`assets.test.mjs`), le soglie della freschezza delle fonti e l'archivio
+   del datamine (`fonti.test.mjs`);
 3. ci importa i dati veri dalle cache locali (carte, eventi, datamine), senza
    nessuna richiesta di rete;
 4. verifica le **query che alimentano le pagine** chiamando le funzioni vere
-   di `lib/queries.ts` (`queries.test.mts`, 124), i **parametri dell'URL**
+   di `lib/queries.ts` (`queries.test.mts`), i **parametri dell'URL**
    di `lib/parametri.ts` (`parametri.test.mts`, 43), gli **URL degli
    eventi** di `lib/urls.ts` (`urls.test.mts`), i **parametri dei filtri**
    dei clear (`filtri.test.mts`, 72) e i **tag della cache**
    (`cache-tags.test.mts`);
 5. poi le suite del builder, degli account, della moderazione (SQL, area
    admin, lato utente), delle tip (`tips.test.mts`), dei profili e del
-   cambio di handle (`profiles.test.mts`), dei dati del gioco, dei testi
-   delle skill (`card-page.test.mts`), della pagina della carta
+   cambio di handle (`profiles.test.mts`), dei temi (`temi.test.mts`) e dei
+   segnaposto delle immagini (`segnaposto.test.mts`), dei dati del gioco,
+   dei testi delle skill (`card-page.test.mts`), della pagina della carta
    (`card-page-ui.test.mts`), dei filtri dei clear (`filters.test.mts`) e,
-   per ultima, dell'aggiornamento settimanale (`weekly-data.test.mts`).
+   per ultima, dell'aggiornamento settimanale e del giro giornaliero delle
+   immagini (`weekly-data.test.mts`: i due workflow e i permessi job per
+   job, la guardia della cache di Actions, `import_run`, le immagini
+   mancanti, i vincoli della 0033).
 
 Un passo che prepara i dati, se fallisce, ferma tutto; una suite rossa non
 ferma le altre. Alla fine c'è un riepilogo, e il comando esce con errore se
@@ -301,9 +322,10 @@ components/
   moderation/                 Report e il banner della sospensione (isole), la coda, i form e il registro di /admin
   auth/                       accesso, /welcome, Settings (handle, provider, artwork, cancellazione), l'utente nell'header
   viewer/                     ViewerProvider e useViewer(): le isole client che leggono /api/me
-  brand/marchio.tsx           il marchio dell'header: SVG con colori fissi, chiaro o scuro solo dal CSS
+  brand/marchio.tsx           il marchio dell'header: SVG con colori fissi, chiaro o scuro solo dal CSS di app/globals.css (anche per i segnaposto)
   tema/                       il selettore del tema: nel footer e in Settings
   missioni.tsx                le missioni di un evento, con i premi
+  segnaposto.tsx              al posto delle immagini che mancano: la carta (tipo, iniziale, rarita') e l'evento (icona del tipo)
 lib/
   queries.ts                  le letture delle pagine evento (pure): eventi, stage, clear, filtri, faccette
   clears.ts, clears/          il builder e il clear: letture, Server Action, validatori, frasi d'errore, filtri
@@ -319,10 +341,11 @@ lib/
   dal.ts                      chi e' l'utente: requireUser / requireOnboardedUser / requireFreshUser (mai nelle pagine pubbliche)
   moderation/                 motivi, frasi d'errore, Report, requireAdmin, letture e azioni di /admin
   legale.ts                   i numeri e i testi di privacy e terms
+  segnaposto.ts               cosa mostra un segnaposto (puro): settore del tipo, iniziale, misure, icona ed etichetta dell'evento
   db.ts, db-config.ts         la pool (una per processo) e le sue impostazioni: dimensioni, TLS
   cron.ts                     l'autenticazione delle rotte di Vercel Cron
 db/
-  migrations/                 NNNN_*.sql, applicate in ordine, mai modificate (0001-0027, elenco sotto)
+  migrations/                 NNNN_*.sql, applicate in ordine, mai modificate (0001-0033, elenco sotto)
   migrate.mjs                 runner: applica le pendenti, una transazione ciascuna (--check per sapere se e' indietro)
   reset.mjs                   ricostruisce un database da zero (--fixture per i test)
   env.mjs                     la sorgente unica di DATABASE_URL per gli script
@@ -338,7 +361,10 @@ db/
     load-windows.mjs, set-event-window.mjs, quest-refs.mjs   le finestre Global dal gioco
     load-missions.mjs, missions/   le missioni Global e i loro premi
     load-equipment.mjs, equipment-limits.mjs   le Skill Orb e le loro regole
-    fetch-assets.mjs          le immagini (--offline: solo dal disco; --missing: solo quelle senza riga)
+    fetch-assets.mjs          le immagini (--offline: solo dal disco; --missing: solo quelle senza riga; --plan: solo il piano)
+    asset-jobs.mjs            quali file chiedere al wiki per ogni carta, anche senza pagina (i nomi per convenzione)
+    asset-select.mjs          quali job fare, le risposte della CDN e i ritenti, la provenienza (0033)
+    asset-limits.mjs          i limiti di spazio: file per deploy di Pages, tetto e budget degli animati
     .cache/                   wikitext e CSV scaricati (non versionati)
   prod/                       gli script contro la produzione (prod:setup, prod:migrate, prod:update, prod:backup, ...)
     target.mjs                il bersaglio: PROD_DATABASE_URL, i rifiuti, il TLS, la conferma --yes
@@ -348,6 +374,10 @@ db/
     snapshot.mjs, compare.mjs, limits.json   la fotografia delle tabelle e i limiti dell'aggiornamento settimanale
     dump.mjs, rehearsal.mjs   il backup della produzione e il giro di prova su una copia locale
     sanity.mjs, last-run.mjs, missing-assets.mjs, mirror-assets.mjs   i controlli e le immagini del workflow
+    storage.mjs               lo spazio delle immagini contro i limiti, e la guardia prima del deploy
+    freshness.mjs             le fonti sono fresche? l'app del gioco contro il datamine
+    datamine-archive.mjs      la copia privata delle fotografie del datamine (push, restore)
+    cache-check.mjs           prima di salvare la cache di Actions: dentro solo le fonti pubbliche
   admin/set-role.mjs          il ruolo di un utente, solo da script (db:role, prod:role)
   seed/demo-clears.mjs        tre clear dimostrativi su un evento vero (db:demo)
   queries/reference.sql       le query di lettura principali, documentate
@@ -357,6 +387,7 @@ test/
   auth-smoke.sh               il giro del magic link sul sito che gira (npm run test:auth-smoke)
   cpu.sh                      la CPU per richiesta su next start (npm run test:cpu)
 .github/workflows/weekly-data.yml   l'aggiornamento settimanale automatico
+.github/workflows/daily-images.yml  il giro giornaliero delle sole immagini (mai il venerdi')
 scripts/assets-deploy.mjs     public/assets su Cloudflare Pages, con _headers (assets:deploy)
 scripts/brand/                il marchio: geometria, SVG sorgente (svg/) e il generatore delle icone (npm run brand)
 vercel.json                   regione fra1, i cron (pulizia alle 4 UTC, digest email alle 17), anteprime saltate (ignoreCommand)
@@ -381,6 +412,12 @@ Le migrazioni che contano per il sito, oltre allo schema dei dati (0001-0013, 00
 | `0025_tips.sql` | le tip: bersaglio, limiti, link senza accorciatori, voto Helpful, Report |
 | `0026_public_profiles.sql` | `public_profile`, `handle_history`, `change_handle`, gli indici per autore |
 | `0027_theme.sql` | `app_user.theme` (null = System) e `set_theme` |
+| `0028_notifications.sql` | le notifiche nel sito: `notification`, `notification_pref`, i trigger, il pallino |
+| `0029_email_digest.sql` | il digest email giornaliero, con il budget che protegge i login |
+| `0030_vote_score_cascade.sql` | i punteggi dei clear quando un voto se ne va con l'account |
+| `0031_push.sql` | le push del browser: `push_subscription`, `push_sent`, `push_claim` |
+| `0032_site_activity.sql` | l'attività del sito per gli admin: il feed, una push per azione, mai per email |
+| `0033_asset_source.sql` | `asset.source` e `source_url`: da dove viene ogni immagine |
 
 ### Sulle migrazioni
 
@@ -392,6 +429,17 @@ sviluppo si ricrea tutto con `db:reset`; in seguito si aggiunge un file nuovo.
 `reset.mjs` si ferma su un database che ha tabelle e non ha
 `schema_migrations` (vedi sopra); il nome non lo guarda. Quello lo
 controllano i test, che girano solo su un nome che finisce per `_test`.
+
+**In produzione l'ordine con il codice non è sempre lo stesso**, e la CI non
+migra mai (`npm run prod:migrate -- --yes` è un gesto a mano). Una colonna
+che il codice nuovo legge va online **prima** del codice: senza, il codice
+nuovo si rompe (0027, 0028). Un vincolo che il codice di prima non
+rispetta va online **subito dopo** il codice: prima, il codice di prima
+fallirebbe a ogni scrittura (la 0033, `asset.source` not null senza
+default). Ma conta solo dove il codice di prima scrive davvero: la 0033
+può precedere il codice finché nessun giro applicato del codice di prima
+scrive `asset` (sezione della 0033). Quando conta, lo dice la sezione
+della migrazione.
 
 ## Due fonti, e nessuna sostituisce l'altra
 
@@ -424,7 +472,10 @@ unità uscite su Global esistevano solo nel datamine. Ora entrano con il nome
 inglese del gioco, tipo, classe e rarità con la stessa decodifica di
 `load-datamine`, la data di uscita Global e `imported_from = 'datamine'`;
 l'**epiteto resta NULL** (il gioco non ce l'ha, e inventarlo sarebbe un dato
-falso), niente statistiche né testi delle skill, niente immagini. La scelta è
+falso), niente statistiche né testi delle skill. Le immagini invece arrivano
+quando il wiki le ha caricate senza scrivere la pagina, cosa che succede
+spesso: `fetch-assets` prova per loro i nomi per convenzione (sezione "Le
+carte senza pagina: i nomi per convenzione"). La scelta è
 fatta di regole, non di una lista, così le uscite future entrano da sole:
 id a 7 cifre col prefisso 1/2/3, `open_at` già passato e non 2038, una
 passiva o un link (senza è un oggetto), un'unità sola fra base e
@@ -456,6 +507,123 @@ livello (per la LR 1007470: 8782/8414/3658), il wiki il valore a potenziale
 pieno (15800/15100/8220). Misurano cose diverse, e il secondo è quello che i
 giocatori confrontano.
 
+### Fonti fresche e copia del datamine
+
+Il datamine è il repository di un privato, aggiornato da un esportatore
+automatico che si può fermare in silenzio quando cambia il client del
+gioco, e il suo `database.db` è vicino al limite di 100 MiB per file di
+GitHub. Un controllo lo tiene d'occhio, una copia privata lo mette al
+sicuro, e un ripiego tiene in piedi il settimanale se sparisce.
+
+**La freschezza** (`db/prod/freshness.mjs`, il passo "Freshness of the
+sources" del settimanale dopo il controllo delle sorgenti, e del giornaliero
+dopo la cache). Confronta l'app del gioco con il datamine:
+
+| avviso | soglia |
+|---|---|
+| l'app Global è uscita e l'ultimo commit di `data/` del datamine è più vecchio | più di 3 giorni dall'uscita (`APP_AHEAD_DAYS`) |
+| nessun commit di `data/` | più di 14 giorni (`DATAMINE_STALE_DAYS`): di solito committa ogni settimana |
+| nessuna carta nuova (l'`open_at` giocabile più recente nel `cards.csv` in cache) | più di 21 giorni (`CARDS_STALE_DAYS`): fra agosto e settembre 2026 il buco più lungo è stato di 16 |
+| `database.db` del datamine | dal 98% di 100 MiB (`UPSTREAM_DB_WARN_PCT`); sotto è solo informazione |
+
+Le fonti, una richiesta ciascuna con 15 secondi al massimo: l'API di lookup
+di iTunes (Global `id=951627425`, Japan `id=951627670&country=jp`: senza
+`country` risponde `resultCount` 0), l'ultimo commit di `data/` (lo stesso
+`resolveCommit` di `fetch-datamine`, il token di GitHub solo verso
+`api.github.com`) e l'elenco della cartella con `database.db`
+(`UPSTREAM_DB_PATH`; se il file cambia nome si prende il `.db` che c'è e il
+riepilogo dice il percorso). Japan è solo informazione: il datamine è di
+Global, e Japan è avanti per natura. Ogni avviso è un `::warning::` e una
+riga fra le cose da guardare; il riepilogo ha la sezione "Sources". Un'API
+che non risponde è un "not checked", un errore qualsiasi una notice: **il
+giro non fallisce mai per questo** (e il passo ha `continue-on-error`).
+Il 10 ottobre 2026 non c'era nessun avviso: Global 6.5.5 del 29 agosto,
+Japan 6.6.0 del 7 ottobre, commit 86e8684e del 2 ottobre, carta più recente
+del 29 settembre; `database.db` 101.199.872 byte, il 96,5% di 100 MiB, cioè
+circa 3,5 MiB di margine a 1,7 MB al mese: un paio di mesi. Il percorso di
+`database.db` va confermato dal primo riepilogo della CI, che lo stampa (o
+dice "not checked").
+
+**La copia privata** (`db/prod/datamine-archive.mjs`). La cache di Actions
+sparisce dopo 7 giorni senza uso; qui resta per sempre ogni commit buono
+del datamine, in un repository **privato**,
+`EmanueleMelini/dokkan-team-sharing-ops`: `datamine/datamine-<giorno del
+commit>-<sha7>.tar.gz` (i CSV delle tabelle e `_snapshot.json`) e
+`datamine/LATEST.json` (`commit`, `committed_at`, `file`, `sha256`,
+`bytes`), l'ultima fotografia buona. Un tarball per commit, 3-5 MB l'uno
+(circa 200 MB l'anno); un push con lo stesso commit di `LATEST.json` non fa
+niente. Il settimanale archivia nel passo "Archive the datamine snapshot",
+con `continue-on-error`, solo una fotografia buona: il datamine arrivato
+intero, il controllo delle sorgenti passato e, se c'era qualcosa di nuovo,
+il giro di prova con i limiti passato (`GO=false` lì vuol dire lo stesso
+commit dell'ultimo import). In prova la produzione non la importa, ma il
+giro di prova sì.
+
+Non li ripubblichiamo noi: i CSV sono dati del gioco, non nostri da
+pubblicare. Per questo:
+
+- `push` chiede a ogni giro `GET /repos/EmanueleMelini/dokkan-team-sharing-ops`
+  e non carica niente (un `::warning::`, il giro va avanti) se il repo non è
+  `private`, o se il token non lo vede: un repo creato pubblico per sbaglio,
+  o reso pubblico dopo, non riceve niente;
+- l'artifact `import-cache` del settimanale (30 giorni, lo scarica chiunque
+  abbia un account GitHub) tiene solo il wiki (CC BY-SA): la cartella
+  `datamine/` resta fuori;
+- il datamine della settimana prima sta nella cache di Actions, che il
+  giornaliero legge ogni giorno e così tiene viva. **La cache non è un
+  posto privato**: un giro `pull_request`, anche quello di una fork con un
+  suo workflow, ripristina le cache del branch base, quindi chi apre una
+  pull request può leggerla. Ci sta perché il contenuto è lo stesso del
+  repository pubblico del datamine su GitHub: non esce nessun segreto. La
+  copia privata è solo l'archivio ops. Nella cache non va mai un secret, un
+  dump o un dato della produzione: prima di salvarla (e di caricare
+  l'artifact) il passo "Check the import cache holds only public sources"
+  (`db/prod/cache-check.mjs`) controlla che in `db/import/.cache` ci siano
+  solo `wiki-cards.json`, `wiki-events.json`, `wiki-items-template.json`,
+  `datamine/_snapshot.json` e i CSV di `datamine/`. Un altro file, una
+  cartella in più o un link fermano il salvataggio e l'artifact, e il giro
+  diventa rosso con i soli nomi dei file.
+
+**Se il datamine sparisce** (il repository tolto, un 404, l'API giù),
+"Fetch the datamine" può fallire e il passo "Datamine fallback" tiene
+l'ultima fotografia buona: prima toglie la cache a metà (un `--fresh`
+fermato mescolerebbe due commit), poi rimette quella della settimana prima
+(`db/import/.cache.prev`, dalla cache di Actions: l'artifact non ha il
+datamine), altrimenti, con il token, quella dell'archivio privato. Senza
+nessuna delle due il giro si ferma con un errore, come prima.
+Con la fotografia di ripiego **non si applica niente**, nemmeno con `force`:
+`DATAMINE_MODE=fallback` e "Decide" mette `GO=false`; nel riepilogo un
+avviso dice quale commit è stato tenuto. La cache di ripiego non viene mai
+salvata come cache nuova.
+
+Il secret `OPS_ARCHIVE_TOKEN` è **facoltativo**. Per attivarlo:
+
+1. crea il repository **privato** `EmanueleMelini/dokkan-team-sharing-ops`
+   con un primo commit (basta un README: l'API Git Data non scrive in un
+   repository vuoto);
+2. crea un token fine-grained (GitHub, Settings, Developer settings,
+   Personal access tokens, Fine-grained tokens): resource owner
+   `EmanueleMelini`, "Only select repositories" con il solo
+   `dokkan-team-sharing-ops`, permesso Repository "Contents: Read and
+   write" (Metadata in lettura arriva da sé), scadenza di circa un anno, e
+   un promemoria per ruotarlo prima che scada;
+3. aggiungilo come secret dell'environment `production` del repository del
+   sito (Settings, Environments, production, Environment secrets), con il
+   nome `OPS_ARCHIVE_TOKEN`. L'environment vale solo per `main`;
+4. senza il secret `push` stampa la notice "OPS_ARCHIVE_TOKEN not set:
+   datamine snapshot not archived" ed esce 0, e il ripiego usa solo la
+   cache della settimana prima;
+5. per rimettere a mano l'ultima fotografia sul Mac:
+   `OPS_ARCHIVE_TOKEN=... node db/prod/datamine-archive.mjs restore`.
+   Sostituisce `db/import/.cache/datamine` dopo aver controllato lo sha256 e
+   che il commit di `_snapshot.json` sia quello di `LATEST.json`. Il token
+   solo nella riga di comando, mai in `.env.local` o in un file del
+   repository.
+
+Per ruotarlo: un token nuovo con gli stessi permessi, il secret
+sostituito, il vecchio revocato. Il token è solo un header `Authorization`
+verso `api.github.com`: mai su disco, mai stampato.
+
 ## Le carte dal wiki: come sono state estratte
 
 Dall'**API MediaWiki pubblica del wiki Fandom**. È la sorgente a monte da
@@ -464,17 +632,79 @@ fermi a gennaio 2023 — ed è un'API documentata con i suoi limiti, non uno
 scraping di HTML. L'enumerazione passa da chi include `Template:Characters`,
 che sono esattamente le pagine carta.
 
-Su 2671 pagine, **2651 importate** e 20 scartate, ognuna con il suo motivo
-stampato: 18 sono oggetti di supporto e non unità, 1 ha un tipo malformato,
-1 è una pagina abbozzata senza id. Le varianti a cinque tipi che condividono
-la stessa immagine, e le pagine senza un'immagine col numero della carta,
-prendono l'id dal campo `|ID`, accettato solo se il datamine ha quella carta
-con lo stesso tipo e la stessa rarità (`db/import/wiki-card.mjs`).
+Su 2671 pagine, **2652 importate** e 19 scartate, ognuna con il suo motivo
+stampato: 18 sono oggetti di supporto e non unità, 1 ha un tipo malformato.
+La pagina abbozzata senza id che prima si scartava ora prende la sua carta
+per nome, tipo, classe e rarità (sotto, "Le pagine abbozzate"). Le varianti
+a cinque tipi che condividono la stessa immagine, e le pagine senza
+un'immagine col numero della carta, prendono l'id dal campo `|ID`,
+accettato solo se il datamine ha quella carta con lo stesso tipo e la
+stessa rarità (`db/import/wiki-card.mjs`).
 
-Le immagini delle 19 carte entrate così non ci sono ancora: il CDN delle
-immagini del wiki risponde 403 con la verifica anti-bot di Cloudflare, e non
-la si aggira. Quando torna a servire i file basta `npm run db:assets`, che
-scarica solo quello che manca.
+Le carte con una pagina ma senza immagine in tabella sono 19 senza
+miniatura e 21 senza artwork, quasi tutte entrate col `|ID`. Il wiki le ha
+quasi tutte (l'API, il 10 ottobre 2026): le 19 miniature (9 col nome per
+convenzione, le 10 Metal Cooler col nome scritto sulla pagina, `Card 1003640
+thumb <TIPO>.png` e `Card 1015680 thumb <TIPO>.png`) e 18 artwork su 21 (8
+per convenzione, e le 10 Metal Cooler da `SR Metal Cooler HD.png` e
+`5Type SSRCooler.png`); non c'è l'artwork di 1033060, 1030970 e 1032880.
+Mancano solo perché la CDN aveva risposto 403 e perché il settimanale
+applica ancora in prova. Il runner di GitHub di solito le scarica (42 file
+su 45 il 9 ottobre 2026, mentre il giorno dopo il Mac riceveva il 403); un
+403 lo riprova il giro giornaliero delle immagini, e non si aggira mai.
+
+### Le pagine abbozzate
+
+Il wiki a volte apre la pagina di una carta appena uscita senza immagini e
+senza `|ID`: nome, tipo, classe e rarità, e niente altro. Prima si scartava
+("nessun id carta ricavabile da immagini o |ID"). Ora `assignCardIds`
+(`matchStub` in `db/import/wiki-card.mjs`) la aggancia all'**unica** carta
+solo del datamine che le corrisponde su segnali esatti:
+
+- il nome (`name2`, ripulito come lo pulisce `load-cards`; gli spazi
+  intorno a "/" non contano, perché il datamine scrive "A/\nB"), il tipo, la
+  classe e la rarità devono essere uguali;
+- se la pagina ha `GLBdate`, deve stare entro un giorno dall'uscita Global
+  del datamine: il giorno UTC di `open_at` coincide con `GLBdate` 2183 volte
+  su 2282, e sbaglia di uno 78;
+- i candidati sono quelli che sceglierebbe `load-game-cards` (niente copie,
+  niente righe alla data minima del lancio, niente carte non ancora
+  uscite), meno ogni id che un'altra pagina nomina, anche con un'immagine
+  condivisa o un `|ID` rifiutato;
+- il candidato deve essere unico **nel gioco intero**, non solo fra i
+  candidati (`gameUnits` in `db/import/game-cards.mjs`): nessun'altra unità
+  del datamine con lo stesso nome, tipo, classe e rarità, comprese quelle che
+  i candidati tolgono (la gemella non ancora uscita con la data finta del
+  2038, una copia, una riga alla data minima del lancio) e quelle che hanno
+  già una pagina. Altrimenti la pagina potrebbe essere di quella, o di una
+  carta che il datamine non ha ancora (proprio il caso dell'avviso di
+  freschezza). Con `GLBdate` una rivale si esclude solo se tutte le sue date
+  sono note e lontane più di un giorno; senza, nessuna. La rarità è quella
+  della base: la forma Z-awakened sale di una (1034130 SSR, 1034131 UR), ma
+  il wiki scrive sempre quella della base (1487 pagine su 1487 con le due
+  rarità diverse).
+
+Il costo no (wiki e datamine coincidono solo 1124 volte su 2295), le
+statistiche nemmeno (misurano cose diverse). Una corrispondenza ambigua
+(due candidati, o un candidato e un'altra unità del gioco con la stessa
+firma) o a metà (lo stesso nome con tipo, classe o rarità diversi, o una
+data lontana) resta fuori con il motivo stampato: mai una carta indovinata.
+Due abbozzi sulla stessa carta restano fuori tutti e due. Sulle 45 carte
+solo del datamine di oggi, un abbozzo senza `GLBdate` ne troverebbe 29 (le
+altre 16 hanno un nome, un tipo, una classe e una rarità che il gioco ha già
+usato, come Super Saiyan Goku SSR AGL Super), uno con `GLBdate` 44 (resta
+fuori la LR Super Saiyan Goku, che il gioco ha due volte lo stesso giorno,
+1034030 e 3034040).
+
+Oggi ce n'è una: "Transcendent Existence Buu (Kid)" (pageid 730530, LR,
+EXTREME INT) diventa **1034150**; 1034130 (SSR) e 1034140 (UR), le forme
+prima del risveglio, hanno lo stesso nome ma un'altra rarità, e nel gioco
+non c'è un'altra LR INT Extreme che si chiami così. La pagina non ha date,
+quindi `load-cards` prende la data Global dal datamine (2026-09-29): senza, un `db:refresh` la perderebbe, perché
+`load-game-cards` non la scrive più su una carta che ha la pagina. Le carte
+solo del datamine passano da 46 a 45. `load-cards` stampa a ogni giro
+quelle agganciate così ("id da una pagina abbozzata"). Il giorno che la
+pagina riceve le immagini l'id arriva dall'immagine, ed è lo stesso.
 
 Due controlli che dicono che il parsing è sano: i link skill per carta si
 concentrano su 5, 6 e 7 come nel gioco, e la media sale con la rarità (1,7
@@ -535,10 +765,11 @@ file è sul disco e la dimensione combacia, salta. E se il file è sul disco
 ma la riga **no** — cosa che succede a ogni `db:reset`, che ricrea il
 database ma non tocca `public/assets` — lo riadotta leggendo dimensioni e
 checksum dal file stesso, invece di riscaricare mezzo giga. Su un database
-appena ricreato con le immagini già presenti l'intera fase dura **un secondo
-e mezzo**, e al wiki parte una richiesta sola: il template degli oggetti
-premio, che `fetch-assets` rilegge a ogni giro (più i file che sul disco
-non trova).
+appena ricreato con le immagini già presenti l'intera fase dura **pochi
+secondi**, e al wiki partono poche richieste: il template degli oggetti
+premio, che `fetch-assets` rilegge a ogni giro, e qualche richiesta
+`imageinfo` per i file che sul disco non trova, cioè le immagini che una
+carta non ha ancora (anche senza pagina: sotto, "Le carte senza pagina").
 
 ```bash
 npm run db:assets                       # tutto
@@ -548,7 +779,16 @@ npm run db:assets -- --only anim         # solo le animate
 npm run db:assets -- --only art --limit 50
 npm run db:assets -- --flatten-existing  # ripara gli animati salvati male
 npm run db:assets -- --force             # riscarica comunque
+npm run db:assets -- --missing           # solo le immagini senza riga in asset (la CI)
+npm run db:assets -- --plan piano.json   # solo il piano: cosa c'e' sul wiki e quanto pesa, niente download
 ```
+
+`--plan` implica `--missing`, e non va con `--force`, `--offline` o
+`--flatten-existing`: legge in una transazione read only, chiede all'API
+quali file esistono e quanto pesano, scrive il piano in JSON ed esce prima
+di qualsiasi download. `--report <file>` scrive invece, a giro finito,
+quanto è successo (scaricati, byte, sfidati dalla CDN, falliti dopo i
+ritenti, mancanti, saltati per i limiti): lo leggono i riepiloghi della CI.
 
 ### Statico e animato, entrambi
 
@@ -591,7 +831,12 @@ collegamento controlla i primi byte del file (`siMuove` in
 "animato" che non si muove resta scollegato. Su `dokkan_dev` restano 88
 artwork animati e nessuna miniatura animata. Le originali si possono
 riprendere con `npm run db:assets -- --only anim --force` quando la CDN del
-wiki risponde di nuovo; il controllo anti-bot non si aggira.
+wiki risponde; il controllo anti-bot non si aggira. Il comando rispetta i
+tetti di `db/import/asset-limits.mjs` (sotto, "Spazio e limiti"): un
+artwork animato oltre 12 MiB, o oltre il budget, si salta e l'artwork fermo
+resta; le miniature animate oltre 1 MiB (i veri APNG del wiki pesano circa
+5 MB l'una, e nessuna pagina le mostra) restano fuori. Senza tetti
+avrebbe aggiunto circa 850 MB.
 
 ### L'icona LR
 
@@ -603,6 +848,212 @@ Fandom la appiattisce in un WebP statico da 13 KB. Teniamo entrambe le
 versioni: `rarity_icon.asset_key` è la statica, `animated_asset_key`
 l'animata da 397 KB. La statica per le liste, l'animata per la pagina della
 carta.
+
+### Le carte senza pagina: i nomi per convenzione
+
+Il wiki carica le immagini delle carte con un nome fisso, `Card <id>
+thumb.png` e `Card <id> artwork.png` (nel wikitext in cache: 2457 miniature
+su 2494 e 1928 artwork su 2494 si chiamano così), e spesso le carica anche
+quando la pagina non c'è ancora. Prima `fetch-assets` chiedeva le immagini
+solo delle carte con una pagina (`wiki_title` non nullo, e lo stesso filtro
+in `db/prod/missing-assets.mjs`). Ora i job li costruisce
+`db/import/asset-jobs.mjs` (puro, `cardJobs`) per **ogni carta in tabella**:
+
+- con una pagina: prima il file scritto sulla pagina, poi i nomi per
+  convenzione, poi l'URL dell'APNG incollato, solo se sta sulla CDN del
+  wiki (prima si scaricava qualsiasi `https` incollato da un editor);
+- senza pagina: solo i nomi per convenzione, la miniatura e l'artwork
+  (`Card <id> artwork.png`, poi `Card <id> bg.png`, la stessa regola delle
+  pagine). Niente animati: delle 46 carte senza pagina nessuna ha un APNG
+  sul wiki, e i due trovati in tutto (1030970, 1032880) sono già scritti
+  sulle loro pagine.
+
+Le richieste sono quelle di sempre: l'API `imageinfo`, 50 nomi per volta,
+150 ms fra una e l'altra, lo stesso User-Agent. Un job è *quiet* quando la
+pagina non dichiara nessun file: se il wiki non ce l'ha è solo un conto
+("N cards have no file on the wiki yet, retried every run"), e il giro dopo
+riprova. Un file che una pagina dichiara e il wiki non ha resta un
+`::warning::`, così un parser che si rompe si vede ancora.
+
+Misurato il 10 ottobre 2026: delle 46 carte senza pagina il wiki ha la
+miniatura di 34 e l'artwork di 31; 12 non hanno ancora nessun file
+(1020410, 1030310, 1031350, 1033720 e 1034130-1034200).
+`missing-assets.mjs` ora le conta (colonna `no_page`) con una riga sola nel
+riepilogo ("N cards without a wiki page: only the conventional file names
+are tried, every run"). Per questo le immagini in attesa non tornano più a
+zero e il passo dei download del settimanale gira ogni settimana: costa un
+paio di richieste all'API finché il wiki non le carica. Le copie e le
+riedizioni non sono in tabella (`load-game-cards` le salta), quindi non
+possono prendere l'immagine di un'altra carta.
+
+### Da dove viene un'immagine (migrazione 0033)
+
+Ogni riga di `asset` dice da dove viene:
+
+- `source`, la fonte: oggi una sola, `wiki` (`fetch-assets` chiede tutto al
+  wiki, l'API per i nomi e la CDN per i file). Niente default: chi scrive
+  una riga deve dirla, e una fonte nuova (il gioco, file nostri) è una
+  migrazione, non un valore libero (il vincolo `asset_source`);
+- `source_url`, il file originale sulla CDN del wiki, senza
+  ridimensionamento (lo decide il kind) e senza query string. Il vincolo
+  `asset_source_url_wiki` accetta solo `static.wikia.nocookie.net`,
+  `vignette.wikia.nocookie.net` (il nome vecchio della stessa CDN, che 136
+  URL di APNG nelle pagine usano ancora) e `dbz-dokkanbattle.fandom.com`.
+
+Il riempimento dice solo quello che è certo: tutte le 6246 righe di oggi
+hanno `source = 'wiki'` e `source_url` null, perché sono state riadottate
+dal disco dopo un `db:reset`, e quale dei nomi candidati avesse risposto
+(il file della pagina o quello per convenzione, l'artwork o il bg) non si
+sa più. Da ora un download scrive l'URL da cui è arrivato il file. Con
+`ASSET_MANIFEST` ogni download aggiunge anche una riga a un file JSONL
+fuori dall'albero pubblicato (chiave, fonte, URL, checksum, byte), e
+un'adozione dal disco prende l'URL da lì solo se il checksum combacia;
+altrimenti null. Una riadozione non cancella mai un URL già noto. In CI il
+manifesto del giro di prova passa all'applicazione, quindi la produzione
+ha lo stesso `source_url` del giro di prova.
+
+**In produzione la 0033 non deve precedere un giro applicato del codice di
+prima.** Il sito non scrive mai `asset`: lo fanno solo il settimanale e il
+giornaliero. Con il settimanale in prova (`WEEKLY_APPLY=false`) e nessun
+giro applicato lanciato a mano nel frattempo, la 0033 può andare online
+insieme alla 0032, **prima** del codice, che la 0032 richiede: è l'ordine
+del rilascio che le porta tutte e due (`npm run prod:migrate -- --yes` da
+un export pulito del commit, poi subito il push). Con `WEEKLY_APPLY=true`
+invece prima il codice su `main`, poi subito la migrazione. Il motivo: la
+0033 vuole `source` su ogni riga, e il codice di prima scrive `asset`
+senza; con la 0033 già applicata ogni riga
+nuova fallirebbe una per una, il `migrate --check` di prima avvisa soltanto
+di una migrazione applicata che non vede sul disco e il `check-schema` di
+prima non se ne accorge, quindi il settimanale finirebbe verde con file
+scaricati (e con `WEEKLY_APPLY=true` pubblicati) senza la loro riga. Nell'ordine giusto, finché la 0033 manca,
+`migrate --check` (nel giro di prova) e `check-schema` (in `prod:update`)
+fermano il settimanale e il giornaliero con il loro messaggio, prima di
+scrivere qualsiasi cosa (la CI non migra mai); il sito non legge
+`asset.source`, quindi non se ne accorge. La 0032 e la 0033 sono nate in
+parallelo; `migrate.mjs` applica le pendenti per nome.
+
+### Il giro giornaliero delle immagini
+
+La CDN del wiki a volte risponde 403 con il controllo anti-bot di
+Cloudflare, e un giorno dopo di solito no: il 9 ottobre 2026 il runner di
+GitHub ha scaricato 42 immagini su 45, il 10 ottobre il Mac riceveva il
+403. `.github/workflows/daily-images.yml` riprova ogni giorno quelle che
+mancano, con gli stessi script, gli stessi secret e le stesse guardie del
+settimanale. Riscaricarle dal Mac non serve più.
+
+- **Quando**: ogni giorno alle 06:41 UTC tranne il venerdì (`41 6 * *
+  0-4,6`), lontano dai cron di Vercel delle 4 e delle 17: il venerdì le
+  immagini le chiede il settimanale, alle 03:17. Si lancia anche a mano,
+  con `dry_run` acceso per difetto.
+- **Mai insieme al settimanale.** Un primo job senza environment né secret
+  (`gate`) guarda con `gh run list` se il settimanale gira o è in coda, e
+  in quel caso salta a domani: chi entra in un gruppo di concorrenza
+  cancella chi vi stava aspettando. Poi il job delle immagini sta nello
+  stesso gruppo del settimanale (`prod-data`, `cancel-in-progress: false`).
+  `actions: read` ce l'ha solo `gate`, che non ha altri permessi e non fa
+  nemmeno il checkout; il job delle immagini, quello con i secret, ha
+  solo `contents: read`.
+- **La cache** è quella di Actions del settimanale, solo letta e mai
+  salvata (leggerla ogni giorno la tiene viva). Niente artifact di riserva:
+  quello del settimanale ha solo il wiki, e senza il datamine
+  `assignCardIds` non riconosce le pagine con l'id da `|ID` o da un
+  abbozzo. Senza cache non fa niente. Le pagine pubblicate in settimana
+  aspettano il venerdì.
+- **Il piano**, in sola lettura sulla produzione:
+  `missing-assets.mjs --prod --plan` (il bersaglio da `target.mjs`, TLS
+  verificato, niente database locale senza `--allow-local`) lancia
+  `fetch-assets --missing --plan`, che chiede all'API del wiki quali file ci
+  sono e quanto pesano ed esce prima di scaricare. Il riepilogo ha anche lo
+  spazio (`storage.mjs --prod`) e la freschezza delle fonti.
+- **In prova** (`WEEKLY_APPLY` diverso da `true`, la stessa variabile del
+  settimanale con la stessa espressione, o `dry_run` a mano) si ferma lì:
+  "Dry run: would fetch N files (up to X MB); M not on the wiki yet.
+  Production not touched." Nessun dump, nessun download dalla CDN, nessun
+  deploy, nessuna scrittura. Lo stesso, con APPLY acceso, quando non c'è
+  niente da scaricare.
+- **Con `WEEKLY_APPLY=true`** e qualcosa da scaricare: il backup cifrato
+  (artifact tenuto 7 giorni), il giro di prova dal dump con `migrate
+  --check`, `fetch-assets --missing --report` sul giro di prova con il
+  manifesto, il confronto con i limiti (bloccante: in un giro di sole
+  immagini una cancellazione è un errore), l'albero completo, la guardia
+  dello spazio, il deploy su Cloudflare Pages, il controllo che i file nuovi
+  siano serviti, `prod:update -- --images-only` e il controllo dopo contro
+  il giro di prova. Al massimo 40 minuti.
+- **`update.mjs --images-only`** fa solo `fetch-assets --offline`
+  (`PIPELINE_IMAGES` in `db/prod/pipeline.mjs`): adotta i file appena
+  pubblicati e li collega, con lo stesso lucchetto di `import_run`, lo
+  stesso controllo dello schema e lo stesso rinfresco delle pagine. Chiude
+  `import_run` con `summary.mode = 'images'` e senza commit del datamine, e
+  `last-run.mjs` lo ignora: un giro delle immagini non fa credere al
+  settimanale che il commit di oggi sia già importato. Le copertine degli
+  eventi e le icone dei premi si riallineano al giro completo dopo.
+- **Un 403 non si aggira mai**: niente altri User-Agent, niente browser. Al
+  primo 403 della CDN `fetch-assets` non comincia più nessun download, e il
+  resto conta come "challenged" per domani; al primo 403 dell'API, o con
+  l'API che non risponde dopo i ritenti, smette di chiamarla. Si ritentano
+  i 408, 425, 429, 5xx e gli errori di rete: 4 volte dopo il primo
+  tentativo (1,6, 3,2, 6,4, 12,8 s), con `Retry-After` rispettato fino a
+  60 s, e al massimo 60 s per un download e 30 s per una chiamata all'API
+  (`esitoHttp` e `attesaRitento` in `db/import/asset-select.mjs`).
+- Fra le cose da guardare c'è una riga solo quando la CDN ha sfidato dei
+  download o i ritenti sono finiti ("the daily image pass retries
+  tomorrow"). Il vecchio "run npm run db:assets on the Mac" non c'è più.
+
+### Spazio e limiti
+
+Cloudflare Pages Free accetta al massimo 20.000 file per deploy e 25 MiB
+per file; oltre, il deploy fallisce a metà. Gli artwork animati si tengono
+(decisione del proprietario), ma con un tetto per file e un budget in tutto.
+Le soglie stanno in `db/import/asset-limits.mjs` e valgono insieme per la
+CI, il Mac e i test:
+
+| limite | valore | perché |
+|---|---|---|
+| file per deploy (`PAGES_MAX_FILES`) | 20.000, avviso all'80% (16.000), deploy rifiutato sopra | il limite di Pages; oggi 6247 file con `_headers`, il 31,2% |
+| un file (`PAGES_MAX_FILE_BYTES`) | 25 MiB, deploy rifiutato sopra | il limite di Pages |
+| un artwork animato (`ANIM_ART_MAX_FILE`) | 12 MiB, si salta sopra | il più grande di oggi è 9,97 MiB (p99 10,4 MB, media 8 MB): il 20% sopra, metà del limite di Pages |
+| tutti gli artwork animati (`ANIM_ART_BUDGET`) | 1 GiB, avviso all'80% (819 MiB), si salta sopra | oggi 677,7 MiB, il 66%: posto per una ventina di animazioni, e dal 2021 ne sono uscite 9-25 l'anno |
+| una miniatura animata (`ANIM_THUMB_MAX_FILE`) | 1 MiB, si salta sopra | nessuna pagina le mostra (`thumb_animated_key`), e un APNG del wiki pesa circa 5 MB |
+
+Su `dokkan_dev`, il 10 ottobre 2026: `card_art_animated` 678 MiB (170
+righe: 88 collegate, 673 MiB, e 82 fotogrammi appiattiti scollegati, 4,6
+MiB), `card_art` 433, `event_banner` 69, `card_thumb` 60,
+`card_thumb_animated` 4,5, le icone meno di 1. Il budget conta ogni riga
+del kind, anche i fotogrammi scollegati. Delle 46 carte senza pagina
+nessuna ha un animato, quindi la crescita potrebbe essere quasi ferma.
+
+- **Il tetto degli animati** lo applica `fetch-assets`: guarda la
+  dimensione che `imageinfo` dà prima di scaricare (gli animati hanno un
+  nome `File:` anche quando la pagina incolla un URL), e se non la sa la
+  ricontrolla dopo il download. Un file oltre il tetto o oltre il budget
+  si salta (l'artwork fermo è un job a parte e resta); il totale corre fra
+  i download paralleli. In CI un `::warning::` quando gli animati passano
+  l'80% del budget; il `--report` conta i saltati (`over_cap`,
+  `over_budget`).
+- **`db/prod/storage.mjs`** fa il conto: `--tree <dir>` conta l'albero che
+  sta per andare su Pages (per kind, `_headers` compreso), senza `--tree`
+  la tabella `asset` (`DATABASE_URL`, o `--prod` con `PROD_DATABASE_URL`;
+  solo SELECT in una transazione read only). `--out` scrive la tabella per
+  kind con i file contro i 20.000 e gli animati contro il budget,
+  `--attention` aggiunge una riga fra le cose da guardare dall'80% in su, e
+  `--guard` rifiuta il deploy ("deploy refused: production not touched")
+  con troppi file o un file oltre 25 MiB.
+- **Nei workflow**: un passo "Storage guard" prima di ogni `wrangler pages
+  deploy` (la CI usa wrangler, non `scripts/assets-deploy.mjs`, e il
+  controllo dei 20.000 file in CI prima non c'era), e la sezione "Storage"
+  nel riepilogo del settimanale e del giornaliero. Nel settimanale c'è ogni
+  settimana: dopo le immagini la conta il giro di prova ("Images summary");
+  se quel passo non c'è stato (niente di nuovo, `GO=false`, il ripiego del
+  datamine, un giro fermato prima) la conta "Storage summary" sulla
+  produzione, in sola lettura, con `continue-on-error`.
+- **Dal Mac** `npm run assets:deploy` stampa la stessa tabella per kind e
+  gli stessi avvisi dall'80%, e rifiuta come prima un albero oltre i
+  limiti.
+
+Per cambiare una soglia si cambia la costante in `asset-limits.mjs`, con il
+commento che spiega il numero, e i casi di `db/test/assets.test.mjs` che la
+provano (i tetti degli animati usano le costanti, i conti dei file sono
+scritti in cifre: 15.998, 16.000, 20.000).
 
 ## Gli eventi: cosa c'è e cosa manca
 
@@ -1033,8 +1484,10 @@ descrizione (il datamine non ha testi degli eventi, solo `announcement_id`
 di news che non contiene), il banner (il datamine dà solo il percorso del
 file, e il wiki non li carica più dal febbraio 2025), la data Japan, i nomi
 degli stage "Stage N", l'exp del personaggio e i drop, e il nome dei boss
-la cui carta non abbiamo (manca anche la copertina: 19 eventi). Le missioni
-il gioco le ha, ma non sono ancora importate.
+la cui carta non abbiamo (manca anche la copertina: 19 eventi). Al posto
+del banner la lista e la pagina mostrano la carta del boss, e senza nemmeno
+quella un segnaposto con l'icona del tipo di evento (sezione "Segnaposto
+delle immagini"). Le missioni il gioco le ha, ma non sono ancora importate.
 
 ## Super Battle Road e archivi: un'area, più eventi
 
@@ -1680,7 +2133,7 @@ Ogni presa di un handle (/welcome e Settings) passa da `handle_assert_free`, sot
 
 ## Logo e icone
 
-Il marchio è l'"Anello Ki": cinque settori, uno per tipo (AGL, TEQ, INT, STR, PHY in senso orario dall'alto), con al centro il disco oro del leader. I colori sono fissi e non seguono i temi: un tema colorato potrebbe rendere due settori uguali, o un settore uguale allo sfondo. C'è una variante per i fondi chiari e una per quelli scuri: `components/brand/marchio.tsx` sceglie con il solo CSS (`data-theme` su `<html>`, oppure il tema del sistema), quindi l'HTML resta uguale per tutti. Un tema scuro nuovo va aggiunto a `TEMI_SCURI` in quel file; un id sconosciuto resta chiaro.
+Il marchio è l'"Anello Ki": cinque settori, uno per tipo (AGL, TEQ, INT, STR, PHY in senso orario dall'alto), con al centro il disco oro del leader. I colori sono fissi e non seguono i temi: un tema colorato potrebbe rendere due settori uguali, o un settore uguale allo sfondo. C'è una variante per i fondi chiari e una per quelli scuri, e sceglie il solo CSS (`data-theme` su `<html>`, oppure il tema del sistema), quindi l'HTML resta uguale per tutti. Le variabili `--marchio-0`…`--marchio-5` stanno in `app/globals.css`, in tre regole che valgono per la classe `marchio` (l'SVG di `components/brand/marchio.tsx`) e per `colori-marchio` (i segnaposto delle carte): la chiara, la scura col sistema scuro, la scura dei temi scuri. Stanno lì una volta sola, e non in uno `<style>` del componente: ogni segnaposto ne metteva una copia (circa 765 byte) nel payload RSC delle pagine in cache. Un tema scuro nuovo va aggiunto alla lista della terza regola; un id sconosciuto resta chiaro.
 
 Gli SVG sorgente stanno in `scripts/brand/svg/`. Da lì si generano le icone e l'anteprima dei link:
 
@@ -1690,7 +2143,7 @@ npm run brand    # node --experimental-strip-types ... scripts/brand/genera.mjs
 
 Lo script scrive `app/icon.svg`, `app/favicon.ico` (16, 32 e 48 px), `app/apple-icon.png`, `app/opengraph-image.png`, `app/twitter-image.png` e i due `.alt.txt`. Per la PWA scrive anche `public/pwa/` (icone 192 e 512, maskable 192 e 512, badge 96) e `public/offline.html` (vedi la sezione PWA). Il flag `--experimental-strip-types` serve perché la pagina offline riusa `lib/tema/temi.ts`. Next li trova per nome: sono file statici, quindi niente codice al build e niente query. `metadataBase` in `app/layout.tsx` (da `BETTER_AUTH_URL`) rende assoluti gli URL di og:image e twitter:image.
 
-Per cambiare la forma o un colore si modifica `scripts/brand/sorgenti.mjs` (la geometria è in `anello.mjs`). Poi si lancia `node scripts/brand/sorgenti.mjs` e si ricopiano i `d` e i colori in `marchio.tsx`: `genera.mjs` si ferma se non coincidono.
+Per cambiare la forma o un colore si modifica `scripts/brand/sorgenti.mjs` (la geometria è in `anello.mjs`). Poi si lancia `node scripts/brand/sorgenti.mjs` e si ricopiano i `d` in `marchio.tsx` e i colori nelle regole del marchio di `app/globals.css`: `genera.mjs` si ferma se non coincidono (`scripts/brand/colori.mjs`, lo stesso controllo del test dei segnaposto).
 
 Il testo dell'anteprima usa Geist Regular (SIL OFL 1.1), preso dalla copia inclusa in next.
 
@@ -1704,8 +2157,21 @@ Come funziona:
 - **I colori** stanno in `app/globals.css`: un blocco `[data-theme="..."]` per tema, ognuno con gli stessi 17 token e `color-scheme`. Gli id e i nomi stanno in `lib/tema/temi.ts`.
 - **Sull'account.** Chi ha un account salva il tema anche in `app_user.theme` (migrazione 0027, `set_theme`; null = System). `/api/me` lo restituisce, e se è diverso da quello del dispositivo `ViewerProvider` lo applica e lo ricorda. Il tema dell'account vince su quello del dispositivo.
 - **Accessibilità.** Testo, oro e tipi stanno ad almeno 4.5:1 su sfondo, superficie e superficie-2, e il bordo dei campi ad almeno 3:1. Il colore non è mai l'unico segnale: le etichette AGL/TEQ/INT/STR/PHY restano scritte. High contrast non si attiva mai da solo con `prefers-contrast`, perché è un tema chiaro.
-- **Test.** `db/test/temi.test.mts` (il passo "temi" di `npm run db:test`) legge `app/globals.css` e controlla tutti i contrasti. Un tema nuovo va aggiunto in tre posti: `lib/tema/temi.ts`, `app/globals.css` e il vincolo `app_user_theme`, con una migrazione (più `TEMI_SCURI` del marchio, se è scuro). Il test fallisce se le tre liste non coincidono.
+- **Test.** `db/test/temi.test.mts` (il passo "temi" di `npm run db:test`) legge `app/globals.css` e controlla tutti i contrasti. Un tema nuovo va aggiunto in tre posti: `lib/tema/temi.ts`, `app/globals.css` e il vincolo `app_user_theme`, con una migrazione (più la regola scura del marchio in `app/globals.css`, se è scuro). Il test fallisce se le tre liste non coincidono.
 - **In produzione** la migrazione 0027 deve arrivare prima del codice: la sessione di better-auth legge `app_user.theme`, e senza la colonna l'accesso si rompe.
+
+## Segnaposto delle immagini
+
+Una carta senza miniatura e un evento senza immagine non mostrano più un riquadro vuoto. Il segnaposto è fatto solo di roba nostra (`lib/segnaposto.ts`, puro, e `components/segnaposto.tsx`): nessuna immagine e nessuna icona del wiki.
+
+- **La carta**: un riquadro con bordo su `--superficie-2`. In alto una banda col colore del tipo: i cinque colori fissi del marchio, `--marchio-1`…`--marchio-5` nell'ordine dei settori (AGL TEQ INT STR PHY), neutra (`--tenue`, il grigio del testo secondario) per un tipo che non si sa, come una carta nota solo dall'URL dei filtri. Al centro l'iniziale del nome (la prima lettera o cifra, anche giapponese, in maiuscolo; `?` se non c'è), a sinistra la rarità. Di norma in basso, l'angolo dove la mettono le miniature del gioco; nelle squadre dei clear (`components/carta.tsx`) in alto, subito sotto la banda, perché l'etichetta Leader o Friend è larga quasi quanto il riquadro e ne copre tutta la riga in basso (anche i membri senza etichetta, così in una squadra le rarità stanno alla stessa altezza). Le misure: la banda è un sedicesimo del lato, almeno 2 px (3 a 48, 10 a 160); l'iniziale da 24 px, la rarità da 40 px; a 16 px resta la sola banda, di 4 px. Corpi e posizioni li calcola `segnapostoCarta`, e il componente li usa così come sono.
+- **Tipo e classe in lettere**: nello slot del builder (40 px) e nel menu "Uses card" dei filtri (32 px) una carta senza miniatura ha accanto al nome anche tipo e classe, come `components/tipo.tsx` li scrive ovunque ("SAGL", "EINT"): il riquadro piccolo ha la banda del colore ma non la classe, e il riquadro di prima li scriveva. A vista la forma breve, per i lettori di schermo quella per esteso ("Super AGL", `tipoPerEsteso`). Con una miniatura del gioco non c'è: il tipo lo mostra lei. Il picker li scriveva già per ogni carta.
+- **L'evento**: l'icona Phosphor del tipo, già nel bundle, con il tipo scritto accanto: Extreme Z-Battle un fulmine, Challenge una coppa, Story un libro, Limited una clessidra, Bonus un regalo, World Tournament una medaglia, tutto il resto un calendario. Le etichette sono quelle della pagina dell'evento (`ETICHETTA_EVENTO`). Un evento senza banner ma con la carta del boss mostra la carta, come prima.
+- **Dove**: le carte dei clear (`components/carta.tsx`, 48 px), il builder (slot 40 px, picker 44 px) e il menu "Uses card" dei filtri (32 px), tutti da `components/builder/miniatura.tsx`; la catena di risveglio (48 px); l'artwork della pagina della carta quando non c'è nemmeno la miniatura (160 px, sopra "Artwork not available yet"); la squadra nel profilo (32 px); i premi delle missioni (16 px, solo le carte: gli altri premi senza icona restano solo testo); la lista degli eventi e la pagina dell'evento.
+- **I temi**: la banda prende la variante chiara o scura del marchio con lo stesso CSS (la classe `colori-marchio`), il resto i token di `app/globals.css`. Il testo non sta mai sul colore del marchio: l'iniziale è `--inchiostro` e la rarità `--tenue`, su `--superficie-2`. In tutti gli 11 temi, con System chiaro e scuro: le cinque bande dei tipi e quella neutra almeno 3:1 sul fondo (il minimo è 4,04, PHY Sand; la neutra almeno 4,69), l'iniziale almeno 13,16:1, la rarità almeno 4,69:1.
+- **Accessibilità**: dove il nome è scritto accanto il riquadro è decorativo (`aria-hidden`), come l'immagine con `alt=""` che sostituisce; nel profilo, dove la squadra è fatta di sole miniature, è un'immagine col nome (`role="img"`, `aria-label`, `title`), come la miniatura vera.
+- **La cache**: nessuna isola nuova, nessuna sessione, nessuno stato, quindi l'HTML in cache cambia solo dove compare un segnaposto; i colori del marchio stanno nel foglio di stile, e una pagina con tanti segnaposto non porta il loro CSS nel payload. Le letture aggiungono solo quello che il segnaposto mostra: il tipo alle carte delle squadre dei profili (`listUserClears`) e ai premi delle missioni che sono carte (`card: { type }` in `getMissions`); a 32 e 16 px la rarità non si scrive, quindi non si legge. Le carte dei clear avevano già tipo e rarità, le opzioni dei filtri il tipo (a 32 px nemmeno lì si scrive la rarità). Nel builder la rarità sta nello stato del form solo per il segnaposto, mai nel payload dell'invio.
+- **Il test**: il passo "segnaposto delle immagini" di `npm run db:test` (`db/test/segnaposto.test.mts`, senza database) prova iniziale e misure, le icone e le etichette di ogni valore di `event_kind`, i contrasti tema per tema (anche della banda neutra), che i temi scuri della regola del marchio siano esattamente quelli con `color-scheme: dark`, che `marchio.tsx` e `globals.css` coincidano ancora con gli SVG sorgente, che nessun componente rimetta uno `<style>` col marchio, che i file che mostrano immagini usino il segnaposto e che il componente resti senza sessione e senza niente del wiki. La geometria la prova con i numeri veri: per ogni riquadro che scrive la rarità (misura e angolo letti dai file) la rarità sta dentro, sotto la banda e staccata dall'iniziale, e in `Carta` sta sopra l'etichetta del ruolo, misurata dalle sue classi anche con la riga più alta (in basso, com'era, la coprirebbe). Controlla anche tipo e classe accanto al nome nello slot e nel menu dei filtri. `db/test/queries.test.mts` e `db/test/profiles.test.mts` provano che i premi carta senza miniatura e le carte delle squadre dei profili portano il tipo. Un tema scuro nuovo che manca dalla regola scura del marchio lo fa fallire.
 
 ## PWA
 
@@ -1729,7 +2195,7 @@ Prove:
 
 ## Notifiche (migrazione 0028)
 
-Fase 2 del piano PWA e notifiche: la lista nel sito, sempre accesa, con un pallino nel menu. Il digest email (fase 3) e le push del browser (fase 4) hanno le loro sezioni, sotto.
+Fase 2 del piano PWA e notifiche: la lista nel sito, sempre accesa, con un pallino nel menu. Il digest email (fase 3), le push del browser (fase 4) e il feed dell'attività del sito per gli admin (0032) hanno le loro sezioni, sotto.
 
 Cosa si notifica in v1 (lo ha deciso il proprietario):
 
@@ -1737,14 +2203,14 @@ Cosa si notifica in v1 (lo ha deciso il proprietario):
 - **la moderazione dei miei contenuti**: clear, commento o tip nascosti o ripristinati (`content_hidden`, `content_unhidden`), la sospensione e la sua fine (`suspended`, `suspension_lifted`). Arrivano anche a chi è sospeso;
 - **le segnalazioni aperte**, solo agli admin (`reports_open`, un gruppo solo: "3 open reports to review"). Mai a chi ha segnalato, e chi è segnalato non riceve **mai** niente, nemmeno se è admin.
 
-Voti e Helpful **non** scrivono notifiche: il digest email della fase 3 li conterà da `clear_vote.voted_at` e `tip_vote.voted_at`. Così un voto non tocca mai `app_user`, e il pallino resta gratis.
+Per chi li riceve, voti e Helpful **non** scrivono notifiche: il digest email della fase 3 li conta da `clear_vote.voted_at` e `tip_vote.voted_at`. L'unica eccezione è il feed degli admin (0032, sezione "Attività del sito per gli admin"): solo se un admin l'ha acceso, un voto scrive una riga per lui e tocca la sua riga di `app_user`. Senza nessun admin iscritto un voto non scrive niente, come prima.
 
 Come funziona:
 
 - **Le righe le scrivono solo i trigger** della migrazione (su `clear_comment`, `moderation_action` e `report`), nella stessa transazione della scrittura: l'app non crea mai notifiche. `set local dts.silent = 'on'` le spegne: lo usano il seed demo, la fixture di `db/reset.mjs` e qualsiasi import che scriva dati della community.
-- **Nessun testo dei post** nelle notifiche: né commenti, né il motivo della sospensione, né la nota del moderatore. `notification_render(p_user, p_id)` e `notification_list(p_user, p_limit)` ricalcolano tutto adesso dalle tabelle vere (conteggio, handle attuale, evento, se il contenuto è ancora pubblicato). L'handle del moderatore e di chi segnala non esce mai.
+- **Nessun testo dei post** nelle notifiche: né commenti, né il motivo della sospensione, né la nota del moderatore. `notification_render(p_user, p_id)` e `notification_list(p_user, p_limit)` ricalcolano tutto adesso dalle tabelle vere (conteggio, handle attuale, evento, se il contenuto è ancora pubblicato). L'handle di chi segnala non esce mai; quello del moderatore non arriva mai a chi è moderato, e solo agli altri admin col feed acceso (0032), che lo vedono già nel registro di `/admin/log`.
 - **Il pallino**: `app_user.notif_last_at > notif_seen_at`. Le due colonne sono negli `additionalFields` di better-auth (`notifLastAt`, `notifSeenAt`, `input: false`), quindi la sessione le legge già e `/api/me` risponde `user.unread` (un sì o un no, mai un numero) senza query in più. Lo mostra `components/notifiche/campanella.tsx` dentro `user-menu.tsx`, solo dopo `/api/me`: nell'HTML in cache non c'è mai.
-- **`/notifications`** (per utente come `/settings`: `instant = false`, noindex, esclusa da `robots.txt`): le ultime 50, divise in New ed Earlier. Aprirla segna lette quelle mostrate (`mark_notifications_read`), e il pallino si spegne quando non resta nessuna non letta; `components/notifiche/segna-viste.tsx` lo spegne anche nell'header, che è nel layout e non rilegge `/api/me` a ogni navigazione. Il link della campanella ha `prefetch={false}`: un prefetch segnerebbe lette le notifiche senza che l'utente le abbia viste.
+- **`/notifications`** (per utente come `/settings`: `instant = false`, noindex, esclusa da `robots.txt`): le ultime 50, divise in New ed Earlier. Dalla 0032 il limite vale per famiglia: 50 personali e, per un admin col feed acceso, 50 del feed in una terza sezione, Site activity, così il feed non spinge mai fuori i commenti sui suoi clear. Aprirla segna lette quelle mostrate e, dalla 0032, anche le non lette oltre le 50 di ogni famiglia, che la lista non mostrerebbe mai (`mark_list_read`, che poi chiama `mark_notifications_read`). Per il feed non succede in silenzio: `mark_list_read` torna anche quante azioni ha segnato lette senza mostrarle (`unseen_actions`), e la pagina lo scrive sotto Site activity ("12 older actions did not fit in this list and were marked as read."); il pallino si spegne quando non resta nessuna non letta, e una notifica arrivata mentre la pagina si apre resta non letta per la visita dopo; `components/notifiche/segna-viste.tsx` lo spegne anche nell'header, che è nel layout e non rilegge `/api/me` a ogni navigazione. Il link della campanella ha `prefetch={false}`: un prefetch segnerebbe lette le notifiche senza che l'utente le abbia viste.
 - **`/notifications/<id>`** (`app/notifications/[id]/route.ts`) è l'unico link di una notifica, anche per push ed email: segna letta quella sola e fa un 307 all'href calcolato in quel momento (`lib/notify/vista.ts`, con `eventHref` + `clearAnchor`, `editClearHref` per un clear nascosto, `/settings`, `/admin`). Un id sconosciuto o di un altro torna alla lista; senza sessione si passa da `/login?next=`. Le righe della lista sono `<a>` semplici, non `<Link>`, perché la rotta scrive.
 - **I tipi** stanno in `lib/notify/kinds.ts` e devono coincidere con `notification_kinds()` e con i check delle tabelle `notification` e `notification_pref`: un tipo nuovo va aggiunto con una migrazione e nei testi di `lib/notify/vista.ts`.
 - **Preferenze**: `notification_pref(user_id, kind, channel)` e `set_notification_pref` ci sono già, per i canali per tipo. Il digest email (fase 3, sotto) ha una casella sola e non le usa; la disiscrizione dal link toglie comunque le righe con canale `email`. Le push del browser le usano: un interruttore per gruppo in Settings accende o spegne le righe con canale `push` (sezione "Push del browser").
@@ -1759,7 +2225,7 @@ In produzione la migrazione 0028 deve arrivare **prima** del codice: la sessione
 Fase 3 del piano PWA e notifiche. L'email è **solo un digest giornaliero**, opt-in e spento per difetto: nessuna email immediata, nemmeno per la moderazione (si vede già nel sito e nel banner di sospensione). Lo decide il proprietario, come le regole sotto.
 
 - **La casella**: "Daily email digest" nella sezione Notifications di Settings (`components/notifiche/digest-email.tsx`, Server Action `setEmailDigestAction` in `lib/notify/actions.ts`, che chiama `set_email_digest`). Si accende solo con l'email verificata; spegnere si può sempre. Il consenso è `app_user.notify_digest_on_at` (null = spento): una colonna sola, non righe di `notification_pref`, perché voti e Helpful non sono tipi di notifica.
-- **Cosa contiene** (`digest_due` in SQL, testi in `lib/notify/digest.ts`): le notifiche non lette toccate dall'ultimo digest, più "+N upvotes" sui clear e "+N players found your tips helpful", senza dire chi. La moderazione è generica ("A moderator reviewed one of your posts", "There is an update about your account"), al massimo con l'evento: mai il testo dei post, il motivo della sospensione o la nota del moderatore. Ogni riga porta a `/notifications/<id>`. Un digest vuoto non parte. Chi è sospeso lo riceve lo stesso, come le notifiche nel sito.
+- **Cosa contiene** (`digest_due` in SQL, testi in `lib/notify/digest.ts`): le notifiche non lette toccate dall'ultimo digest, più "+N upvotes" sui clear e "+N players found your tips helpful", senza dire chi. Il feed degli admin (`site_activity`, 0032) **non** ci entra mai: il budget di Resend è condiviso con i magic link, e un sito attivo lo consumerebbe da solo. La moderazione è generica ("A moderator reviewed one of your posts", "There is an update about your account"), al massimo con l'evento: mai il testo dei post, il motivo della sospensione o la nota del moderatore. Ogni riga porta a `/notifications/<id>`. Un digest vuoto non parte. Chi è sospeso lo riceve lo stesso, come le notifiche nel sito.
 - **Il cron**: `GET /api/cron/digest` (`vercel.json`, alle 17 UTC, su Hobby fino a 59 minuti dopo), con `Authorization: Bearer $CRON_SECRET` come la pulizia. Un giro (`lib/notify/run.ts`): se c'è la pausa si ferma; prende al massimo 40 utenti da `digest_due` (prima gli admin, poi chi ha moderazione, poi il digest più vecchio); chiede il budget per tutto il gruppo; manda i primi k con **una sola** `resend.batch.send`; segna con `digest_mark_sent` solo chi è partito. Chi non entra parte domani, con tutto quello che si è perso. Rilanciato lo stesso giorno non manda niente.
 - **Idempotenza**: uno al giorno per utente lo garantisce `digest_mark_sent` (`notify_digest_day`). La Idempotency-Key di Resend vale per la richiesta intera, non per la singola email della batch: è `digest:<giorno>:<hash degli utenti>`. Se l'invio riesce e il segno no, il giro rilanciato lo stesso giorno riprende le stesse persone e la stessa chiave, e Resend non rimanda.
 - **Il budget** (Resend Free: 100 al giorno e 3000 al mese, condivisi con i magic link): `email_quota` conta per giorno e tipo, senza indirizzi. I magic link si contano **dopo** l'invio (`countAuthEmail` in `lib/notify/budget.ts`, che `lib/auth/auth.ts` passa al mittente di `lib/auth/email.ts`) e non si rifiutano né si ritardano mai: un errore del contatore finisce nel log, il login va avanti. Il digest passa solo sotto 40 al giorno e 1200 al mese, dentro i totali di 60 e 2400. Al primo 429 o quota finita di Resend `notify_pause` lo ferma per 24 ore; il login no.
@@ -1781,7 +2247,7 @@ Fase 4 del piano PWA e notifiche. Le push sono **opt-in e spente per difetto**: 
 - **Il payload** è JSON v1, al massimo 512 byte: `{ v, kind, title, body, url, tag, ts }`. `url` è sempre `/notifications/<id>` (segna letta e porta dove serve adesso), `tag` è `dts:<hash del gruppo>` (un commento nuovo sullo stesso clear sostituisce la notifica di prima), il Topic (RFC 8030) è l'hash del gruppo, così un telefono spento riceve solo l'ultima. TTL un giorno, Urgency normal.
 - **iOS**: le push ci sono solo nell'app installata (iOS 16.4 o più). In Safari Settings spiega "Share, then Add to Home Screen" invece del bottone. L'app installata ha i cookie separati da Safari: lì si entra con Discord, Google o Twitch (l'avviso iOS della PWA).
 - **I dispositivi** (`push_subscription`): al massimo 5 per utente, il sesto si rifiuta (Settings mostra la lista con Remove, e "This device" si riconosce da un'impronta dell'endpoint, mai l'endpoint intero). Lo stesso endpoint su un altro account passa all'ultimo che si iscrive. La label è grossolana ("Chrome on Android", `etichettaDispositivo` in `lib/pwa/piattaforma.ts`), mai lo user agent. "Send a test notification" una al minuto.
-- **Chi manda**: `kickPush()` (`lib/notify/kick.ts`) fa partire un giro con `after()` di `next/server` subito dopo la scrittura che può aver creato notifiche: `addComment`, `setClearStatus`, `setCommentStatus`, `setTipStatus`, `suspendUser`, `unsuspendUser`, `reportContent`, `reportTip`. Il giro (`runPush` in `lib/notify/push.ts`): `push_claim` con **una** query (skip locked, coalescenza di 30 minuti, i tetti contro lo spam: 20 push al giorno per destinatario, 10 l'ora per autore, 1 l'ora per coppia, nessuna da un account di meno di 24 ore o sospeso), il client pg torna subito alla pool, poi gli invii in parallelo (6 alla volta, 5 s al massimo ciascuno), poi **una** `push_report` con gli esiti. Nessun client resta aperto durante le chiamate HTTP: con 5 connessioni per istanza affamerebbe `/api/me`. Best effort, senza ritentativi: una push persa resta nella lista e nel digest.
+- **Chi manda**: `kickPush()` (`lib/notify/kick.ts`) fa partire un giro con `after()` di `next/server` subito dopo la scrittura che può aver creato notifiche: `addComment`, `setClearStatus`, `setCommentStatus`, `setTipStatus`, `suspendUser`, `unsuspendUser`, `reportContent`, `reportTip` e, dalla 0032 per il feed degli admin, anche `submitClear`, `reviseClear`, `deleteClear`, `voteClear`, `postTip`, `editTip`, `deleteTip`, `voteTip`, `dismissReports` (quando archivia qualcosa), `completeOnboardingAction`, `changeHandleAction` e `deleteAccountAction`. `after()` gira anche dopo un `redirect()`, e `push_claim` non chiede la sessione. Senza chiavi VAPID `kickPush` non fa nemmeno la query. Il feed non ha coalescenza né tetti, una push per azione, e non scrive `push_sent`: vedi sotto. Il giro (`runPush` in `lib/notify/push.ts`): `push_claim` con **una** query (skip locked, coalescenza di 30 minuti, i tetti contro lo spam: 20 push al giorno per destinatario, 10 l'ora per autore, 1 l'ora per coppia, nessuna da un account di meno di 24 ore o sospeso), il client pg torna subito alla pool, poi gli invii in parallelo (6 alla volta, 5 s al massimo ciascuno), poi **una** `push_report` con gli esiti. Nessun client resta aperto durante le chiamate HTTP: con 5 connessioni per istanza affamerebbe `/api/me`. Best effort, senza ritentativi: una push persa resta nella lista e nel digest.
 - **Gli esiti** (`push_report`): 404 e 410 tolgono il dispositivo; un 2xx azzera gli errori; 413 e 429 si annotano e basta; tutto il resto conta un errore, e al terzo di fila il dispositivo se ne va.
 - **Il mittente** (`lib/notify/push-send.ts`): `web-push` (3.6.7, versione esatta) costruisce la richiesta, cioè la cifratura aes128gcm e il token VAPID; la POST la fa `fetch`, con `redirect: 'manual'` (un 3xx non porta altrove) e `AbortSignal.timeout(5000)`. Contro l'SSRF l'host si ricontrolla un attimo prima della connessione con `lib/notify/endpoint.ts`, la stessa regola di `push_endpoint_ok` (solo https, porta 443, host di FCM, Mozilla, Apple e WNS): `db/test/push-endpoints.ts` tiene i casi che le due regole devono dare uguali.
 - **Il service worker**: `push` mostra la notifica (icona `/pwa/icon-192.png`, badge `/pwa/badge-96.png`, tag); un payload che non si capisce mostra "You have new activity", perché con `userVisibleOnly` ogni push deve mostrare qualcosa. `notificationclick` accetta solo percorsi dello stesso sito: porta in primo piano una finestra già aperta e la manda all'URL, se no ne apre una. Nessun gestore per `pushsubscriptionchange`, di proposito: una rotta per rinnovare sarebbe una scrittura con i cookie fuori da una Server Action.
@@ -1794,6 +2260,26 @@ Fase 4 del piano PWA e notifiche. Le push sono **opt-in e spente per difetto**: 
 Prove: il passo "push del browser (SQL)" di `npm run db:test` (`db/test/push.test.mts`: host ammessi anche nel CHECK, chiavi, dispositivi, claim, tetti, esiti, conservazione, cascate); il passo "push del browser (app)" (`db/test/push-app.test.mts`, anche `npm run test:push`, senza database: `endpoint.ts` contro gli stessi casi del SQL, le chiavi VAPID, i gruppi, testi e misura del payload, il mittente vero contro un servizio push locale con il corpo decifrato secondo RFC 8291 e il token VAPID verificato, `public/sw.js` in `node:vm` per push e clic); il passo "push del browser (giro)" (`db/test/push-run.test.mts`: un giro vero sul database con un mittente finto, nessun client pg in uso durante gli invii, il 410 che toglie il dispositivo, la prova una al minuto). A mano: Chrome su Android, Firefox, Safari su macOS, iPhone con l'app installata.
 
 In produzione la 0031 deve arrivare **prima** del codice, come le altre: Settings la legge appena ci sono le chiavi VAPID. Senza chiavi il codice nuovo non la tocca.
+
+## Attività del sito per gli admin (migrazione 0032)
+
+Decisione del proprietario: in Settings, nella sezione Notifications, un admin ha in più la casella **All site activity**, spenta per difetto: una notifica per **ogni** azione degli altri utenti sul sito. Il testo dice il minimo: chi (l'handle di adesso), cosa (un verbo breve) e dove (evento e stage), per esempio "alice posted a clear" con sotto "Extreme Z-Battle: ..., Level 10". Mai il testo di un post.
+
+- **Il tipo** è `site_activity`, in coda a `notification_kinds()` e a `lib/notify/kinds.ts`. Solo per gli admin come `reports_open`: lo rifiutano `set_notification_pref` (`42501 notification_pref_admin_only`), la Server Action `setSiteActivityAction` (`lib/notify/actions.ts`) e la pagina, che rende `components/notifiche/attivita-sito.tsx` solo con `user.role === 'admin'`. Spegnere si può sempre.
+- **L'interruttore** scrive insieme le righe `notification_pref(site_activity, 'list')` (il consenso: senza, non si scrive nessuna riga) e `(site_activity, 'push')` (le push, sui dispositivi dove le notifiche del browser sono accese), in una sola istruzione. Il canale `email` per questo tipo non esiste: lo rifiutano il verbo e il CHECK `notification_pref_channel_kind`. Il primo "Turn on for this device" non lo accende e non lo conta (`PUSH_SEPARATE`, `primaIscrizione` in `lib/notify/push-kinds.ts`).
+- **Le azioni** (`site_activity_actions()`, ripetute in `lib/notify/attivita.ts`): clear inviato, rivisto, cancellato; commento; voto dato, cambiato o tolto; tip scritta, modificata, cancellata; Helpful dato o tolto; segnalazione; un iscritto che sceglie l'handle; un cambio di handle (anche le sole maiuscole); un account cancellato; e la moderazione degli **altri** admin (nascondere, rimostrare, archiviare le segnalazioni, sospendere, riattivare). Fuori: le proprie azioni (mai a se stessi), accessi, letture, impostazioni personali, `set_user_role` (è uno script), import, seed e fixture (`dts.silent`), le cascate (cancellare un clear o un account è **una** azione, non i voti e i commenti che si porta via) e le scritture che non cambiano niente (lo stesso voto due volte, una modifica identica, una segnalazione doppia, uno stato di moderazione già quello).
+- **Chi scrive**: come in 0028, solo il database, nella stessa transazione della scrittura. I trigger per le righe nuove e la moderazione (`activity_clear`, `activity_tip`, `activity_tip_edit`, `activity_moderation_action`, `activity_app_user`); le funzioni per il resto (`revise_clear`, `delete_clear`, `vote_clear_version`, `comment_clear_version`, `delete_tip`, `vote_tip`, `delete_account`, e `notify_report` nello stesso giro di `reports_open`). Tutte passano da `activity_note`, che trova gli admin iscritti (role admin, con l'handle, non sospesi) con l'indice parziale `notification_pref_site_activity`, e da `activity_upsert`, che è `notify_upsert` per il feed (il pallino, poi la riga).
+- **Le esclusioni** di 0028 valgono anche qui: chi è segnalato, anche se admin, non riceve niente; l'autore di un contenuto moderato riceve la sua notifica personale e non il feed; chi segnala non compare mai, e la riga di una segnalazione non lo tiene nemmeno come attore (`actor_id` null; `reports_open` lo tiene per i tetti delle push di 0031). L'autore del clear commentato, se è un admin col feed acceso, riceve **anche** la riga del feed oltre a `clear_comment`: la push di `clear_comment` ha la coalescenza e i tetti di 0031 (niente da un account nuovo), quella del feed no, e il feed non deve perdere azioni.
+- **Una riga per gruppo** finché non è letta: il gruppo è azione e bersaglio (`act:clear_vote:<clear>`, `act:comment:<clear>`, `act:mod:hide:clear:<id>`, `act:account_deleted`...), `data.n` conta le azioni e `data.a` dice l'ultima: "4 vote changes on a clear", "latest: bob upvoted". Dopo la lettura l'azione dopo apre una riga nuova.
+- **Privacy**: `data` può tenere solo `a`, `n` ed `event`/`tier` (gli id dei dati di gioco di un clear o una tip cancellati), lo impone il CHECK `notification_activity_data`. Handle, nomi dell'evento e stato si ricalcolano a ogni lettura. La colonna nuova `notification.subject_id` (a cascata) dice di chi parla una riga (iscritto, handle, sospensione): cancellato l'account, quelle righe se ne vanno, l'attore delle altre va a null ("Someone") e "An account was deleted" non lo nomina. Nessun handle si salva mai come testo, nemmeno quello lasciato. La privacy lo dice nel punto "Site activity for moderators".
+- **La lettura**: `notification_rows` (ridefinita) dà per il feed `action`, `subject_handle`, il target (`profile` per iscritti, handle e sospensioni, `none` per un account cancellato), l'evento e il tier anche dai dati di un contenuto cancellato, e `visible` solo se il destinatario è ancora admin. I testi e i link sono in `lib/notify/attivita.ts`: l'ancora del clear o della tip, `/admin/hidden` per un contenuto nascosto ora (`/admin/hidden?kind=tip` per una tip), `/admin` per una segnalazione, `/admin/log` per la moderazione, il profilo per iscritti e handle, la lista per quello che non c'è più. Tutto passa da `/notifications/<id>`, come gli altri tipi.
+- **Le push**: `push_claim` (ridefinita) per il feed non ha la coalescenza di 30 minuti di 0031, né un'altra: una riga già mandata e toccata dopo riparte al giro dopo, cioè a quello che `kickPush()` fa partire nell'`after()` della scrittura stessa, con il totale e l'ultima azione. Quindi **una push per azione**, e nessuna aspetta la scrittura di qualcun altro (non c'è un cron delle push). Lo stesso tag prende il posto della notifica di prima dello stesso gruppo sul dispositivo, senza suonare di nuovo (`sw.js` non chiede `renotify`), e il Topic fa lo stesso col telefono spento: una raffica di 30 voti sullo stesso clear sono 30 push, ma sul dispositivo resta una notifica sola, "30 vote changes on a clear" con l'ultimo. Se un giro non riesce (un errore nell'`after()`), il resto lo prende il primo giro dopo, fino a un giorno dall'ultima azione (`activity_push_caps()`), anche oltre la finestra dei 10 minuti, con l'indice parziale `notification_activity_pending`; oltre il giorno resta solo nella lista. Niente tetto di 20 al giorno, nessun tetto per attore e nessuna riga in `push_sent`: il feed non consuma le push dei commenti, della moderazione e delle segnalazioni, e arriva anche dagli account nuovi, che sono proprio quelli che un moderatore vuole vedere. `updated_at` e `pushed_at` del feed usano `clock_timestamp()`, così una scrittura che ha aspettato il lock di un claim non resta indietro.
+- **L'ordine dei lock**: ogni azione blocca le righe di `app_user` degli admin iscritti, in ordine di id e fino al commit (il pallino). Le funzioni di chi scrive le prendono **prima** di toccare il contenuto, e `activity_note` blocca nello stesso ordine anche gli admin che salta (chi è moderato, chi cancella il proprio account), così due scritture sullo stesso clear vanno in fila senza incrociarsi. Restano possibili, rari, gli incroci con un moderatore (che ha già la sua riga da `mod_assert`), con chi cambia handle o con chi modifica una tip mentre qualcuno la vota: Postgres ne annulla uno con 40P01, e `sql()` di `lib/db.ts` riprova l'istruzione una volta (è un'istruzione sola in autocommit, annullata per intero).
+- **Un admin che torna membro** (`set_user_role` o qualsiasi update del ruolo) perde il consenso: il trigger `activity_role_lost` toglie le sue preferenze di `site_activity` (da membro Settings non gliele mostra più, e non potrebbe ritirarle) e le righe del feed che aveva. Se torna admin, il feed resta spento finché non lo riaccende lui. Una segnalazione nello stesso istante non gliene lascia una nuova: `notify_report` sceglie gli admin senza lock, ma `activity_upsert` ricontrolla il ruolo sulla riga bloccata. `reports_open` resta com'era in 0028 e 0031: la preferenza push rimane, a un membro non arriva niente (le righe non sono visibili), e se torna admin le push delle segnalazioni ripartono da sole. Il ruolo si controlla comunque anche a ogni scrittura e a ogni lettura.
+
+Prove: il passo "attivita' del sito" di `npm run db:test` (`db/test/attivita.test.mts`: spento per difetto, le preferenze, ogni azione con la sua riga, render, testi e link veri, mai a se stessi, le esclusioni, `dts.silent`, le scritture che non cambiano niente, l'accorpamento, il rollback, il limite per famiglia, il pallino che si spegne anche con più di 50 gruppi non letti e quante azioni non mostrate `mark_list_read` dice alla pagina, `push_claim` con una push per azione (una raffica di 30 voti sono 30 push col totale fin lì e lo stesso tag, il resto di un giro non riuscito anche oltre i 10 minuti) e senza tetti, il digest che non lo manda, le cascate, nessun handle dopo `delete_account`, chi segnala mai nemmeno come attore, l'admin che torna membro e perde consenso e righe del feed, anche con una segnalazione nello stesso istante su due connessioni, mentre `reports_open` resta com'era); in "notifiche (app)" le azioni uguali alla migrazione e al CHECK, testi e link su righe finte per ogni azione, la casella solo per gli admin e `kickPush()` dopo ogni scrittura; in "push del browser (app)" (`npm run test:push`) i gruppi e il tipo a parte, il testo e la misura del payload per ogni azione; in "push del browser (giro)" una push del feed con un mittente finto.
+
+In produzione la 0032 deve arrivare **prima** del codice: Settings, la lista e le push leggono `action` e `subject_handle`, e `/notifications` chiama `mark_list_read`. Il codice vecchio sulla 0032 va: le colonne nuove sono in coda, e senza nessun admin iscritto non si scrive niente di nuovo.
 
 ## La produzione: Vercel, Supabase, Cloudflare
 
@@ -1913,7 +2399,11 @@ Per un fork, in breve:
    sviluppo o di test, e senza `--yes` stampano il bersaglio e si fermano.
    Le migrazioni che arrivano dopo si portano online con
    `npm run prod:migrate -- --yes` (migrazioni e permessi, senza rifare
-   l'import), **prima** del deploy del codice che le usa.
+   l'import). L'ordine rispetto al codice dipende dalla migrazione (sezione
+   "Sulle migrazioni"): una colonna che il codice nuovo legge va **prima**
+   del codice (0027, 0028), un vincolo che il codice di prima non rispetta
+   va **subito dopo**, a meno che il codice di prima non scriva mai in
+   quel frattempo (la 0033, punto 5).
 2. Le immagini di `public/assets` su un host statico
    (`npm run assets:deploy` le pubblica su Cloudflare Pages) e
    `ASSET_BASE_URL` che punta lì.
@@ -1927,11 +2417,23 @@ Per un fork, in breve:
    database remoto. Facoltative: `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`
    e `VAPID_SUBJECT` per le push del browser (senza, restano spente).
 4. Il primo admin solo da script: `npm run prod:role -- <handle> admin --yes`.
-5. L'aggiornamento settimanale (`.github/workflows/weekly-data.yml`) gira
-   solo su questo repository: in una fork va adattata la condizione
-   `github.repository`. Parte in prova e scrive in produzione solo con la
-   variabile `WEEKLY_APPLY=true`; il commento in cima al file dice come
-   tratta segreti e log in un repository pubblico.
+5. L'aggiornamento settimanale (`.github/workflows/weekly-data.yml`) e il
+   giro giornaliero delle immagini (`.github/workflows/daily-images.yml`)
+   girano solo su questo repository: in una fork va adattata la condizione
+   `github.repository`. Partono in prova e scrivono in produzione solo con
+   la variabile `WEEKLY_APPLY=true`, la stessa per tutti e due; il commento
+   in cima a ciascun file dice come tratta segreti e log in un repository
+   pubblico. Il giornaliero non chiede secret nuovi. Il secret
+   `OPS_ARCHIVE_TOKEN` (environment `production`) è facoltativo: senza,
+   l'archivio privato del datamine si salta con una notice (sezione "Fonti
+   fresche e copia del datamine"). Per la 0033: con `WEEKLY_APPLY=true`
+   prima il codice che scrive `asset.source` su `main`, e subito dopo
+   `npm run prod:migrate -- --yes`; in prova può andare online prima del
+   codice, insieme alla 0032. Finché la 0033 manca, il settimanale
+   e il giornaliero non scrivono niente: si fermano da soli a
+   `migrate --check` (nel giro di prova) o a `check-schema` (in
+   `prod:update`). L'ordine contrario invece fa fallire le righe nuove di
+   `asset` del codice di prima (sezione "Da dove viene un'immagine").
 
 ## Cosa manca, in ordine
 
@@ -1943,19 +2445,28 @@ può fare, e poi il lavoro sui dati e sulle pagine.
 0. **La messa online, a mano.** Gli account (Supabase, Cloudflare Pages,
    Resend, Vercel, le console OAuth di Discord, Google e Twitch) li crea il
    proprietario, seguendo la sua guida privata. Nessuno script crea
-   account o pubblica da solo.
+   account o pubblica da solo. Facoltativi: il repository privato
+   `dokkan-team-sharing-ops` e il secret `OPS_ARCHIVE_TOKEN`, per la copia
+   durevole del datamine (sezione "Fonti fresche e copia del datamine").
 1. **Il calendario, da tenere vivo.** Il workflow settimanale rifà datamine, eventi e finestre ogni venerdì. Le prime
    settimane gira in prova (`WEEKLY_APPLY=false`, e `dry_run` acceso nei
    lanci a mano): leggi 2-3 riepiloghi, aggiusta `db/prod/limits.json` se
    serve, controlla che i file su Pages siano quelli della tabella `asset`,
-   poi metti `WEEKLY_APPLY=true`. Japan resta senza finestre
+   poi metti `WEEKLY_APPLY=true`. Lo stesso interruttore vale per il giro
+   giornaliero delle immagini, che in prova scrive solo il piano ("Dry run:
+   would fetch N files"). La 0032 e la 0033 vanno online con
+   `npm run prod:migrate -- --yes` subito prima del push di questo codice
+   (il settimanale è in prova: vedi la sezione della 0033). Nei riepiloghi guarda anche le sezioni "Sources"
+   (la freschezza del datamine) e "Storage". Japan resta senza finestre
    vere, e 374 eventi Global restano "attivi, fine non nota" (312 del wiki,
    62 del gioco). Le corse di un'area riaperta dopo più di un mese partono
    dall'ultimo blocco: la corsa di prima non ha una run del gioco sua.
 2. **Gli eventi del gioco, da completare.** Non hanno descrizione né banner
    (nessuna fonte: il datamine ha solo i percorsi dei file, il wiki non li
    carica più), e 19 non hanno nemmeno la copertina, perché il boss è una
-   carta senza pagina sul wiki. Restano fuori, elencati da
+   carta senza pagina sul wiki: al suo posto c'è il segnaposto del tipo di
+   evento, e alcune copertine arriveranno con le miniature per convenzione
+   di quelle carte. Restano fuori, elencati da
    `load-game-events`: i due archivi (1737 Ultimate Red Zone, 1738 Supreme
    Magnificent Battle, che andrebbero modellati come finestre permanenti
    delle edizioni che contengono), le aree 710/720 della Super Battle Road
@@ -1964,19 +2475,27 @@ può fare, e poi il lavoro sui dati e sulle pagine.
    collegate al loro originale nell'interfaccia (il dato per le Super c'è:
    `related_game_id`). La fusione di un evento del gioco con una pagina del
    wiki scritta dopo è a mano.
-3. **Le carte senza pagina sul wiki.** 59 unità Global giocabili non sono
-   nella tabella `card` (42 uscite fra agosto e settembre 2026, più copie
-   riemesse e secondi id): niente epiteto, niente immagini. Sono anche i
-   boss che mancano nelle copertine. E le immagini delle 19 carte nuove di
-   ottobre aspettano il CDN del wiki, che oggi risponde 403.
+3. **Le carte senza pagina sul wiki.** Il conto di 59 unità che stava qui
+   era vecchio: di quelle 59 unità Global giocabili, 46 sono nella tabella
+   `card` dal gioco (45 dal prossimo import, perché la pagina abbozzata di
+   1034150 ora si aggancia) e 13 restano fuori di proposito, 8 copie o
+   riedizioni di altre carte e 5 alla data minima del lancio (2015-10-30).
+   A quelle in tabella mancano epiteto, statistiche e testi delle skill.
+   Le immagini invece il wiki le ha quasi tutte: `File:Card_<id>_thumb.png`
+   per 34 delle 46 e `_artwork.png` per 31, e `fetch-assets` ora le chiede
+   (sezione "Le carte senza pagina: i nomi per convenzione"). 12 non hanno
+   ancora nessun file. Sono anche i boss che mancano nelle copertine. In
+   produzione le immagini arrivano al primo giro applicato, settimanale o
+   giornaliero.
 4. **Le missioni, da completare.** Ci sono (7720, con i premi) e la
    pagina evento le mostra. Restano fuori le missioni
    Burst Mode degli archivi (serve una tabella `genkai_battles` che il
    datamine non esporta), i piani 61+ della Extreme Super Battle Road (il
    wiki non ha la pagina, e un evento del gioco per loro non c'è ancora) e
    le campagne su più eventi. Japan non ha missioni: il datamine è Global.
-   Solo 45 oggetti su 1677 hanno un'icona; le altre aspettano il CDN del
-   wiki o le immagini del gioco.
+   Solo 45 oggetti su 1677 hanno un'icona; per gli altri manca una fonte (il
+   wiki non le ha, le immagini del gioco non le abbiamo), e restano solo
+   testo. Una carta come premio senza miniatura ha il segnaposto.
 5. **L'invio, da rifinire.** Le pagine ci sono (sotto). Mancano la storia
    delle versioni nella pagina (`getClearVersions` è pronta), un modo di
    riusare le proprie squadre invece di ricomporle, e la ricerca delle

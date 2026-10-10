@@ -1,0 +1,366 @@
+# Il giro giornaliero delle sole immagini.
+#
+# Il settimanale chiede al wiki le immagini nuove una volta, il venerdi'.
+# La CDN del wiki a volte risponde 403 (un controllo anti-bot di
+# Cloudflare): quelle immagini restano senza, e un giorno dopo di solito
+# arrivano. Questo giro le riprova ogni giorno, con gli stessi script, gli
+# stessi secret e le stesse guardie del settimanale:
+# 1. guarda se il settimanale gira o e' in coda: se si', salta a domani
+#    (chi entra in un gruppo di concorrenza cancella chi vi aspettava);
+# 2. il piano, in sola lettura sulla produzione: quali file mancano e quali
+#    il wiki ha (l'API, non la CDN), e quanto pesano;
+# 3. con WEEKLY_APPLY spento (o a mano con dry_run) si ferma li': il
+#    riepilogo dice cosa scaricherebbe. Nessun dump, nessun download,
+#    nessun deploy, nessuna scrittura;
+# 4. altrimenti, e solo se c'e' qualcosa da scaricare: backup cifrato,
+#    giro di prova sul dump con fetch-assets --missing, i limiti, l'albero
+#    completo su Cloudflare Pages, e update.mjs --images-only.
+# Un 403 non si aggira mai: niente altri User-Agent, niente browser. Al
+# primo si smette, e si riprova domani. Mai il venerdi': c'e' il settimanale.
+#
+# Il repository e' pubblico: valgono le regole di weekly-data.yml (niente
+# pull_request, secret nell'environment production, dump solo cifrato).
+name: Daily images
+
+on:
+  schedule:
+    # ogni giorno alle 06:41 UTC tranne il venerdi' (il settimanale parte
+    # alle 03:17 e le immagini le chiede lui), lontano dai cron delle 04:00
+    # e delle 17:00
+    - cron: '41 6 * * 0-4,6'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Plan only: production is not touched'
+        type: boolean
+        default: true
+
+# actions: read l'ha solo il cancello, che chiama gh run list: il job delle
+# immagini, quello con i secret, resta con contents: read
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  # Niente environment e niente secret: solo lo stato del settimanale.
+  # Nemmeno il checkout: gli basta leggere le run (actions: read)
+  gate:
+    if: github.repository == 'EmanueleMelini/dokkan-team-sharing' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: read
+    outputs:
+      busy: ${{ steps.weekly.outputs.busy }}
+    steps:
+      - name: Is the weekly update running or queued?
+        id: weekly
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! n=$(gh run list -R "$GITHUB_REPOSITORY" -w weekly-data.yml -L 5 --json status -q '[.[]|select(.status!="completed")]|length'); then
+            echo "::notice::cannot read the weekly runs: retry tomorrow"
+            echo "busy=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          if [ "${n:-0}" -gt 0 ]; then
+            echo "::notice::weekly running or queued: retry tomorrow"
+            echo "busy=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "busy=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  images:
+    needs: gate
+    if: needs.gate.outputs.busy != 'true' && github.repository == 'EmanueleMelini/dokkan-team-sharing' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    environment: production
+    # lo stesso gruppo del settimanale: i due non girano mai insieme
+    concurrency:
+      group: prod-data
+      cancel-in-progress: false
+    services:
+      # il database del giro di prova, come nel settimanale
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_DB: rehearsal
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      REHEARSAL_URL: postgres://postgres@localhost:5432/rehearsal
+      DOKKAN_ENV_FILES: 'off'
+      IMPORT_POOL_MAX: '4'
+      APPLY: ${{ (github.event_name == 'workflow_dispatch' && !inputs.dry_run) || (github.event_name == 'schedule' && vars.WEEKLY_APPLY == 'true') }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci --ignore-scripts
+
+      - name: Install ffmpeg, age and the PostgreSQL 17 client
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt noble-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list > /dev/null
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends postgresql-client-17 ffmpeg age > /dev/null
+          echo "PG_DUMP=/usr/lib/postgresql/17/bin/pg_dump" >> "$GITHUB_ENV"
+          echo "PG_RESTORE=/usr/lib/postgresql/17/bin/pg_restore" >> "$GITHUB_ENV"
+
+      - name: Secrets to files, masks
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          CA_PEM: ${{ secrets.PROD_DATABASE_CA_CERT_PEM }}
+        run: |
+          if [ -z "$PROD_DATABASE_URL" ] || [ -z "$CA_PEM" ]; then
+            echo "::error::PROD_DATABASE_URL and PROD_DATABASE_CA_CERT_PEM must be secrets of the production environment"
+            exit 1
+          fi
+          node db/prod/ci-mask.mjs
+          umask 077
+          printf '%s\n' "$CA_PEM" > "$RUNNER_TEMP/supabase-ca.crt"
+          mkdir -p "$RUNNER_TEMP/empty" "$RUNNER_TEMP/new" "$RUNNER_TEMP/backup"
+          : > "$RUNNER_TEMP/attention.md"
+
+      # La cache del settimanale (wiki e datamine): qui si legge e basta,
+      # non si salva mai. Le pagine pubblicate in settimana aspettano venerdi'.
+      # Leggerla ogni giorno la tiene viva (sparisce dopo 7 giorni senza uso).
+      # Niente artifact di riserva: quello del settimanale ha solo il wiki
+      # (il datamine non va in un artifact pubblico), e senza datamine
+      # assignCardIds non riconosce le pagine con l'id da |ID o da un abbozzo.
+      - name: Restore the import cache
+        id: cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: db/import/.cache
+          key: import-cache-${{ github.run_id }}
+          restore-keys: import-cache-
+
+      - name: Is there a cache to work from?
+        run: |
+          if [ -s db/import/.cache/wiki-cards.json ] && [ -s db/import/.cache/datamine/_snapshot.json ]; then
+            echo "HAVE_CACHE=true" >> "$GITHUB_ENV"
+          else
+            echo "::notice::no import cache from the weekly run: nothing to do until the next weekly update"
+            echo "DRY_LINE=No import cache from the weekly run: nothing done, production not touched." >> "$GITHUB_ENV"
+          fi
+
+      - name: Freshness of the sources
+        if: env.HAVE_CACHE == 'true'
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node db/prod/freshness.mjs --out "$RUNNER_TEMP/freshness.md" --attention "$RUNNER_TEMP/attention.md"
+
+      # Solo lettura sulla produzione (transazioni read only), e all'API del
+      # wiki solo i nomi dei file mancanti: nessun file si scarica qui.
+      - name: Plan (read-only on production)
+        id: plan
+        if: env.HAVE_CACHE == 'true'
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          PROD_DATABASE_CA_CERT: ${{ runner.temp }}/supabase-ca.crt
+          ASSET_DIR: ${{ runner.temp }}/empty
+        run: |
+          node db/prod/missing-assets.mjs --prod --json "$RUNNER_TEMP/missing.json" \
+            --plan "$RUNNER_TEMP/plan.json" --out "$RUNNER_TEMP/images.md"
+          node db/prod/storage.mjs --prod --out "$RUNNER_TEMP/storage.md" --attention "$RUNNER_TEMP/attention.md"
+
+      - name: Decide
+        if: env.HAVE_CACHE == 'true'
+        env:
+          FETCHABLE: ${{ steps.plan.outputs.fetchable }}
+          FETCHABLE_BYTES: ${{ steps.plan.outputs.fetchable_bytes }}
+          MISSING: ${{ steps.plan.outputs.missing }}
+          CHALLENGED: ${{ steps.plan.outputs.challenged }}
+        run: |
+          mb=$(node -e "console.log((Number(process.argv[1]||0)/1e6).toFixed(1))" "$FETCHABLE_BYTES")
+          if [ "${CHALLENGED:-0}" -gt 0 ]; then
+            echo "- Images: the wiki API answered 403 (anti-bot challenge) or did not answer to the plan; tomorrow's run retries, a challenge is never bypassed." >> "$RUNNER_TEMP/attention.md"
+          fi
+          if [ "$APPLY" = true ] && [ "${FETCHABLE:-0}" -gt 0 ]; then echo "GO=true" >> "$GITHUB_ENV"; exit 0; fi
+          echo "GO=false" >> "$GITHUB_ENV"
+          if [ "$APPLY" != true ]; then
+            line="Dry run: would fetch ${FETCHABLE:-0} files (up to $mb MB); ${MISSING:-0} not on the wiki yet. Production not touched."
+          else
+            line="Nothing to fetch: ${MISSING:-0} images are not on the wiki yet. Production not touched."
+          fi
+          echo "DRY_LINE=$line" >> "$GITHUB_ENV"
+
+      # Da qui in giu' solo con APPLY e qualcosa da scaricare. Lo stesso
+      # backup del settimanale: il dump fuori dal runner solo cifrato.
+      - name: Back up production (encrypted)
+        if: env.GO == 'true' && env.APPLY == 'true'
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          PROD_DATABASE_CA_CERT: ${{ runner.temp }}/supabase-ca.crt
+          AGE_RECIPIENT: ${{ vars.BACKUP_AGE_RECIPIENT }}
+        run: |
+          case "$AGE_RECIPIENT" in
+            age1*) ;;
+            *) echo "::error::the BACKUP_AGE_RECIPIENT variable must be an age public key (age1...)"; exit 1 ;;
+          esac
+          umask 077
+          node db/prod/dump.mjs --out "$RUNNER_TEMP/prod.dump" --yes
+          name="prod-backup-images-$(date -u +%Y-%m-%dT%H%MZ)"
+          age -r "$AGE_RECIPIENT" -o "$RUNNER_TEMP/backup/$name.dump.age" "$RUNNER_TEMP/prod.dump"
+          cp "$RUNNER_TEMP/prod.dump.extensions.json" "$RUNNER_TEMP/backup/$name.dump.extensions.json"
+          echo "BACKUP_NAME=$name" >> "$GITHUB_ENV"
+
+      - name: Upload the encrypted backup
+        if: env.GO == 'true' && env.APPLY == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ env.BACKUP_NAME }}
+          path: |
+            ${{ runner.temp }}/backup/*.dump.age
+            ${{ runner.temp }}/backup/*.dump.extensions.json
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Rehearsal database from the dump
+        if: env.GO == 'true' && env.APPLY == 'true'
+        env:
+          DATABASE_URL: ${{ env.REHEARSAL_URL }}
+        run: |
+          node db/prod/rehearsal.mjs --dump "$RUNNER_TEMP/prod.dump"
+          rm -f "$RUNNER_TEMP/prod.dump"
+          rc=0
+          node db/migrate.mjs --check || rc=$?
+          if [ "$rc" = 4 ]; then
+            echo "::error::production is behind the repository's migrations: run npm run prod:migrate -- --yes first (CI never migrates)"
+          fi
+          exit "$rc"
+
+      # Il download vero, sul giro di prova: al primo 403 fetch-assets smette
+      # e il resto aspetta domani. Poi il confronto con i limiti, che qui
+      # blocca: una cancellazione in un giro di sole immagini e' un errore.
+      - name: Download the images on the rehearsal
+        id: download
+        if: env.GO == 'true' && env.APPLY == 'true'
+        env:
+          DATABASE_URL: ${{ env.REHEARSAL_URL }}
+          ASSET_DIR: ${{ runner.temp }}/new
+          ASSET_MANIFEST: ${{ runner.temp }}/new-assets.jsonl
+        run: |
+          node db/prod/snapshot.mjs --out "$RUNNER_TEMP/before.json"
+          node db/import/fetch-assets.mjs --missing --report "$RUNNER_TEMP/images-report.json" \
+            || echo "::warning::fetch-assets --missing failed: images stay pending"
+          n=$(find "$ASSET_DIR" -type f | wc -l | tr -d ' ')
+          echo "downloaded=$n" >> "$GITHUB_OUTPUT"
+          if [ "$n" -gt 0 ]; then
+            node db/prod/snapshot.mjs --out "$RUNNER_TEMP/after-images.json"
+            rc=0
+            node db/prod/compare.mjs "$RUNNER_TEMP/before.json" "$RUNNER_TEMP/after-images.json" \
+              --limits db/prod/limits.json --out "$RUNNER_TEMP/diff.md" --json "$RUNNER_TEMP/rehearsal-images.json" || rc=$?
+            cat "$RUNNER_TEMP/diff.md" >> "$GITHUB_STEP_SUMMARY"
+            if [ "$rc" = 3 ]; then echo "::error::limits exceeded by an images-only run: production not touched"; fi
+            exit "$rc"
+          fi
+
+      - name: Build the full image tree
+        if: env.GO == 'true' && env.APPLY == 'true' && fromJSON(steps.download.outputs.downloaded || '0') > 0
+        env:
+          DATABASE_URL: ${{ env.REHEARSAL_URL }}
+          ASSET_BASE_URL: ${{ vars.ASSET_BASE_URL }}
+        run: |
+          min=$(node -e "console.log(JSON.parse(require('fs').readFileSync(process.argv[1], 'utf8')).tables.asset.count)" "$RUNNER_TEMP/before.json")
+          node db/prod/mirror-assets.mjs --from "$ASSET_BASE_URL" --to "$RUNNER_TEMP/tree" \
+            --extra "$RUNNER_TEMP/new" --min-files "$min"
+
+      - name: Storage guard
+        if: env.GO == 'true' && env.APPLY == 'true' && fromJSON(steps.download.outputs.downloaded || '0') > 0
+        run: node db/prod/storage.mjs --tree "$RUNNER_TEMP/tree" --guard --out "$RUNNER_TEMP/storage-deploy.md"
+
+      - name: Deploy the images to Cloudflare Pages
+        if: env.GO == 'true' && env.APPLY == 'true' && fromJSON(steps.download.outputs.downloaded || '0') > 0
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CF_PAGES_PROJECT: ${{ vars.CF_PAGES_PROJECT || 'dokkants-assets' }}
+        run: |
+          npx --yes wrangler@4.148.0 pages deploy "$RUNNER_TEMP/tree" \
+            --project-name="$CF_PAGES_PROJECT" --branch=main --commit-dirty=true
+          echo "ASSETS_DEPLOYED=true" >> "$GITHUB_ENV"
+
+      - name: Check the new images are served
+        if: env.ASSETS_DEPLOYED == 'true'
+        env:
+          ASSET_BASE_URL: ${{ vars.ASSET_BASE_URL }}
+        run: |
+          mapfile -t keys < <(cd "$RUNNER_TEMP/new" && find . -type f | sed 's|^\./||' | head -3)
+          for k in "${keys[@]}"; do
+            ok=
+            for _ in 1 2 3 4 5 6; do
+              if curl -fsSI -o /dev/null "${ASSET_BASE_URL%/}/$k"; then ok=1; break; fi
+              sleep 10
+            done
+            if [ -z "$ok" ]; then echo "::error::$k is not served after the deploy: production not touched"; exit 1; fi
+          done
+
+      # Solo le righe in asset e i collegamenti, dai file appena pubblicati
+      # e col manifesto del giro di prova: nessun dato di gioco
+      - name: Apply to production (images only)
+        if: env.GO == 'true' && env.APPLY == 'true' && env.ASSETS_DEPLOYED == 'true'
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          PROD_DATABASE_CA_CERT: ${{ runner.temp }}/supabase-ca.crt
+          PROD_SITE_URL: ${{ vars.PROD_SITE_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          ASSET_MANIFEST: ${{ runner.temp }}/new-assets.jsonl
+        run: |
+          node db/prod/snapshot.mjs --prod --out "$RUNNER_TEMP/prod-before.json"
+          echo "APPLY_STARTED=true" >> "$GITHUB_ENV"
+          ASSET_DIR="$RUNNER_TEMP/tree" node db/prod/update.mjs --images-only --yes
+          node db/prod/snapshot.mjs --prod --out "$RUNNER_TEMP/prod-after.json"
+          echo "APPLIED=true" >> "$GITHUB_ENV"
+
+      - name: Post-check against the rehearsal
+        if: env.APPLIED == 'true'
+        run: |
+          node db/prod/compare.mjs "$RUNNER_TEMP/prod-before.json" "$RUNNER_TEMP/prod-after.json" \
+            --expect "$RUNNER_TEMP/rehearsal-images.json" --out "$RUNNER_TEMP/post.md" | tee "$RUNNER_TEMP/post.log"
+          if grep -q '^::warning::' "$RUNNER_TEMP/post.log"; then
+            echo "- Production changed differently from the rehearsal (see the warnings)." >> "$RUNNER_TEMP/attention.md"
+          fi
+          { echo "### Applied to production"; echo; echo "Images only. Post-check done, warnings below if any."; echo; } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Summary
+        if: always()
+        run: |
+          rm -f "$RUNNER_TEMP/prod.dump"
+          { echo "## Daily images, $(date -u +%F)"; echo; } >> "$GITHUB_STEP_SUMMARY"
+          for f in images.md storage.md storage-deploy.md freshness.md; do
+            if [ -s "$RUNNER_TEMP/$f" ]; then cat "$RUNNER_TEMP/$f" >> "$GITHUB_STEP_SUMMARY"; fi
+          done
+          read -r challenged transient < <(node -e "let r={};try{r=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'))}catch{};console.log((r.challenged||0)+' '+(r.transient_failed||0))" "$RUNNER_TEMP/images-report.json")
+          if [ "${challenged:-0}" -gt 0 ] || [ "${transient:-0}" -gt 0 ]; then
+            echo "- Images: the wiki CDN challenged $challenged downloads (403) and $transient failed after retries; tomorrow's run retries, the challenge is never bypassed." >> "$RUNNER_TEMP/attention.md"
+          fi
+          if [ -s "$RUNNER_TEMP/attention.md" ]; then
+            { echo "### Needs attention"; echo; cat "$RUNNER_TEMP/attention.md"; echo; } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -n "${DRY_LINE:-}" ]; then
+            { echo "$DRY_LINE"; echo; } >> "$GITHUB_STEP_SUMMARY"
+          elif [ "${APPLY_STARTED:-}" = true ] && [ "${APPLIED:-}" != true ]; then
+            echo "**The images-only apply failed part way.** fetch-assets is idempotent: fix the cause and run again. Backup of this run: ${BACKUP_NAME:-none}." >> "$GITHUB_STEP_SUMMARY"
+          elif [ "${GO:-}" = true ] && [ "${APPLIED:-}" != true ]; then
+            echo "Stopped before the apply: production not touched." >> "$GITHUB_STEP_SUMMARY"
+          fi

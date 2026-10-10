@@ -14,7 +14,8 @@ import pg from 'pg'
 import { connectionString, describeTarget } from '../env.mjs'
 import { snapshotInfo } from './datamine.mjs'
 import {
-  assignCardIds, awakensInto, baseTexts, datamineCards, field, idsByTitle, scalar, skillsFromPage,
+  RARITIES, assignCardIds, awakensInto, baseTexts, cleanText as clean, datamineCards, field, idsByTitle,
+  parseDate, parseType, scalar, skillsFromPage,
 } from './wiki-card.mjs'
 import { lookupKey } from './wiki-skills.mjs'
 
@@ -31,26 +32,11 @@ const LOCALE = 'en'   // il wiki e' in inglese
 // field(), scalar() e l'id della carta stanno in wiki-card.mjs: li usa
 // anche fetch-assets, e i due devono vedere la stessa carta.
 
-// Nome ed epiteto. I testi delle skill no: li pulisce cleanSkill
-// (wiki-skills.mjs), che tiene gli a capo e mette le note <ref> da parte.
-// Questa versione schiacciava tutto su una riga e lasciava il testo delle
-// note incollato al resto ("for 1 turnRaises SA Multiplier by 30%...").
-//
-// Le leader skill sul wiki scrivono i tipi come icone, non come testo:
-// "[[File:TEQ icon.png|30px]] & [[File:INT icon.png|30px]] Type ATK +30%".
-// Buttare via i File lascerebbe "& Type ATK +30%", che non dice niente.
-// Quindi le icone dei tipi e del Ki tornano testo prima di pulire.
-const ICON = /\[\[File:\s*(AGL|TEQ|INT|STR|PHY|Ki|Rainbow|Orb)[ _]?icon[^\]]*\]\]/gi
-const clean = (s) => (s ?? '')
-  .replace(ICON, (_, k) => k.toUpperCase())
-  .replace(/\[\[File:[^\]]*\]\]/gi, '')
-  .replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/g, '$2')
-  .replace(/\[\[([^\]]+)\]\]/g, '$1')
-  .replace(/\{\{[^}]*\}\}/g, '')
-  .replace(/<[^>]+>/g, '')
-  .replace(/'''?/g, '')
-  .replace(/\s+/g, ' ')
-  .trim()
+// Nome ed epiteto: cleanText di wiki-card.mjs (clean qui), che tiene le
+// icone dei tipi come testo. Sta li' perche' anche le pagine abbozzate si
+// riconoscono dal nome letto cosi'. I testi delle skill no: li pulisce
+// cleanSkill (wiki-skills.mjs), che tiene gli a capo e mette le note <ref>
+// da parte.
 
 // Le immagini si scartano guardando la pagina del link, non il testo:
 // [[File:Global server.png|20px]] ha come testo "20px", che diventava una
@@ -60,33 +46,10 @@ const wikiLinks = (s) => [...(s ?? '').matchAll(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\
   .map((m) => (m[2] ?? m[1]).trim())
   .filter(Boolean)
 
-const MONTHS = { jan:1, feb:2, mar:3, apr:4, may:5, jun:6,
-                 jul:7, aug:8, sep:9, oct:10, nov:11, dec:12 }
+// parseDate, parseType e RARITIES stanno in wiki-card.mjs: le usa anche
+// il riconoscimento delle pagine abbozzate, e devono leggere uguale.
 
-function parseDate(raw) {
-  if (!raw) return null
-  const t = raw.replace(/^prior to\s+/i, '').trim()
-  if (/^n\/?a$/i.test(t)) return null
-  const m = t.match(/^(\d{1,2})\s+([A-Za-z]+)\.?\s+(\d{4})$/)
-  if (!m) return null
-  const mo = MONTHS[m[2].slice(0, 3).toLowerCase()]
-  if (!mo) return null
-  return `${m[3]}-${String(mo).padStart(2, '0')}-${String(m[1]).padStart(2, '0')}`
-}
-
-function parseType(raw) {
-  if (!raw) return { skip: 'tipo assente' }
-  const t = raw.trim().toUpperCase()
-  if (t.startsWith('ITEM')) return { skip: "e' un oggetto di supporto, non un'unita'" }
-  let m = t.match(/^(AGL|TEQ|INT|STR|PHY)-(S|E)$/)            // formato nuovo
-  if (m) return { type: m[1], cls: m[2] === 'S' ? 'Super' : 'Extreme' }
-  m = t.match(/^(S|E)(AGL|TEQ|INT|STR|PHY)$/)                  // formato vecchio
-  if (m) return { type: m[2], cls: m[1] === 'S' ? 'Super' : 'Extreme' }
-  return { skip: `tipo non riconosciuto: "${raw}"` }
-}
-
-const RARITIES = new Set(['N', 'R', 'SR', 'SSR', 'UR', 'LR'])
-const int = (s) => { const n = Number(String(s ?? '').replace(/[,\s]/g, '')); return Number.isFinite(n) && n > 0 ? Math.round(n) : null }
+const int =(s) => { const n = Number(String(s ?? '').replace(/[,\s]/g, '')); return Number.isFinite(n) && n > 0 ? Math.round(n) : null }
 
 // assigned: l'id deciso da assignCardIds; byTitle: titolo -> id, per la
 // catena di risveglio
@@ -124,7 +87,11 @@ function parseCard(page, assigned, byTitle) {
     skills: skillsFromPage(w),
     releases: [
       { reg: 'japan',  released_at: parseDate(scalar(w, 'JPdate')) },
-      { reg: 'global', released_at: parseDate(scalar(w, 'GLBdate')) },
+      // Una pagina abbozzata senza GLBdate prende l'uscita Global dal
+      // datamine: da quando la carta ha una pagina load-game-cards non la
+      // scrive piu', e il builder elenca solo le carte uscite su Global.
+      { reg: 'global', released_at: parseDate(scalar(w, 'GLBdate'))
+                                    ?? (from === 'abbozzo' ? assigned.global_release : null) },
     ].filter((r) => r.released_at),
     links: [...new Set(wikiLinks(field(w, 'Link skill')))],
     cats:  [...new Set(wikiLinks(field(w, 'Category')))],
@@ -166,6 +133,11 @@ for (const [why, n] of [...byReason].sort((a, b) => b[1] - a[1])) {
 const viaId = cards.filter((c) => c.id_from === 'ID')
 console.log(`  id dal campo |ID (verificati sul datamine): ${viaId.length}`)
 if (DRY) for (const c of viaId) console.log(`    ${c.card.id}  ${c.card.wiki_title}`)
+// E quelle che l'hanno da una pagina abbozzata: sempre, sono una scelta
+// fatta sul nome e vanno viste.
+const viaAbbozzo = cards.filter((c) => c.id_from === 'abbozzo')
+console.log(`  id da una pagina abbozzata (nome, tipo, classe e rarita' del datamine): ${viaAbbozzo.length}`)
+for (const c of viaAbbozzo) console.log(`    ${c.card.id}  ${c.card.wiki_title}`)
 
 // La distribuzione dice se il parsing e' sano: in Dokkan una carta ha
 // 5-7 link skill. Se comparissero degli 1 o dei 2, vorrebbe dire che

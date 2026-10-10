@@ -20,4 +20,12 @@ export const PIPELINE = [
   ['db/import/load-equipment.mjs', []],
 ]
 
+// Il giro delle sole immagini (daily-images.yml, update.mjs --images-only):
+// le righe in asset e i collegamenti dai file appena pubblicati, nessun
+// dato di gioco. Le copertine degli eventi e le icone dei premi si
+// riallineano al prossimo giro completo.
+export const PIPELINE_IMAGES = [
+  ['db/import/fetch-assets.mjs', ['--offline']],
+]
+
 export const stepNames = (list) => list.map(([s, a]) => [s.split('/').pop().replace(/\.mjs$/, ''), ...a].join(' '))

@@ -13,6 +13,8 @@ import { AttesaLink } from '@/components/attesa-link'
 import { ConteggioClear } from '@/components/conteggio-clear'
 import { Paginazione } from '@/components/paginazione'
 import { AvvisoAccountCancellato } from '@/components/eventi/avviso-cancellato'
+import { SegnapostoEvento } from '@/components/segnaposto'
+import { segnapostoEvento } from '@/lib/segnaposto'
 
 // La lista degli eventi, comune a /events (statica: Global, nessun filtro,
 // pagina 1) e a /events/browse (ogni vista filtrata, dinamica e noindex).
@@ -276,14 +278,15 @@ export async function EventList({ filtri }: { filtri: FiltriLista }) {
                       />
                     ) : (
                       // Senza banner (gli eventi presi dal gioco non lo hanno):
-                      // la carta del boss, se la conosciamo, e il tipo di evento.
+                      // la carta del boss, se la conosciamo, altrimenti l'icona
+                      // del tipo; sotto, il tipo di evento scritto.
                       <div className="flex flex-col items-center gap-1.5">
-                        {copertina && (
+                        {copertina ? (
                           <Image src={copertina} alt="" width={56} height={56} className="rounded-[var(--raggio)]" />
+                        ) : (
+                          <SegnapostoEvento kind={e.kind} misura="scheda" />
                         )}
-                        <span className="text-[11px] text-tenue">
-                          {TIPI.find((t) => t.valore === e.kind)?.etichetta ?? 'Event'}
-                        </span>
+                        <span className="text-[11px] text-tenue">{segnapostoEvento(e.kind).etichetta}</span>
                       </div>
                     )}
                   </div>

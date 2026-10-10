@@ -1,6 +1,7 @@
 // L'id delle carte dalle pagine del wiki (db/import/wiki-card.mjs), che
-// load-cards e fetch-assets usano tutti e due, e i testi delle skill
-// (db/import/wiki-skills.mjs: template, note, EZA).
+// load-cards e fetch-assets usano tutti e due, comprese le pagine
+// abbozzate (nome, tipo, classe e rarita' contro il datamine), e i testi
+// delle skill (db/import/wiki-skills.mjs: template, note, EZA).
 //
 // Funzioni pure, niente database. La prima parte usa pagine scritte qui,
 // cosi' ogni caso brutto c'e' di sicuro; la seconda le pagine vere della
@@ -11,8 +12,8 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import {
-  assignCardIds, awakensInto, baseTexts, cleanSkill, datamineCards, field, idFieldIds, idsByTitle, imageCardId,
-  inlineField, lineField, refsOf, skillsFromPage,
+  assignCardIds, awakensInto, baseTexts, cleanSkill, cleanText, datamineCards, field, idFieldIds, idsByTitle, imageCardId,
+  inlineField, lineField, nameKey, parseDate, parseType, refsOf, skillsFromPage,
 } from '../import/wiki-card.mjs'
 import { lookupKey } from '../import/wiki-skills.mjs'
 
@@ -38,6 +39,14 @@ const TIPO = { AGL: 0, TEQ: 1, INT: 2, STR: 3, PHY: 4 }
 const RAR = { N: 0, R: 1, SR: 2, SSR: 3, UR: 4, LR: 5 }
 const dmFinto = (righe) => new Map(righe.map(([id, tipo, rar]) =>
   [String(id), { id: String(id), element: String(20 + TIPO[tipo]), rarity: String(RAR[rar]) }]))
+// righe come quelle di cards.csv, con quello che serve a pickGameCards:
+// nome, open_at, passiva e link (non un oggetto), il set leader della
+// stessa unita' (non una copia)
+const CLS = { Super: 10, Extreme: 20 }
+const dmGioco = (righe) => new Map(righe.map(([id, tipo, cls, rar, name, open_at = '2026-09-29 13:00:00']) =>
+  [String(id), { id: String(id), element: String(CLS[cls] + TIPO[tipo]), rarity: String(RAR[rar]), name, open_at,
+                 passive_skill_set_id: '1.0', link_skill1_id: '1.0', leader_skill_set_id: `${Math.floor(id / 10)}.0` }]))
+const OGGI = new Date('2026-10-10T00:00:00Z')
 
 console.log('field e lineField')
 {
@@ -118,6 +127,112 @@ console.log('\nassignCardIds')
   const pages3 = [pagina(1, 'A', { thumb: '', type: 'ESTR', rarity: 'LR', ID: '13192' }),
                   pagina(2, 'B', { thumb: '', type: 'ESTR', rarity: 'LR', ID: '13192' })]
   vale('due pagine con lo stesso |ID: fuori tutte e due', [...assignCardIds(pages3, dm).values()].map((r) => r.id), [null, null])
+}
+
+console.log('\npagine abbozzate')
+{
+  // come "Transcendent Existence Buu (Kid)": nome, tipo e rarita', e niente
+  // immagini, |ID ne' date
+  const abbozzo = (pageid, name2, type, rarity, extra = {}) =>
+    pagina(pageid, `Abbozzo ${pageid}`, { name1: 'Transcendent Existence', name2, thumb: '', 'thumb apng': '',
+                                          type, rarity, ID: '', artwork: '', GLBdate: '', ...extra })
+  const buu = [[1034130, 'INT', 'Extreme', 'SSR', 'Buu (Kid)'], [1034140, 'INT', 'Extreme', 'UR', 'Buu (Kid)'],
+               [1034150, 'INT', 'Extreme', 'LR', 'Buu (Kid)']]
+  const una = (pages, dm) => assignCardIds(pages, dm, { now: OGGI })
+  const r1 = una([abbozzo(1, 'Buu (Kid)', 'EINT', 'LR')], dmGioco(buu)).get(1)
+  vale('l\'unica carta con nome, tipo, classe e rarita\'', r1, { id: 1034150, from: 'abbozzo', global_release: '2026-09-29' })
+  vale('il tipo nel formato nuovo vale lo stesso', una([abbozzo(1, 'Buu (Kid)', 'INT-E', 'LR')], dmGioco(buu)).get(1).id, 1034150)
+
+  const gemelle = dmGioco([[1990010, 'AGL', 'Super', 'UR', 'Twin'], [1990020, 'AGL', 'Super', 'UR', 'Twin']])
+  const amb = una([abbozzo(1, 'Twin', 'AGL-S', 'UR')], gemelle).get(1)
+  check('due candidate uguali: nessun id', amb.id === null)
+  check('...e il perche\' le nomina tutte e due', /ambigua: 1990010, 1990020/.test(amb.why ?? ''), amb.why)
+
+  const meta = una([abbozzo(1, 'Buu (Kid)', 'EINT', 'SR')], dmGioco(buu)).get(1)
+  check('solo la rarita\' diversa: nessun id, "diversi"', meta.id === null && /c'e' nel datamine \(1034130, 1034140, 1034150\).*diversi/.test(meta.why), meta.why)
+  const classe = una([abbozzo(1, 'Buu (Kid)', 'SINT', 'LR')], dmGioco(buu)).get(1)
+  check('la classe diversa: nessun id', classe.id === null && /diversi/.test(classe.why), classe.why)
+  const nome = una([abbozzo(1, 'Buu (Kid) (Angel)', 'EINT', 'LR')], dmGioco(buu)).get(1)
+  check('un nome che non c\'e\': nessun id, e lo dice', nome.id === null && /nessuna carta solo del datamine con nome "Buu \(Kid\) \(Angel\)"/.test(nome.why), nome.why)
+
+  vale('GLBdate un giorno dopo il giorno UTC di open_at: va',
+       una([abbozzo(1, 'Buu (Kid)', 'EINT', 'LR', { GLBdate: '30 Sep 2026' })], dmGioco(buu)).get(1).id, 1034150)
+  const lontana = una([abbozzo(1, 'Buu (Kid)', 'EINT', 'LR', { GLBdate: '2 Oct 2026' })], dmGioco(buu)).get(1)
+  check('GLBdate tre giorni dopo: nessun id', lontana.id === null && /GLBdate 2026-10-02 lontana/.test(lontana.why), lontana.why)
+
+  const conImmagine = una([abbozzo(1, 'Buu (Kid)', 'EINT', 'LR'),
+                           pagina(2, 'Altra', { thumb: '[[File:Card 1034150 thumb.png|120px]]', type: 'EINT', rarity: 'LR' })], dmGioco(buu))
+  check('una carta gia\' nominata dall\'immagine di un\'altra pagina non e\' candidata',
+    conImmagine.get(1).id === null && conImmagine.get(2).id === 1034150, JSON.stringify([...conImmagine.values()]))
+  const conID = una([abbozzo(1, 'Buu (Kid)', 'EINT', 'LR'),
+                     pagina(2, 'Altra', { thumb: '', type: 'EPHY', rarity: 'LR', ID: '13415' })], dmGioco(buu))
+  check('...nemmeno da un |ID che e\' stato rifiutato', conID.get(1).id === null && conID.get(2).id === null,
+    JSON.stringify([...conID.values()]))
+
+  const rifiutato = una([abbozzo(1, 'Buu (Kid)', 'EINT', 'LR', { ID: '1001' })], dmGioco(buu)).get(1)
+  check('una pagina con un |ID rifiutato non e\' un abbozzo, e tiene il suo perche\'',
+    rifiutato.id === null && /\|ID 1000010 non esiste nel datamine/.test(rifiutato.why) && !/abbozzat/.test(rifiutato.why), rifiutato.why)
+
+  const doppi = una([abbozzo(1, 'Buu (Kid)', 'EINT', 'LR'), abbozzo(2, 'Buu (Kid)', 'EINT', 'LR')], dmGioco(buu))
+  check('due abbozzi sulla stessa carta: fuori tutti e due', [...doppi.values()].every((r) => r.id === null && /condiviso/.test(r.why)),
+    JSON.stringify([...doppi.values()]))
+
+  vale('senza datamine: il perche\' di prima', assignCardIds([abbozzo(1, 'Buu (Kid)', 'EINT', 'LR')], null).get(1),
+       { id: null, why: 'nessun id carta ricavabile da immagini o |ID' })
+  const futura = una([abbozzo(1, 'Buu (Kid)', 'EINT', 'LR')],
+                     dmGioco([[1034150, 'INT', 'Extreme', 'LR', 'Buu (Kid)', '2026-10-20 05:00:00']])).get(1)
+  check('una carta non ancora uscita non si prende', futura.id === null, futura.why)
+
+  // Unica fra le candidate non basta: la firma deve essere unica nel gioco.
+  // La carta vera della pagina puo' essere la gemella non ancora uscita
+  // (open_at 2038), o non essere ancora nel datamine.
+  const ssg = (id, open_at) => [id, 'AGL', 'Super', 'SSR', 'Super Saiyan Goku', open_at]
+  const conGemella = dmGioco([ssg(1034010, '2026-08-29 05:00:00'), ssg(1039990, '2038-01-01 00:00:00')])
+  const g1 = una([abbozzo(1, 'Super Saiyan Goku', 'SAGL', 'SSR')], conGemella).get(1)
+  check('una gemella non ancora uscita (2038) con la stessa firma: nessun id, ambigua',
+    g1.id === null && /ambigua: 1034010 e 1039990/.test(g1.why) && /non ha GLBdate/.test(g1.why), g1.why)
+  const g2 = una([abbozzo(1, 'Super Saiyan Goku', 'SAGL', 'SSR', { GLBdate: '29 Aug 2026' })], conGemella).get(1)
+  check('...anche con GLBdate: la data della gemella non si sa, non la esclude',
+    g2.id === null && /ambigua: 1034010 e 1039990/.test(g2.why), g2.why)
+  const g3 = una([abbozzo(1, 'Super Saiyan Goku', 'SAGL', 'SSR')],
+                 dmGioco([ssg(1034010, '2026-08-29 05:00:00'), ssg(1039990, '2026-10-15 05:00:00')])).get(1)
+  check('una gemella annunciata (open_at fra cinque giorni): ambigua', g3.id === null && /ambigua: 1034010 e 1039990/.test(g3.why), g3.why)
+  const lancio = dmGioco([ssg(1034010, '2026-08-29 05:00:00'), ssg(1012360, '2015-10-30 00:00:00')])
+  const g4 = una([abbozzo(1, 'Super Saiyan Goku', 'SAGL', 'SSR')], lancio).get(1)
+  check('una riga alla data minima del lancio (fuori dalle candidate) conta lo stesso',
+    g4.id === null && /ambigua: 1034010 e 1012360/.test(g4.why), g4.why)
+  // una ristampa: il set della leader skill e' di 1034010 (pickGameCards la salta come copia)
+  const ristampa = dmGioco([ssg(1034010, '2026-08-29 05:00:00'), ssg(1039990, '2026-09-01 05:00:00')])
+  ristampa.get('1039990').leader_skill_set_id = '103401.0'
+  const g5 = una([abbozzo(1, 'Super Saiyan Goku', 'SAGL', 'SSR')], ristampa).get(1)
+  check('...e anche una copia', g5.id === null && /ambigua: 1034010 e 1039990/.test(g5.why), g5.why)
+
+  // la stessa firma su una carta che ha gia' la sua pagina: senza GLBdate
+  // la pagina abbozzata potrebbe essere di una carta che il datamine non ha
+  // ancora; con GLBdate la data lontana la esclude
+  const conPagina = dmGioco([ssg(1000010, '2015-11-05 00:00:00'), ssg(1034010, '2026-08-29 05:00:00')])
+  const vecchia = pagina(2, 'Vecchia', { thumb: '[[File:Card 1000010 thumb.png|120px]]', type: 'SAGL', rarity: 'SSR' })
+  const p1 = una([abbozzo(1, 'Super Saiyan Goku', 'SAGL', 'SSR'), vecchia], conPagina)
+  check('senza GLBdate, una carta con la stessa firma e la sua pagina rende ambiguo',
+    p1.get(1).id === null && /ambigua: 1034010 e 1000010/.test(p1.get(1).why) && p1.get(2).id === 1000010, p1.get(1).why)
+  vale('con GLBdate, la data lontana esclude la carta che ha la pagina',
+       una([abbozzo(1, 'Super Saiyan Goku', 'SAGL', 'SSR', { GLBdate: '29 Aug 2026' }), vecchia], conPagina).get(1),
+       { id: 1034010, from: 'abbozzo', global_release: '2026-08-29' })
+
+  // la forma Z-awakened di una SSR e' UR (1034131), ma il wiki scrive la
+  // rarita' della base: l'unita' SSR non e' una rivale della UR
+  const risveglio = dmGioco([...buu, [1034131, 'INT', 'Extreme', 'UR', 'Buu (Kid)']])
+  vale('una UR abbozzata non e\' ambigua con la SSR che si risveglia in UR',
+       una([abbozzo(1, 'Buu (Kid)', 'EINT', 'UR')], risveglio).get(1).id, 1034140)
+  vale('...e la LR resta la LR', una([abbozzo(1, 'Buu (Kid)', 'EINT', 'LR')], risveglio).get(1).id, 1034150)
+
+  vale('nameKey: "A/\\nB" del datamine e "A/B" del wiki', [nameKey('Goku/\nVegeta'), nameKey('Goku / Vegeta'), nameKey('Goku/Vegeta')],
+       ['Goku/Vegeta', 'Goku/Vegeta', 'Goku/Vegeta'])
+  vale('cleanText tiene le icone dei tipi come testo', cleanText("[[File:TEQ icon.png|30px]] '''Type''' [[Saiyans|Saiyan]]"), 'TEQ Type Saiyan')
+  vale('parseDate', [parseDate('29 Sep 2026'), parseDate('prior to 1 Jan. 2016'), parseDate('N/A'), parseDate('')],
+       ['2026-09-29', '2016-01-01', null, null])
+  vale('parseType', [parseType('EINT'), parseType('AGL-S'), parseType('Item')].map((t) => t.type ?? t.skip),
+       ['INT', 'AGL', "e' un oggetto di supporto, non un'unita'"])
 }
 
 console.log('\nawakensInto')
@@ -251,6 +366,11 @@ if (existsSync(CACHE) && dm) {
   vale('nessun id su due pagine', tutti.length - new Set(tutti).size, 0)
   const p = pages.find((x) => /^\|[ \t]*ID[ \t]*=[ \t]*13306[ \t]*$/m.test(x.wikitext))
   if (p) vale('1033060: l\'artwork non e\' l\'immagine della frase', lineField(p.wikitext, 'artwork'), null)
+  // la pagina abbozzata vera: la sola, oggi, senza un id dalle immagini o da |ID
+  const fissa = assignCardIds(pages, dm, { now: OGGI })
+  vale('"Transcendent Existence Buu (Kid)" (730530) e\' 1034150, da abbozzo',
+       [fissa.get(730530)?.id, fissa.get(730530)?.from], [1034150, 'abbozzo'])
+  vale('nessun\'altra pagina prende un id da abbozzo', [...fissa.values()].filter((r) => r.from === 'abbozzo').length, 1)
 }
 
 // i testi delle skill sulle pagine vere: bastano le pagine, non il datamine

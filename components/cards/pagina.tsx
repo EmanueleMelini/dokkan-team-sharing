@@ -97,7 +97,7 @@ export function CardPage({ card, clears }: { card: CardDetail; clears: { rows: C
             animatedBytes={card.art_animated_bytes}
             thumb={assetUrl(card.thumb_key)}
             type={card.type}
-            class={card.class}
+            rarity={card.rarity}
           />
           <dl className="mt-4 grid grid-cols-3 gap-2 text-center">
             {([['Max HP', card.hp], ['Max ATK', card.atk], ['Max DEF', card.def]] as const).map(([k, v]) => (

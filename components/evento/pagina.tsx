@@ -28,6 +28,8 @@ import { FiltriClear, type OpzioniFiltri } from '@/components/clears/filtri-clea
 import { FiltriAttivi } from '@/components/clears/filtri-attivi'
 import { SPIEGA_ORDINE, VUOTI, filtriAttivi, soloOrdine, type FiltriClear as Filtri } from '@/lib/clears/filtri'
 import { datiFiltri } from '@/lib/clears/filtri-pagina'
+import { SegnapostoEvento } from '@/components/segnaposto'
+import { segnapostoEvento } from '@/lib/segnaposto'
 
 // Il corpo della pagina di un evento, per tutte le sue viste
 // (/events/<id>[/japan][/t/<tier>[/p/<n>]]). Legge solo dati in cache e
@@ -38,11 +40,6 @@ import { datiFiltri } from '@/lib/clears/filtri-pagina'
 // Con `filtri` e' la lista filtrata (/events/<id>/clears?...), dinamica e
 // noindex: la lista e il conteggio filtrati non stanno in cache (le
 // combinazioni sono senza fine), tutto il resto si'.
-
-const TIPO_EVENTO: Record<string, string> = {
-  challenge: 'Challenge', zbattle: 'Extreme Z-Battle', limited: 'Limited', story: 'Story',
-  bonus: 'Bonus', world_tournament: 'World Tournament', other: 'Event',
-}
 
 /*
  * Lo stato dell'evento in parole. Una run in corso senza fine può essere
@@ -215,14 +212,17 @@ export async function EventPage({ id, view, filtri }: { id: string; view: EventV
         <div className="relative aspect-[16/7] rounded-[var(--raggio)] overflow-hidden bg-superficie-2 border border-linea flex items-center justify-center">
           {banner ? (
             <Image src={banner} alt="" fill preload sizes="(max-width: 768px) 100vw, 50vw" className="object-cover" />
-          ) : (
+          ) : copertina ? (
             // Gli eventi presi dal gioco non hanno banner: la carta del boss
-            copertina && <Image src={copertina} alt="" width={96} height={96} preload className="rounded-[var(--raggio)]" />
+            <Image src={copertina} alt="" width={96} height={96} preload className="rounded-[var(--raggio)]" />
+          ) : (
+            // ...e se non c'e' nemmeno quella, l'icona del tipo (scritto qui accanto)
+            <SegnapostoEvento kind={e.kind} misura="pagina" />
           )}
         </div>
         <div>
           <p className="text-[12px] text-tenue">
-            {TIPO_EVENTO[e.kind] ?? 'Event'}
+            {segnapostoEvento(e.kind).etichetta}
             {reg === 'japan' && <span className="ml-2">Japanese version</span>}
           </p>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight text-inchiostro leading-tight text-balance">

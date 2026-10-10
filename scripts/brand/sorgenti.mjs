@@ -6,8 +6,9 @@
 //
 //   node scripts/brand/sorgenti.mjs && node scripts/brand/genera.mjs
 //
-// Dopo, i `d` e i colori vanno ricopiati in components/brand/marchio.tsx:
-// genera.mjs si ferma se non coincidono.
+// Dopo, i `d` vanno ricopiati in components/brand/marchio.tsx e i colori
+// nelle regole del marchio di app/globals.css: genera.mjs si ferma se non
+// coincidono.
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'

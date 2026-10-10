@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useRef, useState } from 'react'
 import { CaretDown } from '@phosphor-icons/react/dist/ssr'
-import { Miniatura } from '@/components/builder/miniatura'
+import { Miniatura, TipoSenzaMiniatura } from '@/components/builder/miniatura'
 import { CARTE_MAX } from '@/lib/clears/filtri'
 
 /** Una carta fra le opzioni dei filtri, con la miniatura gia' come URL. */
@@ -118,6 +118,8 @@ export function ScegliCarta({ opzioni, scelte, onCambia }: {
                   <span className="block truncate text-[13px] text-inchiostro">{nomeCarta(c)}</span>
                   {c.epithet && <span className="block truncate text-[11px] text-tenue">{c.epithet}</span>}
                 </span>
+                {/* senza miniatura il riquadro non dice tipo e classe: accanto */}
+                <TipoSenzaMiniatura carta={c} />
                 <span className="numeri text-[11px] text-tenue shrink-0">
                   {c.n > 0 ? (
                     <>{c.n}<span className="sr-only">{c.n === 1 ? ' clear' : ' clears'}</span></>

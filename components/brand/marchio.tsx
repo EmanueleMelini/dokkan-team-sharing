@@ -8,12 +8,16 @@
  * la fa solo il CSS: niente sessione, niente stato, quindi l'HTML del
  * server resta uguale per tutti (layout e pagine pubbliche in cache).
  *
- * La variante scura vale con un data-theme scuro su <html>, oppure con il
- * sistema scuro quando data-theme manca o e' "system". Un id sconosciuto
- * resta chiaro.
+ * Le variabili --marchio-N stanno in app/globals.css, sotto .marchio e
+ * .colori-marchio: le stesse per i segnaposto delle carte senza miniatura
+ * (components/segnaposto.tsx), con la stessa variante chiara o scura. La
+ * scura vale con un data-theme scuro su <html>, oppure con il sistema
+ * scuro quando data-theme manca o e' "system". Un id sconosciuto resta
+ * chiaro. Stanno li' e non in uno <style> qui: ogni segnaposto ne metteva
+ * una copia nel payload delle pagine.
  *
- * I `d` e i colori vengono da scripts/brand/svg/: genera.mjs controlla che
- * coincidano con questi.
+ * I `d` vengono da scripts/brand/svg/, come i colori di globals.css:
+ * genera.mjs controlla che coincidano.
  */
 
 const SETTORI = [
@@ -24,36 +28,18 @@ const SETTORI = [
   'M7.48 14.72A30 30 0 0 1 37.61 2.53L30.07 15.11A17 17 0 0 0 16.48 25.06Z',
 ]
 
-const SCURO =
-  '--marchio-1:#6fa8e8;--marchio-2:#5fc79a;--marchio-3:#a98bdb;--marchio-4:#e8836f;--marchio-5:#e0a651;--marchio-0:#f8da5e'
-
-// Gli id dei temi scuri: se ne arriva uno nuovo va aggiunto qui.
-const TEMI_SCURI = ['dark', 'notte-agl', 'nebulosa-int', 'brace-str', 'lr-oro', 'oled']
-
-const CSS =
-  '.marchio{--marchio-1:#2f6fc4;--marchio-2:#2e7d5b;--marchio-3:#6b4b9e;--marchio-4:#b03a2e;--marchio-5:#a85414;--marchio-0:#7a5c00}' +
-  `@media (prefers-color-scheme:dark){:root:not([data-theme]) .marchio,:root[data-theme=system] .marchio{${SCURO}}}` +
-  `:root:is(${TEMI_SCURI.map((t) => `[data-theme=${t}]`).join(',')}) .marchio{${SCURO}}`
-
 export function Marchio({ className = 'size-6' }: { className?: string }) {
   return (
-    <>
-      {/* React 19 sposta lo stile nell'<head> e lo mette una volta sola,
-          anche con piu' marchi nella pagina. */}
-      <style href="marchio" precedence="default">
-        {CSS}
-      </style>
-      <svg
-        viewBox="0 0 64 64"
-        className={`marchio ${className}`}
-        aria-hidden="true"
-        focusable="false"
-      >
-        {SETTORI.map((d, i) => (
-          <path key={i} d={d} style={{ fill: `var(--marchio-${i + 1})` }} />
-        ))}
-        <circle cx="32" cy="32" r="8" style={{ fill: 'var(--marchio-0)' }} />
-      </svg>
-    </>
+    <svg
+      viewBox="0 0 64 64"
+      className={`marchio ${className}`}
+      aria-hidden="true"
+      focusable="false"
+    >
+      {SETTORI.map((d, i) => (
+        <path key={i} d={d} style={{ fill: `var(--marchio-${i + 1})` }} />
+      ))}
+      <circle cx="32" cy="32" r="8" style={{ fill: 'var(--marchio-0)' }} />
+    </svg>
   )
 }

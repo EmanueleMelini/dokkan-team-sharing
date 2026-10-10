@@ -30,6 +30,7 @@ import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import sharp from 'sharp'
+import { differenzeMarchio } from './colori.mjs'
 import { paginaOffline } from './offline.mjs'
 
 const ROOT = join(fileURLToPath(new URL('.', import.meta.url)), '..', '..')
@@ -129,20 +130,14 @@ async function anteprima() {
   return sharp(composta).flatten({ background: FONDO }).png({ compressionLevel: 9 }).toBuffer()
 }
 
-// Il componente del marchio porta gli stessi `d` e colori in linea (niente
-// richiesta in piu' per un'immagine nell'header): se qualcuno rigenera gli
-// SVG e dimentica il componente, meglio fermarsi qui.
+// Il componente del marchio porta gli stessi `d` in linea, e app/globals.css
+// gli stessi colori (niente richiesta in piu' per un'immagine nell'header):
+// se qualcuno rigenera gli SVG e dimentica l'uno o l'altro, meglio
+// fermarsi qui.
 function controllaComponente() {
-  const tsx = readFileSync(join(ROOT, 'components', 'brand', 'marchio.tsx'), 'utf8')
-  const mancanti = []
-  for (const nome of ['marchio-chiaro.svg', 'marchio-scuro.svg']) {
-    const svg = sorgente(nome).toString()
-    for (const [, valore] of svg.matchAll(/(?:d|fill)="([^"]+)"/g)) {
-      if (!tsx.includes(valore)) mancanti.push(`${nome}: ${valore}`)
-    }
-  }
-  if (mancanti.length) {
-    throw new Error(`components/brand/marchio.tsx non coincide con gli SVG:\n  ${mancanti.join('\n  ')}`)
+  const diverse = differenzeMarchio(ROOT)
+  if (diverse.length) {
+    throw new Error(`marchio.tsx o globals.css non coincidono con gli SVG:\n  ${diverse.join('\n  ')}`)
   }
 }
 

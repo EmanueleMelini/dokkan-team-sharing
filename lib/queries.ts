@@ -149,6 +149,9 @@ export type MissionReward = {
   quantity: number
   // l'icona del catalogo premi, o la miniatura se il premio è una carta
   icon_key: string | null
+  // solo se il premio è una carta: il tipo, per il segnaposto quando manca
+  // la miniatura (a 16 px ha solo la banda del tipo)
+  card: { type: string } | null
 }
 
 export type MissionRow = {
@@ -173,7 +176,8 @@ export async function getMissions(eventId: string, runId: string | null): Promis
               select json_agg(json_build_object(
                        'name', coalesce(git.name, r.item_type),
                        'quantity', r.quantity,
-                       'icon_key', coalesce(ri.asset_key, c.thumb_key))
+                       'icon_key', coalesce(ri.asset_key, c.thumb_key),
+                       'card', case when c.id is not null then json_build_object('type', c.type) end)
                      order by r.seq)
               from mission_reward r
               join game_item gi on gi.item_type = r.item_type and gi.item_id = r.item_id

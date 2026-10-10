@@ -4,6 +4,7 @@ import { CaretRight } from '@phosphor-icons/react/dist/ssr'
 import { assetUrl } from '@/lib/db'
 import { cardHref } from '@/lib/urls'
 import { Tipo } from '@/components/tipo'
+import { SegnapostoCarta } from '@/components/segnaposto'
 import type { ChainItem } from '@/lib/card-page'
 
 /**
@@ -22,7 +23,7 @@ export function Catena({ catena, corrente }: { catena: ChainItem[]; corrente: st
             {src ? (
               <Image src={src} alt="" width={48} height={48} className="rounded-[var(--raggio)] bg-superficie-2" />
             ) : (
-              <span aria-hidden className="block w-12 h-12 rounded-[var(--raggio)] bg-superficie-2 border border-linea" />
+              <SegnapostoCarta name={c.name} type={c.type} rarity={c.rarity} size={48} />
             )}
             <span className="min-w-0">
               <span className="block truncate text-[12px] font-medium text-inchiostro">{c.name ?? `Card ${c.id}`}</span>

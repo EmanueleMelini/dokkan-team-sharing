@@ -69,8 +69,8 @@ export function paginaOffline(root) {
   }
   if (!temi.length || !scuri.length) throw new Error('globals.css: nessun blocco dei temi trovato')
 
-  // Come components/brand/marchio.tsx: la variante scura col sistema scuro
-  // senza tema scelto, o con un tema scuro.
+  // Come le regole del marchio in app/globals.css: la variante scura col
+  // sistema scuro senza tema scelto, o con un tema scuro.
   const stileMarchio =
     `.marchio{${variabili(chiaro)}}` +
     `@media (prefers-color-scheme:dark){:root:not([data-theme]) .marchio{${variabili(scuro)}}}` +

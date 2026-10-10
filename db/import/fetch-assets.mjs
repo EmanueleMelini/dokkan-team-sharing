@@ -16,6 +16,8 @@
 //   node db/import/fetch-assets.mjs --force        riscarica anche se c'e'
 //   node db/import/fetch-assets.mjs --offline      solo righe dai file sul disco
 //   node db/import/fetch-assets.mjs --missing      solo i job senza riga in asset
+//   node db/import/fetch-assets.mjs --missing --report esito.json
+//   node db/import/fetch-assets.mjs --plan piano.json   solo il piano, niente download
 //
 // --offline serve per la produzione (db/prod/): le immagini le serve
 // Cloudflare, il database deve solo avere le righe in asset e i
@@ -27,16 +29,38 @@
 // solo le immagini che non hanno ancora una riga, cioe' quelle nuove.
 // IMPORT_POOL_MAX limita le connessioni (il pooler di Supabase ne ammette
 // poche per sessione).
+//
+// --plan (implica --missing) serve al giro giornaliero delle immagini
+// (daily-images.yml), sulla produzione: legge in una transazione read only,
+// chiede all'API del wiki quali file esistono e quanto pesano, scrive il
+// piano in JSON ed esce prima di scaricare. Nessun file, nessuna riga: e'
+// quello che il giro mostra quando WEEKLY_APPLY e' spento. --report scrive
+// invece, a giro finito, quanto e' successo (scaricati, sfidati, mancanti):
+// lo leggono i riepiloghi della CI.
+//
+// Con ASSET_MANIFEST ogni download aggiunge una riga JSON (chiave, fonte,
+// URL, checksum) a quel file, che sta fuori da ASSET_DIR e non si
+// pubblica. L'adozione dal disco lo rilegge: in produzione la riga di
+// asset prende cosi' lo stesso source_url del giro di prova (0033).
+//
+// Un 403 della CDN del wiki e' un controllo anti-bot (Cloudflare): al primo
+// si smette di scaricare, il resto si conta come "sfidato" e lo riprova il
+// giro di domani. Mai un altro User-Agent, mai un aggiramento. I 5xx, i 429
+// e i timeout invece si ritentano (asset-select.mjs: esitoHttp).
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import pg from 'pg'
 import { connectionString, describeTarget } from '../env.mjs'
-import { selectJobs, siMuove } from './asset-select.mjs'
-import { assignCardIds, datamineCards, field, lineField } from './wiki-card.mjs'
+import { cardJobs, normalizeFile } from './asset-jobs.mjs'
+import { ANIM_ART_BUDGET, AVVISO_PCT, decisioneAnimato, mib } from './asset-limits.mjs'
+import {
+  ASSET_ADOTTA_SQL, ASSET_SCARICA_SQL, MAX_RITENTI, attesaRitento, esitoHttp, provenienza, selectJobs, siMuove,
+} from './asset-select.mjs'
+import { assignCardIds, datamineCards, field } from './wiki-card.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(HERE, '..', '..')
@@ -55,9 +79,15 @@ const ONLY = val('--only', 'all')
 const LIMIT = Number(val('--limit', Infinity))
 const FORCE = has('--force')
 const OFFLINE = has('--offline')
-const MISSING = has('--missing')
+const PLAN = has('--plan') ? val('--plan', '') : null
+const REPORT = val('--report', null)
+const MISSING = has('--missing') || PLAN !== null
+const MANIFEST = process.env.ASSET_MANIFEST || null
 if (OFFLINE && FORCE) { console.error('\n  --offline e --force insieme non hanno senso\n'); process.exit(1) }
 if (MISSING && FORCE) { console.error('\n  --missing e --force insieme non hanno senso\n'); process.exit(1) }
+// il piano non scrive: niente che possa scaricare o toccare il database
+if (PLAN !== null && (!PLAN || PLAN.startsWith('--'))) { console.error('\n  --plan vuole il file del piano\n'); process.exit(1) }
+if (PLAN && (OFFLINE || has('--flatten-existing'))) { console.error('\n  --plan e\' solo lettura: niente --offline ne\' --flatten-existing\n'); process.exit(1) }
 // in un job di GitHub Actions ogni immagine mancata diventa un avviso
 const CI = process.env.GITHUB_ACTIONS === 'true'
 // --only thumb|art include la rispettiva variante animata;
@@ -75,35 +105,76 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 // --------------------------------------------------------------- wiki API
 
+// Un errore che dice cosa e' successo: esito e' quello di esitoHttp
+const errore = (msg, esito) => Object.assign(new Error(msg), { esito })
+
+// Una richiesta GET con i ritenti: i transitori (5xx, 429, timeout, rete)
+// con attese che raddoppiano, gli altri subito all'indietro. leggi() legge
+// il corpo dentro lo stesso tentativo: un timeout a meta' e' transitorio.
+async function getConRitenti(u, headers, timeoutMs, leggi) {
+  for (let n = 0; ; n++) {
+    let res, corpo
+    try {
+      res = await fetch(u, { headers, signal: AbortSignal.timeout(timeoutMs) })
+      if (res.ok) corpo = await leggi(res)
+    } catch (err) {
+      if (n < MAX_RITENTI) { await sleep(attesaRitento(n + 1)); continue }
+      throw errore(`rete: ${err.name}`, 'transitorio')
+    }
+    const esito = esitoHttp(res.status)
+    if (esito === 'ok') return { res, corpo }
+    await res.body?.cancel().catch(() => {})
+    if (esito === 'transitorio' && n < MAX_RITENTI) {
+      await sleep(attesaRitento(n + 1, res.headers.get('retry-after'))); continue
+    }
+    throw errore(`HTTP ${res.status}`, esito)
+  }
+}
+
 async function api(params, attempt = 1) {
   const u = new URL(API)
   for (const [k, v] of Object.entries(params)) u.searchParams.set(k, String(v))
   u.searchParams.set('format', 'json'); u.searchParams.set('formatversion', '2')
   u.searchParams.set('maxlag', '5')
-  const res = await fetch(u, { headers: { 'User-Agent': UA } })
-  if ((res.status === 503 || res.status === 429) && attempt <= 5) {
-    await sleep(1000 * 2 ** attempt); return api(params, attempt + 1)
-  }
-  if (!res.ok) throw new Error(`HTTP ${res.status}`)
-  const b = await res.json()
+  const { corpo: b } = await getConRitenti(u, { 'User-Agent': UA }, 30000, (r) => r.json())
   if (b.error?.code === 'maxlag' && attempt <= 5) { await sleep(2000 * attempt); return api(params, attempt + 1) }
   if (b.error) throw new Error(`${b.error.code}: ${b.error.info}`)
   return b
 }
 
-// risolve i nomi File: negli url veri, 50 alla volta
+// Se l'API del wiki ha risposto 403 (un controllo anti-bot), o non ha
+// risposto nemmeno dopo i ritenti: da li' non le si chiede piu' niente in
+// questo giro, e cio' che resta da risolvere e' "sfidato", non "assente".
+// Il giro dopo riprova; un altro errore invece ferma lo script.
+let apiSfidata = false, apiFerma = false
+function sfidaApi(err) {
+  if (err.esito !== 'sfida' && err.esito !== 'transitorio') throw err
+  if (!apiFerma) {
+    const perche = err.esito === 'sfida' ? '403 (anti-bot challenge)' : `no answer (${err.message})`
+    console.log(CI ? `::warning::the wiki API answered ${perche}: the rest waits for the next run`
+                   : `\n  l'API del wiki: ${perche}, il resto aspetta il prossimo giro`)
+  }
+  if (err.esito === 'sfida') apiSfidata = true
+  apiFerma = true
+}
+
+// risolve i nomi File: negli url veri e nel loro peso, 50 alla volta
 async function resolve(files) {
   const out = new Map()
-  for (let i = 0; i < files.length; i += 50) {
-    const b = await api({ action: 'query', prop: 'imageinfo', iiprop: 'url|size|dimensions|mime',
-                          titles: files.slice(i, i + 50).map((f) => 'File:' + f).join('|') })
+  for (let i = 0; i < files.length && !apiFerma; i += 50) {
+    let b
+    try {
+      b = await api({ action: 'query', prop: 'imageinfo', iiprop: 'url|size|dimensions|mime',
+                      titles: files.slice(i, i + 50).map((f) => 'File:' + f).join('|') })
+    } catch (err) { sfidaApi(err); break }
     for (const p of b.query?.pages ?? []) {
       const name = p.title.replace(/^File:/, '')
       const ii = p.imageinfo?.[0]
       // l'url di Fandom e' .../File.png/revision/latest?cb=... e il
       // ridimensionamento si innesta DOPO /revision/latest, non prima:
-      // via solo la query string.
-      if (ii) out.set(name, ii.url.split('?')[0].replace(/\/$/, ''))
+      // via solo la query string. size e' il file originale: per gli
+      // animati, che si scaricano cosi' come sono, e' il peso vero.
+      if (ii) out.set(name, { url: ii.url.split('?')[0].replace(/\/$/, ''), size: Number(ii.size) || null })
     }
     process.stdout.write(`\r    risolti ${out.size}/${files.length}`)
     await sleep(150)
@@ -166,21 +237,18 @@ function flatten(buf, width) {
   }
 }
 
-async function download(baseUrl, width, raw = false, attempt = 1) {
+async function download(baseUrl, width, raw = false) {
   // raw = il file come sta, senza trasformazioni. Serve in due casi
   // opposti: gli APNG di cui vogliamo l'animazione intatta, e le versioni
   // animate che il ridimensionatore di Fandom peggiorerebbe (un WebP
   // animato da 9 MB gli esce come GIF da 33).
   const u = raw ? baseUrl : `${baseUrl}/scale-to-width-down/${width}?format=webp`
-  const res = await fetch(u, { headers: { 'User-Agent': UA, Accept: 'image/webp,image/*' } })
   // Il ridimensionamento lo fa Fandom al volo e a volte va in timeout:
-  // 504 e 502 sono transitori, non "il file non c'e'". Si ritenta.
-  if ([502, 503, 504, 429].includes(res.status) && attempt <= 4) {
-    await sleep(800 * 2 ** attempt)
-    return download(baseUrl, width, raw, attempt + 1)
-  }
-  if (!res.ok) throw new Error(`HTTP ${res.status}`)
-  let buf = Buffer.from(await res.arrayBuffer())
+  // 504 e 502 sono transitori, non "il file non c'e'". Si ritenta, con un
+  // minuto al massimo per tentativo. Un 403 no: torna 'sfida' a chi chiama.
+  const { res, corpo } = await getConRitenti(u, { 'User-Agent': UA, Accept: 'image/webp,image/*' }, 60000,
+    async (r) => Buffer.from(await r.arrayBuffer()))
+  let buf = corpo
   let ct = (res.headers.get('content-type') ?? '').split(';')[0].trim()
   if (!raw && isAnimated(buf, ct)) ({ buf, ct } = flatten(buf, width))
   return { buf, ct, url: u }
@@ -189,82 +257,43 @@ async function download(baseUrl, width, raw = false, attempt = 1) {
 // ------------------------------------------------------------- lavoro
 
 const { pages } = JSON.parse(readFileSync(CACHE, 'utf8'))
-// I nomi dei file nel wikitext arrivano in forme diverse: con underscore
-// invece degli spazi, e a volte percent-encoded ("HQ%2B" per "HQ+").
-// MediaWiki normalizza gli underscore, non le percentuali: le decodifichiamo
-// noi, altrimenti quei file non si risolvono.
-const normalizeFile = (n) => {
-  let t = n.replace(/_/g, ' ').replace(/\s+/g, ' ').trim()   // anche i doppi spazi
-  if (/%[0-9A-Fa-f]{2}/.test(t)) { try { t = decodeURIComponent(t) } catch { /* lasciamolo com'e' */ } }
-  return t.charAt(0).toUpperCase() + t.slice(1)
-}
-const fileIn = (s) => { const m = (s ?? '').match(/\[\[\s*[Ff]ile:\s*([^\]|]+?)\s*(?:\||\]\])/); return m ? normalizeFile(m[1]) : null }
+// normalizeFile, fileIn e i nomi per convenzione stanno in asset-jobs.mjs
 
 const url = connectionString()
 console.log(`  database: ${describeTarget()}`)
 // Un pool e non un Client: i worker scaricano in parallelo e ognuno
 // scrive la sua riga in asset. Su un Client solo, node-postgres mette in
 // coda le query e avvisa che in pg@9 non lo fara' piu'.
-const pool = new pg.Pool({ connectionString: url, max: Number(process.env.IMPORT_POOL_MAX) || 10 })
-const client = { query: (...a) => pool.query(...a) }
+// Con --plan una connessione sola, in una transazione read only: anche
+// per sbaglio, da qui non parte una scrittura.
+const pool = PLAN ? null : new pg.Pool({ connectionString: url, max: Number(process.env.IMPORT_POOL_MAX) || 10 })
+const ro = PLAN ? new pg.Client({ connectionString: url }) : null
+if (ro) { await ro.connect(); await ro.query('begin transaction read only') }
+const client = { query: (...a) => (ro ?? pool).query(...a) }
 
-// L'URL diretto dei thumb animati: certe pagine (quasi tutte le LR) non
-// scrivono un [[File:...]] ma incollano l'URL dell'APNG. Da li' si ricava
-// sia l'URL da usare, sia il nome del file statico corrispondente.
-const directUrlIn = (s) => {
-  const m = (s ?? '').match(/https?:\/\/[^\s|\]]+/)
-  return m ? m[0].split('?')[0] : null
-}
-
-// Solo le carte che sono davvero in tabella: quelle scartate dall'import
-// non devono portarsi dietro un'immagine orfana.
+// Le carte che sono davvero in tabella, tutte: quelle scartate dall'import
+// non devono portarsi dietro un'immagine orfana. Una carta qualifica perche'
+// c'e', non perche' ha una pagina: i nomi dei suoi file vengono dalla
+// pagina quando c'e', altrimenti dalla convenzione del wiki (asset-jobs.mjs).
+// Prima si chiedevano solo le carte con wiki_title, e le 46 solo del
+// datamine restavano senza immagini anche se il wiki le aveva.
 //
-// Il criterio e' wiki_title, NON imported_from: i nomi dei file immagine
-// si ricavano dal wikitext, quindi la domanda giusta e' "questa carta ha
-// una pagina wiki", non "da dove vengono i suoi dati". Prima filtravo su
-// imported_from='wiki' e quando load-datamine ha riscritto quel campo a
-// 'datamine' le immagini collegate sono crollate da 2632 a 1371, in
+// Mai imported_from: quando load-datamine ha riscritto quel campo a
+// 'datamine' le immagini collegate erano crollate da 2632 a 1371, in
 // silenzio.
-const { rows: known } = await client.query('select id from card where wiki_title is not null')
-const knownIds = new Set(known.map((r) => Number(r.id)))
+const { rows: known } = await client.query('select id from card')
+const cardIds = new Set(known.map((r) => Number(r.id)))
 
 const jobs = []
-if (want('thumb') || want('art') || ONLY === 'anim') {
+const thumbs = want('thumb') || ONLY === 'anim'
+const arts = want('art') || ONLY === 'anim'
+if (thumbs || arts) {
   // L'id lo decide wiki-card.mjs, lo stesso codice di load-cards: le carte
   // che hanno l'id dal campo |ID (le Metal Cooler, le LR senza un file col
-  // numero) qui altrimenti non si riconoscerebbero, e resterebbero senza
-  // immagini. I campi immagine si leggono sulla loro riga (lineField): un
-  // "|artwork =" vuoto non deve prendersi la riga dopo.
+  // numero) o da una pagina abbozzata qui altrimenti non si
+  // riconoscerebbero, e prenderebbero solo i nomi per convenzione.
   const ids = assignCardIds(pages, datamineCards())
-  for (const p of pages) {
-    const id = ids.get(p.pageid)?.id
-    if (!id || !knownIds.has(id)) continue
-    // Ogni job porta piu' candidati: il [[File:]] scritto sulla pagina
-    // quando c'e', e in ogni caso i nomi per convenzione ricavati
-    // dall'id. Vince il primo che il wiki riesce a risolvere.
-    if (want('thumb') || ONLY === 'anim') {
-      const files = [fileIn(lineField(p.wikitext, 'thumb')),
-                     `Card ${id} thumb.png`].filter(Boolean)
-      if (ONLY !== 'anim') jobs.push({ kind: 'card_thumb', files, keyBase: `cards/${id}/thumb`,
-                  card: id, col: 'thumb_key',
-                  directUrl: directUrlIn(lineField(p.wikitext, 'thumb apng')) })
-      const animT = directUrlIn(lineField(p.wikitext, 'thumb apng'))
-      if (animT && (want('thumb') || ONLY === 'anim')) jobs.push({ kind: 'card_thumb_animated', files: [], raw: true,
-                             keyBase: `cards/${id}/thumb-animated`, card: id,
-                             col: 'thumb_animated_key', directUrl: animT })
-    }
-    if (want('art') || ONLY === 'anim') {
-      const files = [fileIn(lineField(p.wikitext, 'artwork')), fileIn(lineField(p.wikitext, 'bg')),
-                     `Card ${id} artwork.png`, `Card ${id} bg.png`].filter(Boolean)
-      if (ONLY !== 'anim') jobs.push({ kind: 'card_art', files, keyBase: `cards/${id}/art`,
-                  card: id, col: 'art_key',
-                  directUrl: directUrlIn(lineField(p.wikitext, 'artwork apng')) })
-      const animA = directUrlIn(lineField(p.wikitext, 'artwork apng'))
-      if (animA && (want('art') || ONLY === 'anim')) jobs.push({ kind: 'card_art_animated', files: [], raw: true,
-                             keyBase: `cards/${id}/art-animated`, card: id,
-                             col: 'art_animated_key', directUrl: animA })
-    }
-  }
+  jobs.push(...cardJobs({ pages, ids, cardIds, still: ONLY !== 'anim', thumbs, arts }))
 }
 // I banner degli eventi: il nome del file sta nel template Events, e
 // gli id sono i pageid del wiki, gli stessi che usa load-events.
@@ -291,12 +320,16 @@ if (want('banners') && existsSync(CACHE_EV)) {
 // Il template si tiene in cache: --offline lo rilegge da li'. Se la
 // cache manca si scarica una volta il solo testo (una richiesta), perche'
 // senza i nomi degli oggetti le missioni restano senza icone.
+// Il piano lo legge dalla cache e non la riscrive.
 async function itemsTemplate() {
-  if (OFFLINE && existsSync(CACHE_ITEMS)) return JSON.parse(readFileSync(CACHE_ITEMS, 'utf8')).content
-  const b = await api({ action: 'query', prop: 'revisions', rvprop: 'content',
-                        rvslots: 'main', titles: 'Template:ItemsEvent' })
+  if ((OFFLINE || PLAN) && existsSync(CACHE_ITEMS)) return JSON.parse(readFileSync(CACHE_ITEMS, 'utf8')).content
+  let b
+  try {
+    b = await api({ action: 'query', prop: 'revisions', rvprop: 'content',
+                    rvslots: 'main', titles: 'Template:ItemsEvent' })
+  } catch (err) { sfidaApi(err); return '' }
   const content = b.query?.pages?.[0]?.revisions?.[0]?.slots?.main?.content ?? ''
-  if (content) writeFileSync(CACHE_ITEMS, JSON.stringify({ fetched_at: new Date().toISOString(), content }))
+  if (content && !PLAN) writeFileSync(CACHE_ITEMS, JSON.stringify({ fetched_at: new Date().toISOString(), content }))
   return content
 }
 if (want('items')) {
@@ -347,7 +380,7 @@ if (want('icons')) {
 // lasciava collegate come animate ma ferme (82 artwork e 171 miniature).
 if (has('--flatten-existing')) {
   const { rows } = await client.query(`
-    select key, kind, source_url from asset
+    select key, kind, source, source_url from asset
     where kind not in ('rarity_icon', 'card_thumb_animated', 'card_art_animated')
       and (content_type = 'image/gif' or width is null)
     order by key`)
@@ -367,13 +400,13 @@ if (has('--flatten-existing')) {
     try {
       await tx0.query('begin')
       await tx0.query(`
-        insert into asset (key, kind, content_type, byte_size, width, height, checksum, source_url, fetched_at)
-        values ($1,$2,$3,$4,$5,$6,$7,$8, now())
+        insert into asset (key, kind, content_type, byte_size, width, height, checksum, source, source_url, fetched_at)
+        values ($1,$2,$3,$4,$5,$6,$7,$8,$9, now())
         on conflict (key) do update set
           content_type = excluded.content_type, byte_size = excluded.byte_size,
           width = excluded.width, height = excluded.height, checksum = excluded.checksum`,
         [key, r.kind, ct, buf.length, width, height,
-         createHash('sha256').update(buf).digest('hex'), r.source_url])
+         createHash('sha256').update(buf).digest('hex'), r.source, r.source_url])
       if (key !== r.key) {
         await tx0.query('update card set art_key = $1 where art_key = $2', [key, r.key])
         await tx0.query('update card set thumb_key = $1 where thumb_key = $2', [key, r.key])
@@ -395,6 +428,7 @@ if (has('--flatten-existing')) {
 // quali sono gia' a posto
 const { rows: existing } = await client.query('select key, byte_size, source_url from asset')
 const have = new Map(existing.map((r) => [r.key, r]))
+const rigaDi = (job) => [...have.keys()].find((k) => k.startsWith(job.keyBase + '.'))
 
 const { todo, kept, dropped } = selectJobs(jobs, have.keys(), { missing: MISSING, offline: OFFLINE })
 if (MISSING) console.log(`  --missing: ${dropped} hanno gia' la riga, restano ${todo.length}`)
@@ -415,11 +449,77 @@ const files = [...new Set(needsWiki.flatMap((j) => j.files))]
 console.log(OFFLINE ? '  offline: niente da chiedere al wiki'
   : `  ${capped.length - needsWiki.length} gia' sul disco, ${files.length} file da risolvere sul wiki`)
 const urls = files.length ? await resolve(files) : new Map()
-const orfani = needsWiki.filter((j) => !j.files.some((f) => urls.has(f)) && !j.directUrl)
-if (orfani.length) console.log(`  senza nessuna immagine: ${orfani.length} (${orfani.slice(0, 3).map((j) => j.keyBase).join(', ')})`)
-if (CI && orfani.length) console.log(`::warning::${orfani.length} images have no source on the wiki (first: ${orfani.slice(0, 5).map((j) => j.keyBase).join(', ')})`)
+
+// il primo candidato che il wiki ha risolto ([nome, { url, size }]); se
+// nessuno, l'URL diretto della pagina
+const sceltoPer = (job) => job.files.map((f) => (urls.has(f) ? [f, urls.get(f)] : null)).find(Boolean) ?? null
+const fonteDi = (job) => sceltoPer(job)?.[1].url ?? job.directUrl ?? null
+
+// Senza nessuna fonte. Se la pagina dichiarava un file e' un avviso (il
+// file e' sparito, o il parser si e' rotto); se c'erano solo i nomi per
+// convenzione e' normale: il wiki non ha ancora l'immagine, e il giro dopo
+// la richiede (costa un paio di richieste all'API). Con l'API sfidata non
+// si sa: si conta come sfidato, non come mancante.
+const orfani = apiFerma ? [] : needsWiki.filter((j) => !fonteDi(j))
+const muti = orfani.filter((j) => j.quiet), rumorosi = orfani.filter((j) => !j.quiet)
+const sfidatiApi = apiFerma ? needsWiki.filter((j) => !fonteDi(j)).length : 0
+const carteMute = new Set(muti.map((j) => j.card ?? j.keyBase)).size
+if (rumorosi.length) console.log(`  senza nessuna immagine: ${rumorosi.length} (${rumorosi.slice(0, 3).map((j) => j.keyBase).join(', ')})`)
+if (CI && rumorosi.length) console.log(`::warning::${rumorosi.length} images have no source on the wiki (first: ${rumorosi.slice(0, 5).map((j) => j.keyBase).join(', ')})`)
+if (muti.length) console.log(`  ${carteMute} cards have no file on the wiki yet (${muti.length} images, retried every run)`)
+
+// Il budget degli artwork animati (asset-limits.mjs): i byte gia' in
+// tabella, e quanto pesava la riga che un --force sostituirebbe.
+const ANIMATI = new Set(['card_thumb_animated', 'card_art_animated'])
+const { rows: [{ n: animIniziale }] } = await client.query(
+  `select coalesce(sum(byte_size), 0)::bigint as n from asset where kind = 'card_art_animated'`)
+let totaleAnim = Number(animIniziale)
+const vecchioAnim = (job) => {
+  if (job.kind !== 'card_art_animated') return 0
+  const k = rigaDi(job)
+  return k ? Number(have.get(k).byte_size) || 0 : 0
+}
+
+// --plan: cosa si scaricherebbe, e quanto pesa. Il peso e' quello degli
+// originali sul wiki: le immagini ferme arrivano ridimensionate, quindi e'
+// un limite superiore. Poi si esce: niente download, niente scritture.
+if (PLAN) {
+  let simulato = totaleAnim
+  let oltreTetto = 0, oltreBudget = 0
+  const piano = []
+  for (const j of needsWiki) {
+    const base = fonteDi(j)
+    if (!base) continue
+    const scelto = sceltoPer(j)
+    const size = scelto?.[1].size ?? null
+    if (ANIMATI.has(j.kind)) {
+      const d = decisioneAnimato(j.kind, size, simulato - vecchioAnim(j))
+      if (d === 'oltre-il-tetto') { oltreTetto++; continue }
+      if (d === 'oltre-il-budget') { oltreBudget++; continue }
+      if (j.kind === 'card_art_animated' && size) simulato += size
+    }
+    piano.push({ keyBase: j.keyBase, kind: j.kind, file: scelto?.[0] ?? null, size, quiet: Boolean(j.quiet) })
+  }
+  writeFileSync(PLAN, JSON.stringify({
+    taken_at: new Date().toISOString(), jobs: piano,
+    missing_quiet: muti.length, missing_quiet_cards: carteMute, missing_loud: rumorosi.length,
+    over_cap: oltreTetto, over_budget: oltreBudget, api_challenged: apiSfidata, api_unavailable: apiFerma && !apiSfidata,
+    challenged: sfidatiApi,
+  }, null, 1) + '\n')
+  const peso = piano.reduce((n, j) => n + (j.size ?? 0), 0)
+  console.log(`  piano: ${piano.length} file da scaricare (${(peso / 1e6).toFixed(1)} MB al massimo), ` +
+              `${muti.length + rumorosi.length} senza file sul wiki, ${oltreTetto + oltreBudget} oltre i limiti` +
+              `${apiFerma ? ', API ferma' : ''}: niente scaricato, niente scritto`)
+  await ro.query('rollback')
+  await ro.end()
+  process.exit(0)
+}
 
 let done = 0, skipped = kept.length, adoptedN = 0, failed = 0, bytes = 0
+let senzaFonte = 0, sfidati = sfidatiApi, transitori = 0, oltreTetto = 0, oltreBudget = 0
+// Il primo 403 della CDN accende l'interruttore: da li' nessun download
+// parte piu' (le adozioni dal disco si'), e il resto aspetta domani.
+let sfidaCdn = false
 const results = [...kept]
 
 // I primi 64 KB del file bastano a siMuove. Un file che qui non c'e' non si
@@ -434,10 +534,31 @@ function muoveSulDisco(key) {
   } finally { closeSync(fd) }
 }
 
+// Il manifesto dei download (ASSET_MANIFEST), letto una volta: chiave ->
+// { source, source_url, checksum }. Una riga rotta si ignora.
+let manifesto = null
+function voceManifest(key) {
+  if (!MANIFEST) return null
+  if (!manifesto) {
+    manifesto = new Map()
+    if (existsSync(MANIFEST)) {
+      for (const line of readFileSync(MANIFEST, 'utf8').split('\n')) {
+        if (!line.trim()) continue
+        try { const v = JSON.parse(line); if (v?.key) manifesto.set(v.key, v) } catch { /* riga rotta */ }
+      }
+    }
+  }
+  return manifesto.get(key) ?? null
+}
+
+const sha256 = (buf) => createHash('sha256').update(buf).digest('hex')
+
 // Il file c'e' sul disco ma la riga in asset no. Succede a ogni db:reset,
 // che ricrea il database ma non tocca public/assets. Riscaricare mezzo
 // giga per ricostruire delle righe che si possono ricavare dal file
-// stesso e' spreco: lo si riadotta.
+// stesso e' spreco: lo si riadotta. La provenienza: 'wiki', e l'URL solo
+// se il manifesto ha questo stesso file; una riga che l'URL lo sapeva gia'
+// non lo perde.
 async function adoptFromDisk(job) {
   const dir = join(ASSET_DIR, dirname(job.keyBase))
   if (!existsSync(dir)) return null
@@ -450,24 +571,30 @@ async function adoptFromDisk(job) {
   const ext = found.split('.').pop()
   const ct = Object.entries(EXT).find(([, e]) => e === ext)?.[0] ?? 'application/octet-stream'
   const { width, height } = dimensions(buf)
-  await client.query(`
-    insert into asset (key, kind, content_type, byte_size, width, height, checksum, source_url, fetched_at)
-    values ($1,$2,$3,$4,$5,$6,$7,$8, now())
-    on conflict (key) do update set
-      kind = excluded.kind, content_type = excluded.content_type,
-      byte_size = excluded.byte_size, width = excluded.width, height = excluded.height,
-      checksum = excluded.checksum`,
-    [key, job.kind, ct, buf.length, width, height,
-     createHash('sha256').update(buf).digest('hex'), null])
+  const checksum = sha256(buf)
+  const prov = provenienza({ voceManifest: voceManifest(key), checksum })
+  await client.query(ASSET_ADOTTA_SQL,
+    [key, job.kind, ct, buf.length, width, height, checksum, prov.source, prov.source_url])
   return key
 }
 
+// Un animato oltre il tetto o il budget: si salta, la versione ferma e'
+// un altro job e resta
+function oltre(decisione, job, size) {
+  if (decisione === 'oltre-il-tetto') oltreTetto++
+  else oltreBudget++
+  const perche = decisione === 'oltre-il-tetto' ? 'over the per-file cap' : 'over the animated art budget'
+  const msg = `${job.keyBase}: ${size ? `${mib(size)} MiB` : 'size unknown'}, ${perche} (db/import/asset-limits.mjs)`
+  console.log(CI ? `::notice::animated image skipped: ${msg}` : `\n    saltato: ${msg}`)
+}
+
 async function run(job) {
-  // il primo candidato che il wiki ha risolto; se nessuno, l'URL diretto
-  const base = job.files.map((f) => urls.get(f)).find(Boolean) ?? job.directUrl
+  const scelto = sceltoPer(job)
+  const base = scelto?.[1].url ?? job.directUrl
+  let riservati = 0
   try {
     // se la riga c'e' e il file su disco combacia, non si riscarica
-    const guess = [...have.keys()].find((k) => k.startsWith(job.keyBase + '.'))
+    const guess = rigaDi(job)
     if (!FORCE && guess) {
       const p = join(ASSET_DIR, guess)
       if (existsSync(p) && statSync(p).size === have.get(guess).byte_size) {
@@ -479,30 +606,52 @@ async function run(job) {
       if (adopted) { adoptedN++; results.push({ ...job, key: adopted }); return }
     }
     if (OFFLINE) { failed++; return }   // non e' sul disco: qui non si scarica
-    if (!base) { failed++; return }
+    if (!base) { if (!apiFerma) senzaFonte++; return }   // gia' contati sopra
+    // il tetto degli animati prima di scaricare, se il wiki ha detto il peso
+    const size = scelto?.[1].size ?? null
+    if (ANIMATI.has(job.kind)) {
+      const d = decisioneAnimato(job.kind, size, totaleAnim - vecchioAnim(job))
+      if (d !== 'ok') { oltre(d, job, size); return }
+      if (job.kind === 'card_art_animated' && size) { riservati = size - vecchioAnim(job); totaleAnim += riservati }
+    }
+    if (sfidaCdn) { sfidati++; totaleAnim -= riservati; return }
     const { buf, ct, url: from } = await download(base, WIDTH[job.kind], Boolean(job.raw))
+    // senza il peso dal wiki (un URL diretto che non e' un File:) il tetto
+    // si guarda ora: costa un download, ma il file non entra
+    if (ANIMATI.has(job.kind) && !size) {
+      const d = decisioneAnimato(job.kind, buf.length, totaleAnim - vecchioAnim(job))
+      if (d !== 'ok') { oltre(d, job, buf.length); return }
+      if (job.kind === 'card_art_animated') { riservati = buf.length - vecchioAnim(job); totaleAnim += riservati }
+    }
     const key = `${job.keyBase}.${EXT[ct] ?? 'bin'}`
     const dest = join(ASSET_DIR, key)
     mkdirSync(dirname(dest), { recursive: true })
     writeFileSync(dest, buf)
     const { width, height } = dimensions(buf)
-    await client.query(`
-      insert into asset (key, kind, content_type, byte_size, width, height, checksum, source_url, fetched_at)
-      values ($1,$2,$3,$4,$5,$6,$7,$8, now())
-      on conflict (key) do update set
-        kind = excluded.kind, content_type = excluded.content_type,
-        byte_size = excluded.byte_size, width = excluded.width, height = excluded.height,
-        checksum = excluded.checksum, source_url = excluded.source_url, fetched_at = now()`,
-      [key, job.kind, ct, buf.length, width, height,
-       createHash('sha256').update(buf).digest('hex'), from])
+    const checksum = sha256(buf)
+    const prov = provenienza({ scaricatoDa: from })
+    await client.query(ASSET_SCARICA_SQL,
+      [key, job.kind, ct, buf.length, width, height, checksum, prov.source, prov.source_url])
+    if (MANIFEST) appendFileSync(MANIFEST, JSON.stringify({ key, ...prov, checksum, byte_size: buf.length }) + '\n')
     bytes += buf.length; done++
     results.push({ ...job, key })
   } catch (err) {
+    totaleAnim -= riservati
+    // Un 403 della CDN e' un controllo anti-bot: non si ritenta (insistere
+    // e' cio' che lo fa salire) e non si scarica piu' niente in questo giro
+    if (err.esito === 'sfida') {
+      sfidati++
+      if (!sfidaCdn) {
+        console.log(CI ? `::warning::the wiki CDN answered 403 (anti-bot challenge) on ${job.keyBase}: no more downloads in this run, the next run retries`
+                       : `\n    la CDN del wiki ha risposto 403 (controllo anti-bot) su ${job.keyBase}: smetto di scaricare, si riprova al prossimo giro`)
+      }
+      sfidaCdn = true
+      return
+    }
     failed++
-    // un 403 della CDN del wiki non si ritenta (download() ritenta solo i
-    // 5xx e i 429): insistere e' cio' che fa salire un controllo anti-bot
+    if (err.esito === 'transitorio') transitori++
     if (CI && failed <= 40) console.log(`::warning::image not downloaded: ${job.keyBase} (${err.message})`)
-    else if (failed <= 8) console.log(`\n    ${job.files[0]}: ${err.message}`)
+    else if (failed <= 8) console.log(`\n    ${job.files[0] ?? job.keyBase}: ${err.message}`)
   }
 }
 
@@ -517,7 +666,25 @@ await Promise.all(Array.from({ length: CONC }, async () => {
     if (process.stdout.isTTY && n % 50 === 0) process.stdout.write(`\r    ${n}/${capped.length}  scaricati ${done}, dal disco ${adoptedN}, saltati ${skipped}, falliti ${failed}, ${(bytes / 1e6).toFixed(0)} MB`)
   }
 }))
-console.log(`\r    ${capped.length}/${capped.length}  scaricati ${done}, ripresi dal disco ${adoptedN}, saltati ${skipped}, ${OFFLINE ? 'non sul disco' : 'falliti'} ${failed}, ${(bytes / 1e6).toFixed(1)} MB          `)
+console.log(`\r    ${capped.length}/${capped.length}  scaricati ${done}, ripresi dal disco ${adoptedN}, saltati ${skipped}, ${OFFLINE ? 'non sul disco' : 'falliti'} ${failed}` +
+            `${senzaFonte ? `, senza file sul wiki ${senzaFonte}` : ''}${sfidati ? `, sfidati ${sfidati}` : ''}` +
+            `${oltreTetto + oltreBudget ? `, oltre i limiti ${oltreTetto + oltreBudget}` : ''}, ${(bytes / 1e6).toFixed(1)} MB          `)
+
+// L'avviso quando questo giro porta gli artwork animati oltre l'80% del budget
+const soglia = ANIM_ART_BUDGET * AVVISO_PCT / 100
+if (CI && Number(animIniziale) < soglia && totaleAnim >= soglia) {
+  console.log(`::warning::animated art now at ${mib(totaleAnim)} MiB, over ${AVVISO_PCT}% of the ${mib(ANIM_ART_BUDGET)} MiB budget (db/import/asset-limits.mjs)`)
+}
+
+// --report: i numeri per i riepiloghi della CI, prima dei collegamenti
+if (REPORT) {
+  writeFileSync(REPORT, JSON.stringify({
+    resolved: needsWiki.filter((j) => fonteDi(j)).length, downloaded: done, bytes,
+    challenged: sfidati, transient_failed: transitori,
+    missing_quiet: muti.length, missing_quiet_cards: carteMute, missing_loud: rumorosi.length,
+    over_cap: oltreTetto, over_budget: oltreBudget, api_challenged: apiSfidata, api_unavailable: apiFerma && !apiSfidata,
+  }) + '\n')
+}
 
 // --------------------------------------------------- collegamenti
 

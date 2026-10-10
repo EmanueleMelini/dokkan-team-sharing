@@ -1,9 +1,10 @@
 // Verifica le carte che esistono solo nel datamine (load-game-cards,
 // db/import/game-cards.mjs, migrazione 0015): le regole di scelta su righe
-// finte, la scelta sul CSV vero (le 46 attese e le 13 scartate, ognuna
+// finte, la scelta sul CSV vero (le 45 attese e le 13 scartate, ognuna
 // col suo motivo), le righe scritte con l'epiteto NULL, l'arricchimento di
 // load-datamine (link, categorie, risvegli), un secondo giro che non
-// cambia niente e il giorno in cui il wiki documenta una di queste carte.
+// cambia niente, la pagina abbozzata che load-cards riconosce (1034150) e
+// il giorno in cui il wiki documenta una di queste carte.
 //
 // Gira sul database di test dopo l'import dalle cache (npm run db:test).
 import { execFileSync } from 'node:child_process'
@@ -105,10 +106,12 @@ const script = (nome: string, env: Record<string, string> = {}) =>
 
 // Gli attesi, scritti sul datamine del 2026-10-02 (commit 86e8684). Un
 // aggiornamento puo' aggiungere carte nuove, ma queste devono restare.
+// 1034150 non c'e' piu': ha una pagina abbozzata sul wiki, e load-cards la
+// riconosce dal nome, dal tipo, dalla classe e dalla rarita' (wiki-card.mjs).
 const ATTESE = [
   1020410, 1030310, 1031350, 1032710, 1032770, 1033720, 1033950, 1033960, 1033970, 1033990,
   1034000, 1034010, 1034020, 1034030, 1034050, 1034060, 1034070, 1034080, 1034090, 1034100,
-  1034110, 1034120, 1034130, 1034140, 1034150, 1034160, 1034170, 1034180, 1034190, 1034200,
+  1034110, 1034120, 1034130, 1034140, 1034160, 1034170, 1034180, 1034190, 1034200,
   1034270, 1034400, 1034410, 1034420, 1034430, 1034540, 1034550, 1034560, 1034610, 1034620,
   1034630, 1034640, 1034650, 1034660, 1034690, 1034700,
 ]
@@ -125,7 +128,8 @@ await sezione('la scelta sul datamine vero', async () => {
   const covered = new Set((await righe('select id from card where wiki_title is not null')).map((r) => Number(r.id)))
   const { cards, skipped } = pickGameCards(csv, covered)
   const scelte = new Set(cards.map((c: { id: number }) => c.id))
-  tutte('le 46 attese sono scelte', ATTESE, (id) => scelte.has(id))
+  tutte('le 45 attese sono scelte', ATTESE, (id) => scelte.has(id))
+  check('1034150 no: ha la pagina abbozzata', !scelte.has(1034150) && covered.has(1034150))
   const perId = new Map(skipped.map((s: { id: number; why: string }) => [s.id, s.why]))
   tutte('le 13 scartate lo sono, col loro motivo', Object.entries(SCARTATE),
     ([id, re]) => re.test(perId.get(Number(id)) ?? ''))
@@ -159,7 +163,7 @@ await sezione('le righe scritte', async () => {
            (select count(*) from card_release r where r.card_id = c.id and r.reg = 'japan')::int jp
     from card c join card_text t on t.card_id = c.id and t.locale = 'en'
     where c.id = any($1::bigint[])`, [ATTESE])
-  check('ci sono tutte le 46, una riga ciascuna', rs.length === ATTESE.length, `${rs.length}`)
+  check('ci sono tutte le 45, una riga ciascuna', rs.length === ATTESE.length, `${rs.length}`)
   tutte('epiteto NULL, niente wiki_title, imported_from datamine', rs,
     (r) => r.epithet === null && r.wiki_title === null && r.src === 'datamine')
   tutte('niente statistiche ne\' testi delle skill inventati', rs,
@@ -209,6 +213,26 @@ await sezione('arricchite da load-datamine', async () => {
   const af = new Map((await righe(`select id::int, awakens_from::int af from card where id = any($1::bigint[])`,
     [catene.map((c) => c[0])])).map((r) => [r.id, r.af]))
   tutte('catene di risveglio dal gioco sulle nuove carte', catene, ([into, from]) => af.get(into) === from)
+})
+
+// La pagina abbozzata del wiki (730530): niente immagini, |ID ne' date, ma
+// nome, tipo, classe e rarita' di una sola carta solo del datamine.
+// load-cards le da' l'id, e i dati del wiki (epiteto, skill); l'uscita
+// Global la prende dal datamine, perche' la pagina non la dice.
+await sezione('la pagina abbozzata (1034150)', async () => {
+  const [r] = await righe(`
+    select c.wiki_title, c.type::text, c.class::text cls, c.rarity::text, c.awakens_from::int af,
+           t.name, t.epithet, t.passive,
+           (select released_at::text from card_release r where r.card_id = c.id and r.reg = 'global') glb,
+           (select count(*) from card_release r where r.card_id = c.id and r.reg = 'japan')::int jp
+    from card c join card_text t on t.card_id = c.id and t.locale = 'en' where c.id = 1034150`)
+  check('wiki_title ed epiteto dalla pagina', r?.wiki_title === 'Transcendent Existence Buu (Kid)'
+    && r?.epithet === 'Transcendent Existence' && r?.name === 'Buu (Kid)', JSON.stringify(r))
+  check('LR INT Extreme, come nel gioco', r?.rarity === 'LR' && r?.type === 'INT' && r?.cls === 'Extreme')
+  check('le skill del wiki', /Activates the Entrance Animation/.test(r?.passive ?? ''), (r?.passive ?? '').slice(0, 60))
+  check('l\'uscita Global dal datamine (la pagina non ha GLBdate), nessuna data Japan inventata',
+    r?.glb === '2026-09-29' && r?.jp === 0, `${r?.glb} / ${r?.jp}`)
+  check('si risveglia ancora da 1034140', r?.af === 1034140, `${r?.af}`)
 })
 
 await sezione('un secondo giro non cambia niente', async () => {

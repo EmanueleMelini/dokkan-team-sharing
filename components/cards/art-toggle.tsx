@@ -4,7 +4,7 @@ import { useEffect, useId, useState } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { useViewer } from '@/components/viewer/provider'
-import { Tipo } from '@/components/tipo'
+import { SegnapostoCarta } from '@/components/segnaposto'
 import {
   artStorage, formatBytes, readArtChoice, resolveArt, saveArtChoice, type ArtMode,
 } from '@/lib/card-art'
@@ -19,8 +19,9 @@ type Props = {
   animated: string | null
   animatedBytes: number | null
   thumb: string | null
+  /** tipo e rarita': per il segnaposto quando non c'e' nessuna immagine */
   type: string
-  class: string | null
+  rarity: string
 }
 
 type Ambiente = { stored: ArtMode | null; reducedMotion: boolean; saveData: boolean }
@@ -39,7 +40,7 @@ function risparmioDati(): boolean {
  * mostra l'animato: e' l'immagine che si vede subito (LCP), e copre
  * l'attesa dei 4 MB.
  */
-export function ArtToggle({ cardId, name, still, stillW, stillH, animated, animatedBytes, thumb, type, class: classe }: Props) {
+export function ArtToggle({ cardId, name, still, stillW, stillH, animated, animatedBytes, thumb, type, rarity }: Props) {
   const { user } = useViewer()
   const id = useId()
   const [amb, setAmb] = useState<Ambiente | null>(null)
@@ -108,8 +109,10 @@ export function ArtToggle({ cardId, name, still, stillW, stillH, animated, anima
           <Image src={thumb} alt={`${name} thumbnail`} width={250} height={250} preload className="max-w-[70%] h-auto" />
         </div>
       ) : (
-        <div className="flex aspect-[3/4] flex-col items-center justify-center gap-2 rounded-[var(--raggio)] border border-linea bg-superficie-2 px-6 text-center">
-          <span className="text-[20px]"><Tipo tipo={type} classe={classe} /></span>
+        // Nessuna immagine (una carta presa dal gioco): il segnaposto, e la
+        // frase dice perche'. Tipo e classe sono scritti nell'intestazione.
+        <div className="flex aspect-[3/4] flex-col items-center justify-center gap-3 rounded-[var(--raggio)] border border-linea bg-superficie px-6 text-center">
+          <SegnapostoCarta name={name} type={type} rarity={rarity} size={160} />
           <p className="text-[13px] text-tenue">Artwork not available yet</p>
         </div>
       )}

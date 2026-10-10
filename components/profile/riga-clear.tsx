@@ -2,6 +2,7 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { Camera, Prohibit, ShieldCheck } from '@phosphor-icons/react/dist/ssr'
 import { assetUrl } from '@/lib/db'
+import { SegnapostoCarta } from '@/components/segnaposto'
 import { soloGiorno } from '@/lib/date'
 import { DIFFICOLTA } from '@/lib/livelli'
 import { clearAnchor, eventHref } from '@/lib/urls'
@@ -50,7 +51,8 @@ export function RigaClear({ c }: { c: ProfileClear }) {
                   {src ? (
                     <Image src={src} alt={nome} title={nome} width={32} height={32} className="rounded-[var(--raggio)] bg-superficie-2" />
                   ) : (
-                    <span role="img" aria-label={nome} className="block size-8 rounded-[var(--raggio)] bg-superficie-2 border border-linea" />
+                    // qui il riquadro e' l'unica cosa che dice la carta: porta il nome
+                    <SegnapostoCarta name={k.name} type={k.type} size={32} etichetta={nome} />
                   )}
                 </li>
               )

@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { assetUrl } from '@/lib/db'
 import { cardHref } from '@/lib/urls'
 import { Tipo } from '@/components/tipo'
+import { SegnapostoCarta } from '@/components/segnaposto'
 
 export type CartaProps = {
   // NULL per le carte che il wiki non ha ancora (0015): la riga resta
@@ -11,7 +12,7 @@ export type CartaProps = {
   name: string
   type: string
   class?: string | null
-  rarity?: string
+  rarity?: string | null
   thumbKey: string | null
   ruolo?: 'leader' | 'member' | 'friend'
   /**
@@ -25,7 +26,7 @@ export type CartaProps = {
 const RUOLO: Record<string, string> = { leader: 'Leader', friend: 'Friend' }
 
 /** Una carta in una squadra: miniatura, ruolo, nome, tipo. */
-export function Carta({ epithet, name, type, class: classe, thumbKey, ruolo, cardId }: CartaProps) {
+export function Carta({ epithet, name, type, class: classe, rarity, thumbKey, ruolo, cardId }: CartaProps) {
   const src = assetUrl(thumbKey)
   const etichetta = ruolo ? RUOLO[ruolo] : undefined
 
@@ -43,10 +44,12 @@ export function Carta({ epithet, name, type, class: classe, thumbKey, ruolo, car
             className="rounded-[var(--raggio)] bg-superficie-2"
           />
         ) : (
-          <div
-            className="w-12 h-12 rounded-[var(--raggio)] bg-superficie-2 border border-linea"
-            aria-hidden
-          />
+          // Senza miniatura (le carte prese dal gioco): il riquadro del
+          // tipo, decorativo come l'immagine. La rarita' in alto, sotto la
+          // banda: in basso la coprirebbe l'etichetta del ruolo qui sotto,
+          // larga quasi quanto il riquadro. In alto anche per i membri, cosi'
+          // in una squadra le rarita' stanno tutte alla stessa altezza.
+          <SegnapostoCarta name={name} type={type} rarity={rarity} size={48} angolo="alto" />
         )}
         {etichetta && (
           <span className="absolute -bottom-1 -right-1 numeri text-[10px] font-semibold px-1 py-px rounded-[var(--raggio)] bg-oro-tenue text-oro border border-oro-linea">

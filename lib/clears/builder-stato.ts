@@ -15,6 +15,8 @@ export type CartaScelta = {
   class: string | null
   /** URL già risolto della miniatura, o null: il client non conosce lo storage */
   thumb: string | null
+  /** solo per il segnaposto di una carta senza miniatura: non va mai nel payload */
+  rarity?: string | null
 }
 
 /** Una ricorrenza dell'evento nel selettore, con la data già scritta. */

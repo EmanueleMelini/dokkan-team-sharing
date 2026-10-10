@@ -8,18 +8,21 @@
 // Pages carica solo i file nuovi o cambiati (confronta gli hash), quindi
 // rilanciarlo dopo un db:assets costa poco. I limiti del piano gratuito
 // sono per deploy: 20.000 file e 25 MiB per file. Oltre, wrangler
-// fallisce a meta': meglio fermarsi prima e dire quale file.
+// fallisce a meta': meglio fermarsi prima e dire quale file. I limiti, e
+// il budget degli artwork animati, stanno in db/import/asset-limits.mjs:
+// gli stessi della CI (db/prod/storage.mjs).
 import { spawnSync } from 'node:child_process'
 import { readdirSync, statSync, writeFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { PAGES_MAX_FILE_BYTES, PAGES_MAX_FILES, avvisiSpazio, kindOfKey, mib as mibOf, rapportoSpazio } from '../db/import/asset-limits.mjs'
 
 const ROOT = join(fileURLToPath(new URL('.', import.meta.url)), '..')
 const DIR = join(ROOT, 'public', 'assets')
 const WRANGLER = 'wrangler@4.148.0'   // fissato: un aggiornamento non cambia il deploy sotto i piedi
 const PROJECT = 'dokkants-assets'
-const MAX_FILES = 20000
-const MAX_BYTES = 25 * 1024 * 1024
+const MAX_FILES = PAGES_MAX_FILES
+const MAX_BYTES = PAGES_MAX_FILE_BYTES
 
 // Le chiavi non cambiano mai di significato (cards/<id>/thumb.webp), quindi
 // un anno di cache e immutable: il browser non ricontrolla. Il prezzo:
@@ -54,6 +57,17 @@ const mib = (b) => (b / 1024 / 1024).toFixed(1)
 console.log(`\n  ${files.length} file (limite ${MAX_FILES}), ${(total / 1e9).toFixed(2)} GB in tutto`)
 console.log(`  il piu' grande: ${relative(DIR, largest.path)}, ${mib(largest.size)} MiB (limite 25 MiB)`)
 console.log(`  _headers scritto: Cache-Control public, max-age=31536000, immutable`)
+
+// per kind, e gli avvisi dall'80% (dei file o del budget degli animati)
+const perTipo = {}
+for (const f of files) {
+  const kind = kindOfKey(relative(DIR, f.path).split('\\').join('/')) ?? 'other'
+  perTipo[kind] ??= { files: 0, bytes: 0 }
+  perTipo[kind].files++; perTipo[kind].bytes += f.size
+}
+const spazio = rapportoSpazio({ files: files.length, perTipo, piuGrande: largest.size })
+for (const r of spazio.righe) console.log(`    ${r.kind.padEnd(20)} ${String(r.files).padStart(6)} file  ${mibOf(r.bytes).padStart(7)} MiB`)
+for (const a of avvisiSpazio(spazio)) console.log(`  attenzione: ${a}`)
 
 if (files.length + 1 > MAX_FILES || big.length) {
   if (big.length) for (const f of big) console.error(`  oltre 25 MiB: ${relative(DIR, f.path)} (${mib(f.size)} MiB)`)

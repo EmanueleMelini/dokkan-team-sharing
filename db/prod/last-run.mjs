@@ -13,6 +13,22 @@ import pg from 'pg'
 import { describeInputs } from './inputs.mjs'
 import { resolveTarget } from './target.mjs'
 
+// L'ultimo giro riuscito che ha importato i dati. Un giro delle sole
+// immagini (update.mjs --images-only, summary.mode 'images') non conta:
+// non legge il datamine, e prenderlo per buono farebbe credere al
+// settimanale che il commit di oggi sia gia' importato. I giri di prima
+// di 'mode' sono tutti completi.
+export const LAST_OK_SQL = `
+  select datamine_commit, summary->>'wiki_sha' as wiki_sha, finished_at
+  from import_run where status = 'ok' and coalesce(summary->>'mode', 'full') = 'full'
+  order by finished_at desc limit 1`
+
+/** @param {import('pg').ClientBase} client */
+export async function lastOkRun(client) {
+  const { rows } = await client.query(LAST_OK_SQL)
+  return rows[0] ?? null
+}
+
 // Pura, per i test.
 export function hasChanged(last, inputs) {
   if (!last) return { changed: true, why: 'no successful import yet' }
@@ -32,12 +48,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   let last = null
   try {
     const { rows: [{ ok }] } = await c.query(`select to_regclass('import_run') is not null as ok`)
-    if (ok) {
-      const { rows } = await c.query(`
-        select datamine_commit, summary->>'wiki_sha' as wiki_sha, finished_at
-        from import_run where status = 'ok' order by finished_at desc limit 1`)
-      last = rows[0] ?? null
-    }
+    if (ok) last = await lastOkRun(c)
   } finally { await c.end() }
   const r = hasChanged(last, describeInputs())
   const when = last?.finished_at ? new Date(last.finished_at).toISOString().slice(0, 10) : ''
