@@ -1207,7 +1207,9 @@ aggiornamenti si leggono gli avvisi di sicurezza prima di cambiare numero.
 - Le pagine: `/login`, `/welcome` (prima entrata: handle e regione),
   `/settings` (handle, artwork, metodi di accesso collegati, scollegare,
   clear nascosti, cancellare l'account). Nell'header, dentro un
-  `<Suspense>`, "Sign in" oppure l'utente.
+  `<Suspense>`, "Sign in" oppure l'utente; sotto i 1024 px le voci vanno nel
+  burger (`components/auth/menu-mobile.tsx`) e fuori resta la campanella,
+  così accanto al marchio c'è posto per il nome intero.
 
 **Le regole, e perché.**
 
@@ -1665,7 +1667,7 @@ Le prove: `npm run test:filtri` (parametri e URL, niente database), i passi "fil
 
 `/users/<handle>` (e `/users/<handle>/p/<n>` dalla pagina 2) è pubblica e in cache come eventi e carte: non legge mai la sessione. Mostra l'handle, la versione del gioco, il mese d'iscrizione, i conteggi (clear pubblicati, voti +1 ricevuti su tutte le versioni dei clear pubblicati, commenti pubblicati su clear pubblicati) e la lista dei clear, 20 per pagina, dal più recente. Niente avatar (la privacy promette che l'immagine del provider non si mostra), niente ruolo, niente email, niente commenti. Ogni riga porta alla pagina del tier dove il clear si vede davvero, calcolata con lo stesso `ORDINE_CLEAR` della lista dell'evento. Il proprietario vede in più "Edit profile" (un'isola che legge `/api/me`). I profili senza clear sono noindex, e i profili non sono nella sitemap.
 
-Ogni handle del sito (clear, commenti, tip, Settings, header) passa da `components/handle-link.tsx`, che costruisce l'URL con `profileHref` di `lib/urls.ts`, senza prefetch. Nell'header l'handle porta al profilo e Settings ha un link suo (l'ingranaggio sul telefono).
+Ogni handle del sito (clear, commenti, tip, Settings, header) passa da `components/handle-link.tsx`, che costruisce l'URL con `profileHref` di `lib/urls.ts`, senza prefetch. Nell'header l'handle porta al profilo e Settings ha un link suo (sul telefono sono due voci del burger).
 
 Le letture stanno in `lib/profiles.ts` (pure) e leggono gli utenti SOLO dalla vista `public_profile`, che ha un elenco chiuso di colonne (un test lo controlla). La vista esclude chi non ha finito /welcome e chi è sospeso (`user_suspended`, 0024): il loro profilo è un 404 come quello di chi non esiste. La cache sta in `lib/cache/profiles.ts`, con i tag `profile:<handle>` (minuscolo), `community` e gli `event:<id>` degli eventi dove l'utente ha clear o commenti, così voti e commenti rinfrescano i conteggi. Al build si prerenderizzano i 20 profili con più clear.
 
@@ -1709,8 +1711,8 @@ Come funziona:
 
 Il sito si installa come app (Android, iPhone e iPad, desktop Chromium). Fase 1 del piano PWA e notifiche; le push del browser (fase 4) hanno una sezione loro, sotto.
 
-- **Manifest**: `app/manifest.ts`, servito statico a `/manifest.webmanifest`. `start_url` è `/events` (non `/`, che è un 307), `short_name` è `dokkants`, colori `#0f111d` (il fondo del marchio: contano solo per lo splash di Android, poi vince il `theme-color` del tema scelto). Le icone PNG stanno in `public/pwa/` e le genera `npm run brand`; non in `app/`, dove Next aggiungerebbe un `<link rel=icon>` per ognuna, e non in `public/assets`, che va su Cloudflare.
-- **iOS**: `metadata.appleWebApp` in `app/layout.tsx` (titolo `dokkants`, barra di stato `default`); l'icona è `app/apple-icon.png`. Nell'app installata il link dell'email si apre in Safari, non nell'app: `/login` e `/settings` lo dicono (solo lì, `components/pwa/avviso-ios.tsx`) e suggeriscono Discord, Google o Twitch.
+- **Manifest**: `app/manifest.ts`, servito statico a `/manifest.webmanifest`. `start_url` è `/events` (non `/`, che è un 307), `name` e `short_name` sono entrambi `Dokkan Team Sharing` (sotto l'icona il launcher lo accorcia se non ci sta), colori `#0f111d` (il fondo del marchio: contano solo per lo splash di Android, poi vince il `theme-color` del tema scelto). Le icone PNG stanno in `public/pwa/` e le genera `npm run brand`; non in `app/`, dove Next aggiungerebbe un `<link rel=icon>` per ognuna, e non in `public/assets`, che va su Cloudflare.
+- **iOS**: `metadata.appleWebApp` in `app/layout.tsx` (titolo `Dokkan Team Sharing`, barra di stato `default`); l'icona è `app/apple-icon.png`. Nell'app installata il link dell'email si apre in Safari, non nell'app: `/login` e `/settings` lo dicono (solo lì, `components/pwa/avviso-ios.tsx`) e suggeriscono Discord, Google o Twitch.
 - **Service worker**: `public/sw.js`, scritto a mano, URL fisso `/sw.js`, scope `/`. Fa due cose: se una navigazione GET dello stesso sito non raggiunge la rete, mostra `public/offline.html`, e mostra le push del browser (fase 4, sotto). Non intercetta `/api/` (callback OAuth e magic link comprese), `/admin`, le richieste non GET, le fetch del router (RSC), i chunk e le immagini. **Non mette in cache nient'altro**: né pagine, né chunk, né API, né immagini. Le pagine per utente non finiscono mai su un dispositivo, e dopo un deploy non resta niente di vecchio. Niente navigation preload: per una navigazione non intercettata (una callback OAuth) il browser potrebbe fare la richiesta due volte.
 - **Registrazione**: `instrumentation-client.ts`, solo nei build di produzione, dopo il `load` e quando il browser è libero (`lib/pwa/registra.ts`). In `next dev` non si registra, e se trova il nostro worker (per esempio lasciato da un `next start` di prova su localhost:3000) lo toglie con le sue cache `dts-*`.
 - **Versione**: `NEXT_PUBLIC_SW_VERSION` in `next.config.ts` (il commit su Vercel, un valore nuovo a ogni build in locale) va nell'URL, `/sw.js?v=...`. A ogni deploy si installa un worker nuovo che riprende la pagina offline e cancella le cache `dts-*` delle versioni prima (`skipWaiting` e `clients.claim`, senza chiedere niente). `sw.js` e `offline.html` hanno `Cache-Control: public, max-age=0, must-revalidate` (`next.config.ts`).
@@ -1723,7 +1725,7 @@ Prove:
 
 - `npm run test:pwa` (anche il passo "PWA" di `npm run db:test`, senza database): `public/sw.js` vero in `node:vm` con `self`, `caches` e `fetch` finti. Controlla quali richieste intercetta, la pagina offline senza rete, install e activate, che con la rete non scriva niente in cache; poi la pagina offline uguale a quella generata e senza risorse esterne, il manifest con le misure vere delle icone, gli header di `next.config.ts`, il riconoscimento di iPhone, iPad, Android e desktop.
 - `npm run test:smoke`: manifest (content type e campi), icone (dimensioni dall'IHDR), header di `/sw.js`, `/offline.html` con noindex, `rel="manifest"` nell'HTML, l'invito assente dall'HTML del server.
-- A mano su un build di produzione (`next build && next start`, perché in dev il worker non si registra): DevTools, Application, Manifest (Installability senza errori) e Service workers; Cache storage deve avere solo `dts-offline-<versione>` con `/offline.html`. Fermando il server, una navigazione mostra la pagina offline. Lighthouse 12 non ha più la categoria PWA. Su un telefono vero: installazione su Android (splash e icona maskable) e Aggiungi a Home su iPhone (titolo `dokkants`).
+- A mano su un build di produzione (`next build && next start`, perché in dev il worker non si registra): DevTools, Application, Manifest (Installability senza errori) e Service workers; Cache storage deve avere solo `dts-offline-<versione>` con `/offline.html`. Fermando il server, una navigazione mostra la pagina offline. Lighthouse 12 non ha più la categoria PWA. Su un telefono vero: installazione su Android (splash e icona maskable) e Aggiungi a Home su iPhone (titolo `Dokkan Team Sharing`).
 
 ## Notifiche (migrazione 0028)
 
@@ -1995,9 +1997,8 @@ può fare, e poi il lavoro sui dati e sulle pagine.
      deploy.
    - Con i dati veri, controllare con EXPLAIN che la lista filtrata usi
      l'indice `clear_by_tier`: sui dati di prova il planner non lo sceglie.
-   - A 375 px l'header è stretto (titolo e Sign out vanno a capo, senza
-     scroll orizzontale); i menu Leader e Category dei filtri tagliano i
-     nomi lunghi oltre 16rem.
+   - I menu Leader e Category dei filtri tagliano i nomi lunghi oltre
+     16rem.
    - Il marchio: prima del lancio, una ricerca di marchi e per immagini
      (Google Immagini, icone di Chrome e Google Foto) per escludere forme
      troppo vicine.

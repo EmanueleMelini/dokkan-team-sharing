@@ -20,9 +20,10 @@ export const metadata: Metadata = {
   title: { default: 'Dokkan Team Sharing', template: '%s · Dokkan Team Sharing' },
   description:
     'For every Dokkan Battle event, the teams that actually cleared it, with their rotations and proof.',
-  // L'app aggiunta alla Home di iOS: il nome sotto l'icona e la barra di
-  // stato. L'icona e' app/apple-icon.png, il manifest e' app/manifest.ts.
-  appleWebApp: { title: 'dokkants', statusBarStyle: 'default' },
+  // L'app aggiunta alla Home di iOS: il nome sotto l'icona (iOS lo accorcia
+  // se non ci sta) e la barra di stato. L'icona e' app/apple-icon.png, il
+  // manifest e' app/manifest.ts.
+  appleWebApp: { title: 'Dokkan Team Sharing', statusBarStyle: 'default' },
 }
 
 // La barra del browser mobile con System. Con un tema scelto lo script del
@@ -56,21 +57,21 @@ export default function RootLayout({ children }: LayoutProps<'/'>) {
         {/* Chi guarda lo sa solo il browser (/api/me): il layout e le pagine
             pubbliche restano uguali per tutti, e quindi in cache. */}
         <ViewerProvider>
-        <header className="border-b border-linea bg-superficie">
-          <div className="mx-auto max-w-6xl px-5 h-14 flex items-center gap-6">
-            <Link href="/events" className="flex items-center gap-2 font-semibold tracking-tight text-inchiostro whitespace-nowrap">
+        {/* relative: il pannello del burger (MenuMobile) si apre sotto, largo quanto l'header */}
+        <header className="relative border-b border-linea bg-superficie">
+          <div className="mx-auto max-w-6xl px-5 h-14 flex items-center gap-3 lg:gap-6">
+            {/* Il nome intero anche sul telefono: le voci li' vanno nel burger.
+                truncate solo come rete sotto i 320px. */}
+            <Link href="/events" className="flex min-w-0 items-center gap-2 font-semibold tracking-tight text-inchiostro whitespace-nowrap">
               <Marchio className="size-6 shrink-0" />
-              {/* Sotto i 640px il nome intero va su due righe accanto al menu:
-                  si vede "dokkants", e il nome resta per i lettori di schermo */}
-              <span className="max-sm:sr-only">Dokkan Team Sharing</span>
-              <span aria-hidden="true" className="sm:hidden font-mono font-medium">dokkants</span>
+              <span className="truncate">Dokkan Team Sharing</span>
             </Link>
-            <nav className="text-sm">
+            <nav className="text-sm max-lg:hidden">
               <Link href="/events" className="text-tenue hover:text-inchiostro transition-colors">
                 Events
               </Link>
             </nav>
-            <div className="ml-auto">
+            <div className="ml-auto shrink-0">
               <UserMenu />
             </div>
           </div>

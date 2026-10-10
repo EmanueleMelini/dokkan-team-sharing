@@ -303,7 +303,7 @@ campi=$(node -e '
   console.log([m.id, m.short_name, m.start_url, m.scope, m.display, png].join("|"))
   for (const i of m.icons || []) if (i.type === "image/png") console.error(i.src + " " + i.sizes)
 ' "$TMP/manifest" 2>"$TMP/icone") || campi=''
-[ "$campi" = '/|dokkants|/events|/|standalone|any 192x192,any 512x512,maskable 192x192,maskable 512x512' ] \
+[ "$campi" = '/|Dokkan Team Sharing|/events|/|standalone|any 192x192,any 512x512,maskable 192x192,maskable 512x512' ] \
   && pass "manifest: id, short_name, start_url, scope, display, icone" || fail "manifest: $campi"
 while read -r src misura; do
   codice=$(curl -s -o "$TMP/icona" -w '%{http_code} %{content_type}' --max-time 60 "$BASE$src")
@@ -326,9 +326,9 @@ grep -qiE '^HTTP/[0-9.]+ 200' <<<"$intestazioni" && grep -qi '^content-type: tex
   && grep -qi '^x-robots-tag: noindex' <<<"$intestazioni" && grep -qF "You're offline" "$TMP/html" \
   && pass "/offline.html (200, html, noindex)" || fail "/offline.html: $(head -1 <<<"$intestazioni")"
 prendi /events
-grep -q '<link rel="manifest" href="/manifest.webmanifest"' "$TMP/html" && grep -q 'name="apple-mobile-web-app-title" content="dokkants"' "$TMP/html" \
+grep -q '<link rel="manifest" href="/manifest.webmanifest"' "$TMP/html" && grep -q 'name="apple-mobile-web-app-title" content="Dokkan Team Sharing"' "$TMP/html" \
   && pass "/events con il manifest e il titolo per iOS" || fail "/events senza rel=manifest o apple-mobile-web-app-title"
-grep -qE 'Install dokkants|Add to Home Screen' "$TMP/testo" && fail "l'invito a installare e' nell'HTML del server" \
+grep -qE 'Install Dokkan Team Sharing|Add to Home Screen' "$TMP/testo" && fail "l'invito a installare e' nell'HTML del server" \
   || pass "l'invito a installare non e' nell'HTML del server"
 
 # Contro next start o Vercel (non next dev): le pagine pubbliche escono

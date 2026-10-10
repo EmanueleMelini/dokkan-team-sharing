@@ -187,7 +187,7 @@ console.log('app/manifest.ts')
 {
   const m = manifest()
   vale('id, nomi, start_url, scope, display', [m.id, m.name, m.short_name, m.start_url, m.scope, m.display],
-    ['/', 'Dokkan Team Sharing', 'dokkants', '/events', '/', 'standalone'])
+    ['/', 'Dokkan Team Sharing', 'Dokkan Team Sharing', '/events', '/', 'standalone'])
   vale('colori', [m.theme_color, m.background_color], ['#0f111d', '#0f111d'])
   vale('launch_handler', m.launch_handler, { client_mode: ['navigate-existing', 'auto'] })
   vale('shortcuts', m.shortcuts?.map((s) => s.url), ['/events', '/settings'])

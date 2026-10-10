@@ -44,11 +44,11 @@ export function InvitoInstalla() {
           <Marchio className="size-8 shrink-0" />
           {android ? (
             <p className="flex-1 min-w-0 text-[13px] leading-snug text-testo">
-              <span className="font-medium text-inchiostro">Install dokkants</span> for quick access from your home screen.
+              <span className="font-medium text-inchiostro">Install Dokkan Team Sharing</span> for quick access from your home screen.
             </p>
           ) : (
             <p className="flex-1 min-w-0 text-[13px] leading-snug text-testo">
-              <span className="font-medium text-inchiostro">Install dokkants:</span> tap Share{' '}
+              <span className="font-medium text-inchiostro">Install Dokkan Team Sharing:</span> tap Share{' '}
               <Export size={15} weight="bold" aria-hidden className="inline-block align-[-2px] text-inchiostro" />
               , then Add to Home Screen.
             </p>

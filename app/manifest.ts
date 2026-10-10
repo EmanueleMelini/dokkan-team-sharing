@@ -13,7 +13,8 @@ export default function manifest(): MetadataRoute.Manifest {
   return {
     id: '/',
     name: 'Dokkan Team Sharing',
-    short_name: 'dokkants',
+    // Il nome del sito anche sotto l'icona: il launcher lo accorcia se non ci sta
+    short_name: 'Dokkan Team Sharing',
     description:
       'For every Dokkan Battle event, the teams that actually cleared it, with their rotations and proof.',
     lang: 'en',

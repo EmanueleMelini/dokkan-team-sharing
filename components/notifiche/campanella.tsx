@@ -19,16 +19,19 @@ export function Campanella({ unread, className }: { unread: boolean; className?:
       href={NOTIFICATIONS_PATH}
       prefetch={false}
       aria-label={unread ? 'Notifications, new' : 'Notifications'}
-      className={`relative inline-flex items-center ${className ?? ''}`}
+      className={`inline-flex items-center justify-center ${className ?? ''}`}
     >
-      <Bell size={16} weight="bold" aria-hidden />
-      {unread && (
-        <span
-          aria-hidden="true"
-          data-pallino=""
-          className="absolute -top-0.5 -right-0.5 size-2 rounded-full bg-oro ring-2 ring-sfondo"
-        />
-      )}
+      {/* Il pallino sta sull'icona, anche quando il link e' piu' grande (il bersaglio sul telefono) */}
+      <span className="relative inline-flex">
+        <Bell size={16} weight="bold" aria-hidden />
+        {unread && (
+          <span
+            aria-hidden="true"
+            data-pallino=""
+            className="absolute -top-0.5 -right-0.5 size-2 rounded-full bg-oro ring-2 ring-sfondo"
+          />
+        )}
+      </span>
     </Link>
   )
 }
