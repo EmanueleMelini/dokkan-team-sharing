@@ -285,7 +285,7 @@ app/                          Next.js 16, App Router
   admin/                      l'area dei moderatori: coda, nascosti, utenti, registro (404 per chi non e' admin)
   privacy/, terms/            le pagine legali (testi in lib/legale.ts)
   api/                        auth/ (better-auth), me/ (chi guarda), cards/ e equipment/ (i picker),
-                              revalidate/ (dopo un import), cron/purge/ (la pulizia giornaliera)
+                              revalidate/ (dopo un import), cron/purge/ (la pulizia giornaliera), cron/digest/ (il digest email)
   robots.ts, sitemap.ts       cosa indicizzare: eventi e carte, mai le viste filtrate
   icon.svg, favicon.ico, apple-icon.png, opengraph-image.png, twitter-image.png
                               le icone e l'anteprima dei link, file statici generati da scripts/brand/
@@ -359,7 +359,7 @@ test/
 .github/workflows/weekly-data.yml   l'aggiornamento settimanale automatico
 scripts/assets-deploy.mjs     public/assets su Cloudflare Pages, con _headers (assets:deploy)
 scripts/brand/                il marchio: geometria, SVG sorgente (svg/) e il generatore delle icone (npm run brand)
-vercel.json                   regione fra1, il cron della pulizia giornaliera, anteprime saltate (ignoreCommand)
+vercel.json                   regione fra1, i cron (pulizia alle 4 UTC, digest email alle 17), anteprime saltate (ignoreCommand)
 public/assets/                le immagini ospitate da noi (non versionate)
 backups/                      le copie di prod:backup (non versionate)
 docs/                         l'analisi competitiva e le decisioni di progetto
@@ -1745,12 +1745,30 @@ Come funziona:
 - **`/notifications`** (per utente come `/settings`: `instant = false`, noindex, esclusa da `robots.txt`): le ultime 50, divise in New ed Earlier. Aprirla segna lette quelle mostrate (`mark_notifications_read`), e il pallino si spegne quando non resta nessuna non letta; `components/notifiche/segna-viste.tsx` lo spegne anche nell'header, che è nel layout e non rilegge `/api/me` a ogni navigazione. Il link della campanella ha `prefetch={false}`: un prefetch segnerebbe lette le notifiche senza che l'utente le abbia viste.
 - **`/notifications/<id>`** (`app/notifications/[id]/route.ts`) è l'unico link di una notifica, anche per push ed email: segna letta quella sola e fa un 307 all'href calcolato in quel momento (`lib/notify/vista.ts`, con `eventHref` + `clearAnchor`, `editClearHref` per un clear nascosto, `/settings`, `/admin`). Un id sconosciuto o di un altro torna alla lista; senza sessione si passa da `/login?next=`. Le righe della lista sono `<a>` semplici, non `<Link>`, perché la rotta scrive.
 - **I tipi** stanno in `lib/notify/kinds.ts` e devono coincidere con `notification_kinds()` e con i check delle tabelle `notification` e `notification_pref`: un tipo nuovo va aggiunto con una migrazione e nei testi di `lib/notify/vista.ts`.
-- **Preferenze**: `notification_pref(user_id, kind, channel)` e `set_notification_pref` ci sono già, ma le usano le fasi 3 e 4 (le righe Browser ed Email di Settings arriveranno con loro). Per ora la sezione Notifications di Settings spiega solo cosa arriva nella lista.
+- **Preferenze**: `notification_pref(user_id, kind, channel)` e `set_notification_pref` ci sono già, per i canali per tipo. Il digest email (fase 3, sotto) ha una casella sola e non le usa; la disiscrizione dal link toglie comunque le righe con canale `email`. Le righe Browser di Settings arriveranno con la fase 4.
 - **Conservazione**: il cron giornaliero (`/api/cron/purge`) chiama `purge_notifications()`: le lette dopo 30 giorni dalla lettura, le non lette dopo 90 senza novità. Gli stessi giorni sono in `lib/legale.ts` per la privacy. Cancellare l'account porta via le sue notifiche e preferenze; cancellare un clear, un commento o una tip porta via le notifiche che li riguardano.
 
 Prove: il passo "notifiche" di `npm run db:test` (`db/test/notifiche.test.mts`: trigger, destinatari, accorpamento, `dts.silent`, cascate, conservazione) e il passo "notifiche (app)" (`db/test/notifiche-app.test.mts`: i tipi uguali alla migrazione, il pallino, href e testi su righe vere senza il testo dei post, le guardie su robots, pagina, rotta e menu). `npm run test:smoke` controlla che `/notifications` senza sessione porti a `/login` e che il pallino non sia nell'HTML delle pagine in cache.
 
 In produzione la migrazione 0028 deve arrivare **prima** del codice: la sessione di better-auth legge `notif_last_at` e `notif_seen_at`, e senza le colonne l'accesso si rompe.
+
+## Digest email (migrazione 0029)
+
+Fase 3 del piano PWA e notifiche. L'email è **solo un digest giornaliero**, opt-in e spento per difetto: nessuna email immediata, nemmeno per la moderazione (si vede già nel sito e nel banner di sospensione). Lo decide il proprietario, come le regole sotto.
+
+- **La casella**: "Daily email digest" nella sezione Notifications di Settings (`components/notifiche/digest-email.tsx`, Server Action `setEmailDigestAction` in `lib/notify/actions.ts`, che chiama `set_email_digest`). Si accende solo con l'email verificata; spegnere si può sempre. Il consenso è `app_user.notify_digest_on_at` (null = spento): una colonna sola, non righe di `notification_pref`, perché voti e Helpful non sono tipi di notifica.
+- **Cosa contiene** (`digest_due` in SQL, testi in `lib/notify/digest.ts`): le notifiche non lette toccate dall'ultimo digest, più "+N upvotes" sui clear e "+N players found your tips helpful", senza dire chi. La moderazione è generica ("A moderator reviewed one of your posts", "There is an update about your account"), al massimo con l'evento: mai il testo dei post, il motivo della sospensione o la nota del moderatore. Ogni riga porta a `/notifications/<id>`. Un digest vuoto non parte. Chi è sospeso lo riceve lo stesso, come le notifiche nel sito.
+- **Il cron**: `GET /api/cron/digest` (`vercel.json`, alle 17 UTC, su Hobby fino a 59 minuti dopo), con `Authorization: Bearer $CRON_SECRET` come la pulizia. Un giro (`lib/notify/run.ts`): se c'è la pausa si ferma; prende al massimo 40 utenti da `digest_due` (prima gli admin, poi chi ha moderazione, poi il digest più vecchio); chiede il budget per tutto il gruppo; manda i primi k con **una sola** `resend.batch.send`; segna con `digest_mark_sent` solo chi è partito. Chi non entra parte domani, con tutto quello che si è perso. Rilanciato lo stesso giorno non manda niente.
+- **Idempotenza**: uno al giorno per utente lo garantisce `digest_mark_sent` (`notify_digest_day`). La Idempotency-Key di Resend vale per la richiesta intera, non per la singola email della batch: è `digest:<giorno>:<hash degli utenti>`. Se l'invio riesce e il segno no, il giro rilanciato lo stesso giorno riprende le stesse persone e la stessa chiave, e Resend non rimanda.
+- **Il budget** (Resend Free: 100 al giorno e 3000 al mese, condivisi con i magic link): `email_quota` conta per giorno e tipo, senza indirizzi. I magic link si contano **dopo** l'invio (`countAuthEmail` in `lib/notify/budget.ts`, che `lib/auth/auth.ts` passa al mittente di `lib/auth/email.ts`) e non si rifiutano né si ritardano mai: un errore del contatore finisce nel log, il login va avanti. Il digest passa solo sotto 40 al giorno e 1200 al mese, dentro i totali di 60 e 2400. Al primo 429 o quota finita di Resend `notify_pause` lo ferma per 24 ore; il login no.
+- **Disiscrizione**: ogni digest ha `List-Unsubscribe` e `List-Unsubscribe-Post` (RFC 8058). Il one-click è `POST /api/notifications/unsubscribe?t=<token>`, senza sessione né cookie; un GET su quell'URL porta alla pagina. `app/notifications/unsubscribe/page.tsx` (noindex, `Referrer-Policy: no-referrer`) col GET mostra solo un bottone: gli antivirus che aprono i link non disiscrivono nessuno. Il token (`lib/notify/token.ts`) è `v1.<user_id>.<notify_token_v>.<hmac>`; può solo spegnere.
+- **Nessuna variabile nuova obbligatoria.** La chiave dei token si deriva da `BETTER_AUTH_SECRET` con un HMAC e un'etichetta fissa: cambiare quel segreto invalida i link vecchi (si spegne comunque da Settings). Per revocare i link di un utente solo, `notify_rotate_token` (lo fa da sé il database quando cambia l'email). Il mittente è `EMAIL_FROM`; `EMAIL_NOTIFY_FROM`, facoltativa, lo cambia per il solo digest (per esempio `Dokkan Team Sharing <notify@dokkants.emanuelemelini.dev>`, stesso dominio verificato).
+- **In sviluppo** senza `RESEND_API_KEY` i digest non partono: finiscono in `dokkan-digests.log` nella cartella temporanea del sistema, accanto a `dokkan-magic-links.log`, con oggetto, header e testo. Per provare: accendi la casella, fatti commentare un clear da un altro utente, poi `curl -H "Authorization: Bearer $CRON_SECRET" http://localhost:3000/api/cron/digest`.
+- **Conservazione**: `purge_email_quota()` nel cron della pulizia, i contatori dopo 40 giorni (gli stessi giorni in `lib/legale.ts`). La privacy dice che anche il digest passa da Resend, che il consenso si revoca dal link o da Settings, e cosa si conta.
+
+Prove: il passo "digest email (SQL)" di `npm run db:test` (`db/test/digest.test.mts`: budget, selezione, contenuto, uno al giorno, disiscrizione) e il passo "digest email (app)" (`db/test/digest-app.test.mts`: firma e revoca dei token, testi e header, il mittente su file, il conteggio dei login che non fallisce mai, la rotta del cron con un mittente finto, priorità, idempotenza, pausa, la POST one-click senza cookie, la pagina e la casella).
+
+In produzione la 0029 deve arrivare **prima** del codice: il conteggio dei login la chiama (senza, finisce solo nel log), il cron e Settings no.
 
 ## La produzione: Vercel, Supabase, Cloudflare
 

@@ -9,8 +9,8 @@ export const metadata: Metadata = {
 }
 
 // Ogni frase qui sotto descrive quello che il codice fa davvero (tabelle
-// app_user, auth_*, clear_*, report, moderation_action, notification;
-// lib/auth/config.ts):
+// app_user, auth_*, clear_*, report, moderation_action, notification,
+// email_quota; lib/auth/config.ts, lib/notify/digest.ts):
 // se cambia il codice, va cambiata anche questa pagina.
 export default function Privacy() {
   const mail = `mailto:${LEGALE.contatto}`
@@ -79,6 +79,22 @@ export default function Privacy() {
           basis as your account.
         </li>
         <li>
+          <strong>Email digest.</strong> Off unless you turn it on in Settings. If you do, the site
+          stores when you agreed and when it last sent you a digest, and once a day at most, only
+          when something is new, it emails your account&apos;s address a summary of your unread
+          notifications and how many upvotes and Helpful votes your posts got, without saying who
+          gave them. Moderation is only mentioned in general terms, and the digest never copies the
+          text of a post. Your consent is the legal basis (GDPR Art. 6(1)(a)). You can withdraw it
+          at any time with the unsubscribe link in every digest or in Settings; this stops future
+          digests and does not affect the ones already sent.
+        </li>
+        <li>
+          <strong>Email counts.</strong> To stay within the email provider&apos;s daily and monthly
+          limits, the site counts how many sign-in emails and digests it sends each day. The counts
+          are just numbers per day: no addresses and no accounts (legitimate interest, GDPR Art.
+          6(1)(f)).
+        </li>
+        <li>
           <strong>Security.</strong> While you are signed in, your session is stored with the IP
           address and browser identifier it started from, and short-lived counters by IP address
           and email address limit sign-in attempts and sign-in emails. This protects the site and
@@ -108,7 +124,7 @@ export default function Privacy() {
         <li>Vercel (hosting of the site)</li>
         <li>Supabase (the database)</li>
         <li>Cloudflare (domain and card images)</li>
-        <li>Resend (sending sign-in emails)</li>
+        <li>Resend (sending sign-in emails and, if you turn it on, the daily digest)</li>
       </ul>
       <p>
         The provider you sign in with (Discord, Google or Twitch) handles that step under its own
@@ -126,6 +142,10 @@ export default function Privacy() {
         </li>
         <li>Sessions: 30 days after your last visit, then removed.</li>
         <li>Sign-in links: 10 minutes. Sign-in counters: 1 hour. The sign-in email log: 1 day.</li>
+        <li>
+          The daily email counts: {LEGALE.giorniContatoriEmail} days. Your digest consent: until you
+          turn the digest off. The time of the last digest: as long as your account exists.
+        </li>
         <li>
           Reports: until a moderator handles them, then {LEGALE.giorniSegnalazioni} more days. They
           are deleted earlier if you delete your account, or when the reported post is deleted.

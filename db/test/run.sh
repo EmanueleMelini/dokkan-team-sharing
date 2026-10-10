@@ -16,6 +16,8 @@
 #   letture di /admin, il lato di chi usa il sito) -> tip (0025)
 #   -> profili pubblici e cambio di handle (0026) -> temi (0027)
 #   -> notifiche nel sito (0028) e il loro lato app (lib/notify)
+#   -> digest email (0029: budget, selezione, disiscrizione) e il suo lato
+#   app (lib/notify: token, testi, cron, one-click)
 #   -> carte solo nel gioco (load-game-cards) -> skill delle carte (0022)
 #   e la pagina della carta -> filtri dei clear
 #   -> finestre degli eventi dal
@@ -188,6 +190,25 @@ passo "notifiche" verifica node_ts db/test/notifiche.test.mts
 # queries.ts, i giorni della privacy e le guardie su robots, pagina, rotta
 # e menu. Crea solo utenti notifapp+ e li toglie.
 passo "notifiche (app)" verifica node_ts db/test/notifiche-app.test.mts
+# Il digest email (0029), lato SQL: il budget (i login contati e mai
+# rifiutati, i tetti di notify nel giorno e nel mese dentro i totali, la
+# pausa di 24 ore dopo un 429), digest_due (chi lo riceve, i +N di voti e
+# Helpful, la moderazione generica e mai testi, motivi o note, niente
+# digest vuoti, la priorita' e il tetto per giro), uno al giorno con
+# digest_mark_sent, la casella di Settings e la disiscrizione dal link
+# senza sessione. Il budget gira in una transazione annullata. Crea solo
+# utenti digesttest+ e li toglie.
+passo "digest email (SQL)" verifica node_ts db/test/digest.test.mts
+# Il lato app del digest (lib/notify): la firma dei link di disiscrizione
+# derivata da BETTER_AUTH_SECRET e la revoca, i testi con i +N e la
+# moderazione generica, gli header RFC 8058, il mittente su file (mai in
+# produzione), il conteggio dei login che non fallisce e non trattiene,
+# un giro con un mittente finto (priorita', budget, pausa, idempotenza),
+# le rotte vere /api/cron/digest e il one-click senza cookie, e le guardie
+# su pagina, Settings, vercel.json e privacy. Nessuna email parte: niente
+# RESEND_API_KEY, i log in una cartella temporanea. Crea solo utenti
+# digestapp+ e li toglie.
+passo "digest email (app)" verifica node_ts db/test/digest-app.test.mts
 # Rilancia load-game-cards e load-datamine, e prova il passaggio al wiki
 # con una pagina finta su 1034200 (poi rimette la carta com'era).
 passo "carte dal gioco" verifica node_ts db/test/game-cards.test.mts

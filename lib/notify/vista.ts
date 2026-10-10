@@ -52,8 +52,11 @@ export function notificationHref(v: NotificationRow): string {
 
 const COSA: Record<string, string> = { clear: 'clear', comment: 'comment', tip: 'tip' }
 
+/** I campi che servono a dire dove sta il contenuto: li hanno anche le righe del digest. */
+export type NotificationPlaceFields = Pick<NotificationRow, 'event_id' | 'event_name' | 'stage_seq' | 'stage_name' | 'difficulty'>
+
 /** "Event name, Stage 3, Super 2": dove sta il contenuto, o null. */
-export function notificationPlace(v: NotificationRow): string | null {
+export function notificationPlace(v: NotificationPlaceFields): string | null {
   if (!v.event_name && !v.event_id) return null
   const evento = v.event_name ?? `Event ${v.event_id}`
   if (!v.difficulty) return evento

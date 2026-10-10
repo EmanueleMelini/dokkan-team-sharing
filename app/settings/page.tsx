@@ -4,6 +4,7 @@ import { ArtPreference } from '@/components/auth/art-preference'
 import { ChangeHandle } from '@/components/auth/change-handle'
 import { HandleLink } from '@/components/handle-link'
 import { DeleteAccount } from '@/components/auth/delete-account'
+import { DigestEmail } from '@/components/notifiche/digest-email'
 import { BannerSospeso } from '@/components/moderation/banner-sospeso'
 import { LinkProvider } from '@/components/auth/link-provider'
 import { ProviderLogo } from '@/components/auth/provider-logo'
@@ -20,6 +21,7 @@ import { hiddenClearsOf } from '@/lib/clears'
 import { nextHandleChange } from '@/lib/auth/handle-change'
 import { handleChangedAt } from '@/lib/auth/handle-state'
 import { soloGiorno } from '@/lib/date'
+import { emailDigestOn } from '@/lib/notify/queries'
 import { editClearHref } from '@/lib/urls'
 
 export const metadata: Metadata = { title: 'Settings', robots: { index: false } }
@@ -37,8 +39,9 @@ export default async function SettingsPage({ searchParams }: PageProps<'/setting
   const sp = await searchParams
   // fresh decide solo cosa mostrare al clic: lo ricontrollano le Server
   // Action e l'hook di /link-social, perche' la pagina puo' restare aperta.
-  const [linked, { email, verified }, fresh, nascosti, cambiato] = await Promise.all([
+  const [linked, { email, verified }, fresh, nascosti, cambiato, digest] = await Promise.all([
     linkedProviderIds(), accountEmail(), sessionIsFresh(), hiddenClearsOf(user.id), handleChangedAt(user.id),
+    emailDigestOn(user.id),
   ])
   const prossimoCambio = nextHandleChange(cambiato)
   const error = authErrorMessage(one(sp.error))
@@ -97,8 +100,8 @@ export default async function SettingsPage({ searchParams }: PageProps<'/setting
         </div>
       </section>
 
-      {/* Cosa arriva nella lista. Le righe Browser ed Email (push e digest)
-          arrivano con le fasi 3 e 4, insieme a notification_pref. */}
+      {/* Cosa arriva nella lista, poi il digest email (0029, spento per
+          difetto). Le push del browser arrivano con la fase 4. */}
       <section className="mt-8 max-w-lg" aria-labelledby="notifications">
         <h2 id="notifications" className="scroll-mt-6 text-[13px] font-semibold text-inchiostro">
           Notifications
@@ -123,6 +126,10 @@ export default async function SettingsPage({ searchParams }: PageProps<'/setting
             </li>
           )}
         </ul>
+        <h3 className="mt-5 text-[12px] font-medium text-inchiostro">Email</h3>
+        <div className="mt-3 border border-linea rounded-[var(--raggio)] bg-superficie px-4 py-3">
+          <DigestEmail on={digest} verified={verified} email={email} admin={user.role === 'admin'} />
+        </div>
       </section>
 
       <section className="mt-8 max-w-lg" aria-labelledby="accounts">

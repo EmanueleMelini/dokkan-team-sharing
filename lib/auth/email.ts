@@ -35,7 +35,18 @@ function html(url: string) {
  * del server e in un file in tmpdir. Il file non si scrive MAI in
  * produzione: chi lo leggesse entrerebbe come chiunque.
  */
-export function createMagicLinkSender(env: AuthEnv): MagicLinkSender {
+export function createMagicLinkSender(env: AuthEnv, { countSend }: { countSend?: () => Promise<void> } = {}): MagicLinkSender {
+  // Il conteggio nel budget del digest (0029, lib/notify/budget.ts) dopo
+  // l'invio, mai prima: un login non aspetta il contatore e non fallisce
+  // per lui (countAuthEmail non lancia). Si conta anche il file di
+  // sviluppo, cosi' in locale il budget si comporta come in produzione.
+  const conta = async () => {
+    try {
+      await countSend?.()
+    } catch {
+      // gia' gestito da countAuthEmail; qui per qualsiasi altro contatore
+    }
+  }
   if (env.resendApiKey) {
     const resend = new Resend(env.resendApiKey)
     return async ({ email, url }) => {
@@ -48,6 +59,7 @@ export function createMagicLinkSender(env: AuthEnv): MagicLinkSender {
       })
       // Il messaggio di Resend, non l'indirizzo: nel log non serve.
       if (error) throw new Error(`Resend: ${error.name}: ${error.message}`)
+      await conta()
     }
   }
   if (env.production) {
@@ -61,5 +73,6 @@ export function createMagicLinkSender(env: AuthEnv): MagicLinkSender {
   return async ({ email, url }) => {
     console.log(`\n[auth] magic link per ${email}:\n  ${url}\n`)
     await appendFile(DEV_MAGIC_LINK_LOG, `${new Date().toISOString()} ${email} ${url}\n`, { mode: 0o600 })
+    await conta()
   }
 }

@@ -16,6 +16,8 @@ export const LEGALE = {
   giorniNotificheLette: 30,
   /** dopo quanti giorni senza novita' si cancella una notifica mai letta (purge_notifications, 0028) */
   giorniNotificheNonLette: 90,
+  /** dopo quanti giorni si cancellano i contatori giornalieri delle email (purge_email_quota, 0029) */
+  giorniContatoriEmail: 40,
 } as const
 
 /**

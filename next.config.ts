@@ -65,6 +65,18 @@ const pwaHeaders = [
   },
 ]
 
+// La disiscrizione dal digest (0029), la pagina e il one-click: il token
+// sta nella query string, quindi niente Referer verso nessun link. Dopo
+// securityHeaders: a parita' di chiave vince l'ultima regola (gli header
+// di next.config vincono anche su quelli della risposta della rotta).
+const unsubscribeHeaders = ['/notifications/unsubscribe', '/api/notifications/unsubscribe'].map((source) => ({
+  source,
+  headers: [
+    { key: 'Referrer-Policy', value: 'no-referrer' },
+    { key: 'X-Robots-Tag', value: 'noindex' },
+  ],
+}))
+
 // La versione del service worker: un ?v= diverso a ogni deploy fa
 // installare un worker nuovo, che riprende la pagina offline aggiornata e
 // cancella le cache della versione prima. Su Vercel e' il commit; in locale
@@ -86,7 +98,7 @@ const nextConfig: NextConfig = {
     return [{ source: '/', destination: '/events', permanent: false }]
   },
   async headers() {
-    return [{ source: '/:path*', headers: securityHeaders }, ...pwaHeaders]
+    return [{ source: '/:path*', headers: securityHeaders }, ...pwaHeaders, ...unsubscribeHeaders]
   },
 }
 

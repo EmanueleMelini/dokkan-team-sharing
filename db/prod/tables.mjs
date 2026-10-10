@@ -103,6 +103,10 @@ export const TABLES = {
   // trigger delle scritture della community e Settings, mai un import
   notification: { class: 'user' },
   notification_pref: { class: 'user' },
+  // il digest email (0029): i contatori delle email partite e la pausa
+  // dopo un 429 di Resend. Li scrivono il login e il cron, mai un import
+  email_quota: { class: 'user' },
+  notify_state: { class: 'user' },
 
   // ---- degli script
   schema_migrations: { class: 'system' },

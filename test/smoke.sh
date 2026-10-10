@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # npm run test:smoke: una prova di fumo sul sito che gira gia'.
 #
-# Solo richieste GET: non scrive niente, quindi si puo' lanciare contro il
+# Solo richieste GET (piu' una POST di disiscrizione con un token falso, che
+# si ferma prima del database): non scrive niente, quindi si puo' lanciare contro il
 # server di sviluppo (che legge dokkan_dev) senza toccarne i dati. Non fa
 # parte di db:test: quello prova le query, questo che le pagine rispondano
 # con il codice giusto anche agli URL brutti, invece di un 500.
@@ -210,6 +211,27 @@ rimanda "Settings senza sessione porta a /login" /settings 307 '/login?next=%2Fs
 rimanda "Notifications senza sessione porta a /login" /notifications 307 '/login?next=%2Fnotifications'
 rimanda "il link di una notifica senza sessione porta a /login e poi li'" /notifications/123 307 \
   '/login?next=%2Fnotifications%2F123'
+
+# Il digest email (0029). La pagina di disiscrizione non legge la sessione:
+# senza token o con un token falso dice che il link non vale, con noindex e
+# no-referrer. Il one-click accetta solo POST: un GET va alla pagina con un
+# 303, e una POST con un token falso e' un 400 che non scrive niente (la
+# firma si controlla prima del database). Il cron senza segreto e' un 401.
+echo "digest email (disiscrizione e cron)"
+verifica "la disiscrizione senza token" /notifications/unsubscribe 200 'unsubscribe link is not valid'
+verifica "la disiscrizione con un token falso" '/notifications/unsubscribe?t=v1.falso' 200 'unsubscribe link is not valid'
+intestazioni=$(curl -s -D - -o "$TMP/html" --max-time 60 "$BASE/notifications/unsubscribe" | tr -d '\r')
+grep -qi '^referrer-policy: no-referrer$' <<<"$intestazioni" && grep -q 'name="robots" content="noindex' "$TMP/html" \
+  && pass "la disiscrizione: Referrer-Policy no-referrer e noindex" || fail "la disiscrizione senza no-referrer o noindex"
+read -r codice dove < <(curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' --max-time 60 "$BASE/api/notifications/unsubscribe?t=abc")
+[ "$codice" = 303 ] && [ "$dove" = "$BASE/notifications/unsubscribe?t=abc" ] \
+  && pass "il one-click con un GET porta alla pagina (303)" || fail "GET del one-click: $codice $dove"
+intestazioni=$(curl -s -D - -o "$TMP/html" --max-time 60 -X POST -H 'Content-Type: application/x-www-form-urlencoded' \
+  --data 'List-Unsubscribe=One-Click' "$BASE/api/notifications/unsubscribe?t=v1.falso" | tr -d '\r')
+grep -q '^HTTP/[0-9.]* 400' <<<"$intestazioni" && ! grep -qi '^set-cookie' <<<"$intestazioni" \
+  && pass "il one-click con un token falso: 400, nessun cookie" || fail "POST del one-click: $(head -1 <<<"$intestazioni")"
+codice=$(curl -s -o /dev/null -w '%{http_code}' --max-time 60 "$BASE/api/cron/digest") || codice=000
+if [ "$codice" = 401 ]; then pass "il cron del digest senza segreto: 401"; else fail "/api/cron/digest senza segreto: $codice"; fi
 
 echo "chi guarda (/api/me)"
 intestazioni=$(curl -s -D - -o "$TMP/html" --max-time 60 "$BASE/api/me" | tr -d '\r')

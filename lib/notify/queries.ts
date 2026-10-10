@@ -47,3 +47,9 @@ export async function markNotificationsRead(userId: string, ids: string[]): Prom
   )
   return { marked, unread: u?.unread ?? false }
 }
+
+/** La casella "Daily email digest" di Settings (0029): accesa se c'e' il consenso. */
+export async function emailDigestOn(userId: string): Promise<boolean> {
+  const r = await sqlOne<{ on: boolean }>('select notify_digest_on_at is not null as on from app_user where id = $1::uuid', [userId])
+  return r?.on ?? false
+}

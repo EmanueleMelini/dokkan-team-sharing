@@ -2,5 +2,8 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "regions": ["fra1"],
   "ignoreCommand": "[ \"$VERCEL_ENV\" = preview ]",
-  "crons": [{ "path": "/api/cron/purge", "schedule": "0 4 * * *" }]
+  "crons": [
+    { "path": "/api/cron/purge", "schedule": "0 4 * * *" },
+    { "path": "/api/cron/digest", "schedule": "0 17 * * *" }
+  ]
 }
