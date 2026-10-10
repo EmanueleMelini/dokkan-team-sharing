@@ -613,12 +613,14 @@ Il secret `OPS_ARCHIVE_TOKEN` è **facoltativo**. Per attivarlo:
 4. senza il secret `push` stampa la notice "OPS_ARCHIVE_TOKEN not set:
    datamine snapshot not archived" ed esce 0, e il ripiego usa solo la
    cache della settimana prima;
-5. per rimettere a mano l'ultima fotografia sul Mac:
-   `OPS_ARCHIVE_TOKEN=... node db/prod/datamine-archive.mjs restore`.
+5. per rimettere a mano l'ultima fotografia sul Mac, il token si incolla
+   a un `read -rs` (non si vede e non finisce in `~/.zsh_history`, che
+   salva i comandi interi):
+   `read -rs OPS_ARCHIVE_TOKEN && export OPS_ARCHIVE_TOKEN`, poi
+   `node db/prod/datamine-archive.mjs restore`, poi `unset OPS_ARCHIVE_TOKEN`.
    Sostituisce `db/import/.cache/datamine` dopo aver controllato lo sha256 e
    che il commit di `_snapshot.json` sia quello di `LATEST.json`. Il token
-   solo nella riga di comando, mai in `.env.local` o in un file del
-   repository.
+   mai in `.env.local` o in un file del repository.
 
 Per ruotarlo: un token nuovo con gli stessi permessi, il secret
 sostituito, il vecchio revocato. Il token è solo un header `Authorization`
