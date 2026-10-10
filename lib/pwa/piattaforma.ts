@@ -41,3 +41,33 @@ export const isMobile = (a: Ambiente) =>
 /** Le rotte dove l'invito non compare: accesso, scelta dell'handle, area admin. */
 export const rottaSenzaInvito = (pathname: string) =>
   ['/login', '/welcome', '/admin'].some((r) => pathname === r || pathname.startsWith(`${r}/`))
+
+/**
+ * Il nome grossolano di un dispositivo per la lista delle push in Settings
+ * ("Chrome on Android"): browser e sistema, mai la versione o il modello.
+ * Va nel database (push_subscription.label), quindi meno dice meglio e':
+ * basta a riconoscere i propri dispositivi. null se non si capisce.
+ */
+export function etichettaDispositivo(a: Pick<Ambiente, 'ua' | 'maxTouchPoints'>): string | null {
+  const ua = a.ua
+  // l'ordine conta: Edge e Opera dicono anche "Chrome", Chrome dice anche "Safari"
+  const browser =
+    /EdgA?\/|EdgiOS\//.test(ua) ? 'Edge'
+      : /OPR\/|OPiOS\//.test(ua) ? 'Opera'
+        : /SamsungBrowser\//.test(ua) ? 'Samsung Internet'
+          : /Firefox\/|FxiOS\//.test(ua) ? 'Firefox'
+            : /Chrome\/|CriOS\//.test(ua) ? 'Chrome'
+              : /Safari\//.test(ua) && /Version\//.test(ua) ? 'Safari'
+                : null
+  const sistema =
+    /Android/.test(ua) ? 'Android'
+      : /iPhone|iPod/.test(ua) ? 'iPhone'
+        : /iPad/.test(ua) || (/Macintosh/.test(ua) && a.maxTouchPoints > 1) ? 'iPad'
+          : /CrOS/.test(ua) ? 'ChromeOS'
+            : /Windows/.test(ua) ? 'Windows'
+              : /Macintosh|Mac OS X/.test(ua) ? 'macOS'
+                : /Linux/.test(ua) ? 'Linux'
+                  : null
+  if (browser && sistema) return `${browser} on ${sistema}`
+  return browser ?? (sistema ? `Browser on ${sistema}` : null)
+}

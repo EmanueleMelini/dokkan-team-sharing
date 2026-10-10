@@ -102,7 +102,8 @@ async function naviga(s: ReturnType<typeof sandbox>, r: Partial<Richiesta> & { u
 console.log('sw.js: quali richieste passano dal worker')
 {
   const s = sandbox({ rete: 'ok' })
-  vale('ascolta install, activate e fetch', Object.keys(s.gestori).sort(), ['activate', 'fetch', 'install'])
+  // push e notificationclick (fase 4) li prova db/test/push-app.test.mts
+  vale('ascolta install, activate, fetch, push e notificationclick', Object.keys(s.gestori).sort(), ['activate', 'fetch', 'install', 'notificationclick', 'push'])
   const intercettate = [
     '/events', '/events/12', '/events/12/japan/t/345/p/3', '/cards/1032310', '/users/demo_rotation', '/settings',
     '/login?next=%2Fsettings', '/welcome', '/events/12/submit', '/events/12/clears?tier=3', '/privacy',

@@ -63,7 +63,8 @@ export function notificationPlace(v: NotificationPlaceFields): string | null {
   if (v.difficulty === 'eza_level') return `${evento}, Level ${v.stage_seq ?? ''}`.trim()
   const stage = v.stage_name ?? (v.stage_seq != null ? `Stage ${v.stage_seq}` : null)
   const diff = DIFFICOLTA[v.difficulty] ?? v.difficulty
-  return stage ? `${evento}, ${stage}, ${diff}` : `${evento}, ${diff}`
+  // un evento di uno stage solo ha spesso lo stage con lo stesso nome: una volta basta
+  return stage && stage !== evento ? `${evento}, ${stage}, ${diff}` : `${evento}, ${diff}`
 }
 
 export type NotificationText = { title: string; detail: string | null }

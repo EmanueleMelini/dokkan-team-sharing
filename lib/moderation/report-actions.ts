@@ -6,6 +6,7 @@ import { requireOnboardedUser } from '@/lib/dal'
 import {
   REPORT_THANKS, parseReportForm, reportErrorMessage, type ReportActionState,
 } from '@/lib/moderation/report-form'
+import { kickPush } from '@/lib/notify/kick'
 
 // La segnalazione di un clear o di un commento. E' un endpoint pubblico
 // come le azioni dei clear: l'id di chi segnala viene dalla sessione, il
@@ -33,5 +34,7 @@ export async function reportContent(_prev: ReportActionState, form: FormData): P
     throw e
   }
   // Un doppione ritorna l'id che c'era: per chi segnala e' la stessa cosa.
+  // Gli admin hanno una notifica (0028): la push, se l'hanno accesa.
+  kickPush()
   return { ok: true, message: REPORT_THANKS }
 }

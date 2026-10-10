@@ -13,6 +13,7 @@ import {
 } from '@/lib/tips/validate'
 import { REPORT_THANKS, type ReportActionState } from '@/lib/moderation/report-form'
 import { cleanDetails, isReasonFor } from '@/lib/moderation/reasons'
+import { kickPush } from '@/lib/notify/kick'
 
 // Le Server Action delle tip. Come quelle dei clear: endpoint pubblici,
 // l'utente solo dalla sessione, ogni campo controllato, le regole vere nei
@@ -140,5 +141,7 @@ export async function reportTip(_prev: ReportActionState, form: FormData): Promi
   } catch (e) {
     return dbError(e)
   }
+  // gli admin hanno una notifica (0028): la push, se l'hanno accesa
+  kickPush()
   return { ok: true, message: REPORT_THANKS }
 }

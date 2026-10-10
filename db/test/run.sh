@@ -18,6 +18,8 @@
 #   -> notifiche nel sito (0028) e il loro lato app (lib/notify)
 #   -> digest email (0029: budget, selezione, disiscrizione) e il suo lato
 #   app (lib/notify: token, testi, cron, one-click)
+#   -> push del browser (0031: host ammessi, dispositivi, claim, tetti, esiti)
+#   e il loro lato app (lib/notify: endpoint, payload, mittente, sw.js, giro)
 #   -> carte solo nel gioco (load-game-cards) -> skill delle carte (0022)
 #   e la pagina della carta -> filtri dei clear
 #   -> finestre degli eventi dal
@@ -209,6 +211,26 @@ passo "digest email (SQL)" verifica node_ts db/test/digest.test.mts
 # RESEND_API_KEY, i log in una cartella temporanea. Crea solo utenti
 # digestapp+ e li toglie.
 passo "digest email (app)" verifica node_ts db/test/digest-app.test.mts
+# Le push del browser (0031), lato SQL: la lista chiusa degli host (anche
+# nel CHECK della tabella) e le chiavi, i dispositivi (tetto di 5, lo stesso
+# endpoint che passa all'ultimo account, l'uscita che toglie solo il
+# proprio), la prova una al minuto, push_claim (preferenza e dispositivo,
+# coalescenza di 30 minuti, i tetti per destinatario, autore e coppia,
+# l'account giovane o sospeso, il contenuto nascosto, skip locked, mai il
+# testo dei post), push_report (404 e 410 tolgono, tre errori di fila
+# tolgono, 413 e 429 no), purge_push e le cascate. Crea solo utenti
+# pushtest+ e li toglie.
+passo "push del browser (SQL)" verifica node_ts db/test/push.test.mts
+# Le push del browser, lato app senza database: lib/notify/endpoint.ts
+# contro gli stessi casi del SQL, le chiavi VAPID, i gruppi di Settings,
+# testo e payload (512 byte, mai il testo dei post), il mittente vero
+# contro un servizio push locale (corpo decifrato con RFC 8291, token
+# VAPID verificato) e public/sw.js in node:vm (push e clic).
+passo "push del browser (app)" verifica node_ts db/test/push-app.test.mts
+# Un giro vero di lib/notify/push.ts sul database (claim, invii con un
+# mittente finto, push_report), la prova e le letture di Settings. Crea
+# solo utenti pushrun+ e li toglie.
+passo "push del browser (giro)" verifica node_ts db/test/push-run.test.mts
 # Rilancia load-game-cards e load-datamine, e prova il passaggio al wiki
 # con una pagina finta su 1034200 (poi rimette la carta com'era).
 passo "carte dal gioco" verifica node_ts db/test/game-cards.test.mts

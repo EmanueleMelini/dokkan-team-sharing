@@ -107,6 +107,10 @@ export const TABLES = {
   // dopo un 429 di Resend. Li scrivono il login e il cron, mai un import
   email_quota: { class: 'user' },
   notify_state: { class: 'user' },
+  // le push del browser (0031): i dispositivi iscritti e il registro degli
+  // invii per i tetti. Li scrivono Settings e l'invio dopo una scrittura
+  push_subscription: { class: 'user' },
+  push_sent: { class: 'user' },
 
   // ---- degli script
   schema_migrations: { class: 'system' },

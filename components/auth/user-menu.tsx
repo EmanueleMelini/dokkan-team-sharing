@@ -6,6 +6,7 @@ import { GearSix } from '@phosphor-icons/react/dist/ssr'
 import { SignInLink } from '@/components/auth/sign-in-link'
 import { SignOutButton } from '@/components/auth/sign-out-button'
 import { Campanella } from '@/components/notifiche/campanella'
+import { PushResync } from '@/components/notifiche/push-resync'
 import { useViewer } from '@/components/viewer/provider'
 import { profileHref } from '@/lib/urls'
 
@@ -52,6 +53,7 @@ export function UserMenu() {
       )}
       {/* Il pallino viene da /api/me: questo ramo non c'e' mai nell'HTML in cache */}
       <Campanella unread={user.unread === true} className={piccolo} />
+      <PushResync handle={user.handle} />
       {/* L'handle porta al profilo pubblico; Settings ha il suo link accanto */}
       <Link
         href={profileHref(user.handle)}

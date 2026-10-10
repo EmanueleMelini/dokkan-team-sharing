@@ -75,7 +75,7 @@ async function cascate() {
   check('le tabelle che puntano a app_user sono quelle note',
     versoUtente.join(',') === 'auth_account,auth_session,clear,clear_comment,clear_vote,clear_write_log,' +
       'handle_history,moderation_action,moderation_action,notification,notification,notification_pref,' +
-      'report,report,team,tip,tip_vote',
+      'push_sent,push_sent,push_subscription,report,report,team,tip,tip_vote',
     versoUtente.join(','))
   const trig = await num(
     `select count(*) from pg_trigger where tgname = 'report_target_gone'
@@ -264,6 +264,75 @@ async function cancella() {
     await num('select count(*) from report where target_id = $1', [clearB]) === 0)
 }
 
+/**
+ * Piu' utenti cancellati nella stessa istruzione, che hanno votato l'uno i
+ * clear e le tip dell'altro (0030). Prima di 0030 il ricalcolo del
+ * punteggio aggiornava due volte la versione di un clear gia' cancellato
+ * nella stessa cascata, e la FK clear_version -> clear annullava tutto.
+ * Tre utenti che si votano a vicenda bastano in qualsiasi ordine fisico
+ * delle righe: chi sta per ultimo ha sempre due votanti prima di lui.
+ */
+async function cancellaInsieme() {
+  console.log('\n  -- piu\' utenti in una sola delete (0030)')
+  const d = await dati()
+  const trio = [await utente(P, 'stmulti_1'), await utente(P, 'stmulti_2'), await utente(P, 'stmulti_3')]
+  // chi resta: s ha un clear e una tip votati dal trio e da t, e vota il trio
+  const s = await utente(P, 'stkeep_s')
+  const t = await utente(P, 'stkeep_t')
+  const clears: string[] = []
+  const versioni: string[] = []
+  const tips: string[] = []
+  for (const u of [...trio, s]) {
+    const c = (await one<{ id: string }>(SUBMIT, [u, d.run, d.tier, JSON.stringify(payload(d.cards))])).id
+    clears.push(c)
+    versioni.push(await versione(c))
+    tips.push((await one<{ id: string }>(
+      `insert into tip (author_id, stage_tier_id, body) values ($1, $2, 'Stall turn 1.') returning id::text`, [u, d.tier])).id)
+  }
+  const VOTA = 'select vote_clear_version($1::uuid, $2::uuid, $3::smallint)'
+  for (const [i, u] of [...trio, s].entries()) {
+    for (const [j, v] of versioni.entries()) {
+      if (i === j) continue
+      // un voto contrario, perche' il conto non torni per caso
+      await db.query(VOTA, [u, v, i === 1 ? -1 : 1])
+      await db.query('insert into tip_vote (tip_id, user_id, value) values ($1, $2, 1)', [tips[j], u])
+    }
+  }
+  await db.query(VOTA, [t, versioni[3], 1])
+  await db.query('insert into tip_vote (tip_id, user_id, value) values ($1, $2, 1)', [tips[3], t])
+  check('prima: il clear di s ha i voti del trio e di t', await num('select score from clear_version where id = $1', [versioni[3]]) === 2)
+  check('prima: la tip di s anche', await num('select score from tip where id = $1', [tips[3]]) === 4)
+
+  const r = await esito(`delete from app_user where email like '${P}+stmulti_%@example.invalid'`)
+  check('una sola delete per i tre utenti riesce', r === 'ok', r)
+  check('il trio non c\'e\' piu\'', await num('select count(*) from app_user where id = any($1::uuid[])', [trio]) === 0)
+  check('niente clear, versioni, voti e tip del trio',
+    await num('select count(*) from clear where id = any($1::uuid[])', [clears.slice(0, 3)]) === 0 &&
+    await num('select count(*) from clear_version where id = any($1::uuid[])', [versioni.slice(0, 3)]) === 0 &&
+    await num('select count(*) from clear_vote where user_id = any($1::uuid[]) or version_id = any($2::uuid[])',
+      [trio, versioni.slice(0, 3)]) === 0 &&
+    await num('select count(*) from tip where id = any($1::uuid[])', [tips.slice(0, 3)]) === 0 &&
+    await num('select count(*) from tip_vote where user_id = any($1::uuid[]) or tip_id = any($2::uuid[])',
+      [trio, tips.slice(0, 3)]) === 0)
+  check('s e t restano, con il clear, la versione e la tip di s',
+    await num('select count(*) from app_user where id = any($1::uuid[])', [[s, t]]) === 2 &&
+    await num('select count(*) from clear_version where id = $1 and clear_id = $2', [versioni[3], clears[3]]) === 1 &&
+    await num('select count(*) from tip where id = $1', [tips[3]]) === 1)
+  check('il clear di s conta solo il voto di t',
+    await num('select score from clear_version where id = $1', [versioni[3]]) === 1 &&
+    await num('select count(*) from clear_vote where version_id = $1', [versioni[3]]) === 1)
+  check('la tip di s anche',
+    await num('select score from tip where id = $1', [tips[3]]) === 1 &&
+    await num('select count(*) from tip_vote where tip_id = $1', [tips[3]]) === 1)
+  check('i voti di s sui clear e le tip del trio sono andati via con loro',
+    await num('select count(*) from clear_vote where user_id = $1', [s]) === 0 &&
+    await num('select count(*) from tip_vote where user_id = $1', [s]) === 0)
+  // e il voto, dopo, si conta come prima
+  await db.query(VOTA, [t, versioni[3], -1])
+  check('cambiare voto dopo la cancellazione ricalcola come sempre',
+    await num('select score from clear_version where id = $1', [versioni[3]]) === -1)
+}
+
 async function pulizia() {
   await db.query('delete from app_user where email like $1', [`${P}+%@example.invalid`])
 }
@@ -275,6 +344,7 @@ try {
   await scollega()
   await rotteSpente()
   await cancella()
+  await cancellaInsieme()
 } finally {
   await pulizia()
   await db.end()

@@ -18,6 +18,10 @@ export const LEGALE = {
   giorniNotificheNonLette: 90,
   /** dopo quanti giorni si cancellano i contatori giornalieri delle email (purge_email_quota, 0029) */
   giorniContatoriEmail: 40,
+  /** dopo quanti giorni senza conferme si cancella un dispositivo delle push (purge_push, 0031) */
+  giorniDispositiviPush: 90,
+  /** dopo quanti giorni si cancella il registro delle push mandate (purge_push, 0031) */
+  giorniRegistroPush: 2,
 } as const
 
 /**

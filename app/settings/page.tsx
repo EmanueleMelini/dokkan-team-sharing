@@ -22,6 +22,10 @@ import { nextHandleChange } from '@/lib/auth/handle-change'
 import { handleChangedAt } from '@/lib/auth/handle-state'
 import { soloGiorno } from '@/lib/date'
 import { emailDigestOn } from '@/lib/notify/queries'
+import { PushBrowser } from '@/components/notifiche/push-browser'
+import { pushDevicesOf, pushKindsOn } from '@/lib/notify/push'
+import { readPushEnv } from '@/lib/notify/push-env'
+import { pushGroupsOn } from '@/lib/notify/push-kinds'
 import { editClearHref } from '@/lib/urls'
 
 export const metadata: Metadata = { title: 'Settings', robots: { index: false } }
@@ -39,9 +43,11 @@ export default async function SettingsPage({ searchParams }: PageProps<'/setting
   const sp = await searchParams
   // fresh decide solo cosa mostrare al clic: lo ricontrollano le Server
   // Action e l'hook di /link-social, perche' la pagina puo' restare aperta.
-  const [linked, { email, verified }, fresh, nascosti, cambiato, digest] = await Promise.all([
+  // Le push solo con le chiavi VAPID: senza, la riga Browser non c'e'.
+  const push = readPushEnv()
+  const [linked, { email, verified }, fresh, nascosti, cambiato, digest, dispositivi, pushKinds] = await Promise.all([
     linkedProviderIds(), accountEmail(), sessionIsFresh(), hiddenClearsOf(user.id), handleChangedAt(user.id),
-    emailDigestOn(user.id),
+    emailDigestOn(user.id), push ? pushDevicesOf(user.id) : [], push ? pushKindsOn(user.id) : [],
   ])
   const prossimoCambio = nextHandleChange(cambiato)
   const error = authErrorMessage(one(sp.error))
@@ -100,8 +106,8 @@ export default async function SettingsPage({ searchParams }: PageProps<'/setting
         </div>
       </section>
 
-      {/* Cosa arriva nella lista, poi il digest email (0029, spento per
-          difetto). Le push del browser arrivano con la fase 4. */}
+      {/* Cosa arriva nella lista, poi le push del browser (0031) e il
+          digest email (0029), spenti per difetto. */}
       <section className="mt-8 max-w-lg" aria-labelledby="notifications">
         <h2 id="notifications" className="scroll-mt-6 text-[13px] font-semibold text-inchiostro">
           Notifications
@@ -126,6 +132,20 @@ export default async function SettingsPage({ searchParams }: PageProps<'/setting
             </li>
           )}
         </ul>
+        {push && (
+          <>
+            <h3 className="mt-5 text-[12px] font-medium text-inchiostro">Browser notifications</h3>
+            <div className="mt-3 border border-linea rounded-[var(--raggio)] bg-superficie px-4 py-3">
+              <PushBrowser
+                publicKey={push.publicKey}
+                handle={user.handle}
+                admin={user.role === 'admin'}
+                devices={dispositivi.map((d) => ({ id: d.id, label: d.label, hash: d.hash, added: soloGiorno(new Date(d.createdAt)), failing: d.failing }))}
+                groupsOn={pushGroupsOn(pushKinds, user.role === 'admin')}
+              />
+            </div>
+          </>
+        )}
         <h3 className="mt-5 text-[12px] font-medium text-inchiostro">Email</h3>
         <div className="mt-3 border border-linea rounded-[var(--raggio)] bg-superficie px-4 py-3">
           <DigestEmail on={digest} verified={verified} email={email} admin={user.role === 'admin'} />
@@ -219,7 +239,7 @@ export default async function SettingsPage({ searchParams }: PageProps<'/setting
             <p className="mt-1 text-[12px] leading-relaxed text-tenue">
               This deletes your account and everything you posted: your clears with all their versions,
               proofs and builds, your teams, and the votes and comments you left, including those on other
-              players&apos; clears. Linked sign-in methods are removed and you are signed out everywhere.
+              players&apos; clears. Linked sign-in methods, notification settings and devices are removed, and you are signed out everywhere.
             </p>
           </div>
           <DeleteAccount handle={user.handle} fresh={fresh} />

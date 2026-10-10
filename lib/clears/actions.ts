@@ -9,6 +9,7 @@ import { clearPage } from '@/lib/queries'
 import { afterClearWrite } from '@/lib/cache/invalidate'
 import { clearAnchor, eventHref } from '@/lib/urls'
 import { friendlyClearError } from '@/lib/clears/errors'
+import { kickPush } from '@/lib/notify/kick'
 import {
   parseBigintId, parseChangeNote, parseComment, parsePayloadField, parseUuid, parseVote,
 } from '@/lib/clears/validate'
@@ -180,5 +181,7 @@ export async function addComment(_prev: ClearActionState, form: FormData): Promi
   }
   const w = await whereIsVersion(versionId)
   if (w) afterClearWrite('comment', { eventId: w.event_id })
+  // il trigger di 0028 puo' aver avvisato l'autore del clear
+  kickPush()
   return { ok: true, commentId }
 }

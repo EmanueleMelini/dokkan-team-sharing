@@ -9,6 +9,7 @@ import { parseUuid } from '@/lib/clears/validate'
 import { afterClearWrite, afterUserChanged, invalidateEvent } from '@/lib/cache/invalidate'
 import { requireAdmin } from '@/lib/moderation/guard'
 import { friendlyModerationError } from '@/lib/moderation/errors'
+import { kickPush } from '@/lib/notify/kick'
 import { NOTE_MAX, SUSPENSION_REASON_MAX } from '@/lib/moderation/reasons'
 
 // Le Server Action dei moderatori. Ognuna e' un endpoint pubblico: rifa'
@@ -81,6 +82,7 @@ export async function setClearStatus(_prev: ModState, form: FormData): Promise<M
   // evento, carte e profilo subito, la lista degli eventi poco dopo
   if (w) afterClearWrite('delete', { eventId: w.event_id, cardIds: carte, handles: w.handle ? [w.handle] : [] })
   rinfrescaAdmin()
+  kickPush()
   return { ok: true, message: status === 'hidden' ? `Clear hidden.${chiusi(n)}` : 'Clear visible again.' }
 }
 
@@ -109,6 +111,7 @@ export async function setCommentStatus(_prev: ModState, form: FormData): Promise
   )
   if (w) afterClearWrite('comment', { eventId: w.event_id })
   rinfrescaAdmin()
+  kickPush()
   return { ok: true, message: status === 'hidden' ? `Comment hidden.${chiusi(n)}` : 'Comment visible again.' }
 }
 
@@ -133,6 +136,7 @@ export async function setTipStatus(_prev: ModState, form: FormData): Promise<Mod
   const w = await sqlOne<{ event_id: string }>('select event_id::text from tip where id = $1::uuid', [tipId])
   if (w) invalidateEvent(w.event_id, 'now')
   rinfrescaAdmin()
+  kickPush()
   return { ok: true, message: status === 'hidden' ? `Tip hidden.${chiusi(n)}` : 'Tip visible again.' }
 }
 
@@ -187,6 +191,7 @@ export async function suspendUser(_prev: ModState, form: FormData): Promise<ModS
   }
   await afterUserChanged(userId)
   rinfrescaAdmin()
+  kickPush()
   return { ok: true, message: 'User suspended.' }
 }
 
@@ -208,5 +213,6 @@ export async function unsuspendUser(_prev: ModState, form: FormData): Promise<Mo
   }
   if (era) await afterUserChanged(userId)
   rinfrescaAdmin()
+  if (era) kickPush()
   return { ok: true, message: era ? 'Suspension lifted.' : 'This user was not suspended any more.' }
 }

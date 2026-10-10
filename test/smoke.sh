@@ -314,6 +314,13 @@ intestazioni=$(curl -s -D - -o /dev/null --max-time 60 "$BASE/sw.js" | tr -d '\r
 grep -qiE '^HTTP/[0-9.]+ 200' <<<"$intestazioni" && grep -qiE '^content-type: (application|text)/javascript' <<<"$intestazioni" \
   && grep -qiE '^cache-control:.*max-age=0' <<<"$intestazioni" \
   && pass "/sw.js (200, javascript, max-age=0)" || fail "/sw.js: $(head -1 <<<"$intestazioni"), $(grep -iE '^(content-type|cache-control)' <<<"$intestazioni" | tr '\n' ' ')"
+# Le push (fase 4): il worker servito ha i due gestori, e il badge c'e'.
+curl -s -o "$TMP/sw" --max-time 60 "$BASE/sw.js"
+grep -qF "addEventListener('push'" "$TMP/sw" && grep -qF "addEventListener('notificationclick'" "$TMP/sw" \
+  && pass "/sw.js con i gestori push e notificationclick" || fail "/sw.js senza i gestori delle push"
+codice=$(curl -s -o "$TMP/icona" -w '%{http_code} %{content_type}' --max-time 60 "$BASE/pwa/badge-96.png")
+vera=$(node -e 'const b = require("fs").readFileSync(process.argv[1]); console.log(b.readUInt32BE(16) + "x" + b.readUInt32BE(20))' "$TMP/icona" 2>/dev/null)
+[ "$codice" = '200 image/png' ] && [ "$vera" = 96x96 ] && pass "/pwa/badge-96.png (96x96)" || fail "/pwa/badge-96.png: $codice, $vera"
 intestazioni=$(curl -s -D - -o "$TMP/html" --max-time 60 "$BASE/offline.html" | tr -d '\r')
 grep -qiE '^HTTP/[0-9.]+ 200' <<<"$intestazioni" && grep -qi '^content-type: text/html' <<<"$intestazioni" \
   && grep -qi '^x-robots-tag: noindex' <<<"$intestazioni" && grep -qF "You're offline" "$TMP/html" \

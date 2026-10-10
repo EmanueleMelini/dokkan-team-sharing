@@ -3,6 +3,7 @@
 import { useEffect } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { useViewer } from '@/components/viewer/provider'
+import { dimenticaSoloBrowser } from '@/lib/notify/push-client'
 
 /**
  * Dopo la cancellazione dell'account (Settings porta a /events?account=deleted).
@@ -15,6 +16,9 @@ export function AvvisoAccountCancellato() {
   const cancellato = useSearchParams().get('account') === 'deleted'
   const { mode, reload } = useViewer()
   useEffect(() => { if (cancellato) reload() }, [cancellato, reload])
+  // Le righe delle push le ha gia' tolte la cascata: resta l'iscrizione
+  // del browser, che senza account non serve piu' a niente.
+  useEffect(() => { if (cancellato && mode === 'anon') dimenticaSoloBrowser().catch(() => {}) }, [cancellato, mode])
   if (!cancellato || mode !== 'anon') return null
   return (
     <p role="status" className="mt-4 max-w-lg text-[12px] text-inchiostro bg-oro-tenue border border-oro-linea rounded-[var(--raggio)] px-3 py-2">

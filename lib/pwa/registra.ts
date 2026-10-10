@@ -48,3 +48,24 @@ export function rimuoviServiceWorker() {
     .then((nomi) => Promise.all(nomi.filter((n) => n.startsWith(PREFISSO_CACHE)).map((n) => caches.delete(n))))
     .catch(() => {})
 }
+
+/**
+ * La registrazione del nostro worker per le push (Settings, al clic su
+ * "Turn on"): quella che c'e', o una nuova se il caricamento della pagina
+ * non l'ha ancora fatta (registraServiceWorker aspetta che il browser sia
+ * libero). null in next dev, dove il worker non c'e' di proposito, o se il
+ * browser non lo ammette. Aspetta che sia attivo, al massimo 10 s.
+ */
+export async function assicuraServiceWorker(versione: string): Promise<ServiceWorkerRegistration | null> {
+  if (!('serviceWorker' in navigator) || process.env.NODE_ENV !== 'production') return null
+  try {
+    const reg = (await navigator.serviceWorker.getRegistration('/')) ??
+      (await navigator.serviceWorker.register(`${SCRIPT}?v=${encodeURIComponent(versione)}`, { scope: '/', updateViaCache: 'none' }))
+    if (reg.active) return reg
+    const pronta = navigator.serviceWorker.ready
+    const tempo = new Promise<null>((r) => setTimeout(() => r(null), 10_000))
+    return await Promise.race([pronta, tempo])
+  } catch {
+    return null
+  }
+}

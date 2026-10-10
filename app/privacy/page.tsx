@@ -10,7 +10,8 @@ export const metadata: Metadata = {
 
 // Ogni frase qui sotto descrive quello che il codice fa davvero (tabelle
 // app_user, auth_*, clear_*, report, moderation_action, notification,
-// email_quota; lib/auth/config.ts, lib/notify/digest.ts):
+// email_quota, push_subscription, push_sent; lib/auth/config.ts,
+// lib/notify/digest.ts, lib/notify/payload.ts, lib/notify/push-client.ts):
 // se cambia il codice, va cambiata anche questa pagina.
 export default function Privacy() {
   const mail = `mailto:${LEGALE.contatto}`
@@ -79,6 +80,21 @@ export default function Privacy() {
           basis as your account.
         </li>
         <li>
+          <strong>Browser notifications.</strong> Off unless you turn them on in Settings, on each
+          device separately. If you do, the site stores what your browser gives it for that device:
+          the address of its push service (Google for Chrome and Android, Apple for Safari and
+          iPhone, Mozilla for Firefox, Microsoft for Edge on Windows), the keys that encrypt the
+          notification so that only your browser can read it, a rough name such as &quot;Chrome on
+          Android&quot;, when it was added and last confirmed, and whether recent deliveries worked.
+          It also logs when a notification was sent, to whom and because of which account, to limit
+          how many go out. A notification says who commented and on which event, that a moderator
+          updated one of your posts or your account, or how many reports are open; it never shows
+          the text of a post. The push service sees when a notification reaches your device, but not
+          what it says. Your consent is the legal basis (GDPR Art. 6(1)(a)). You can withdraw it at
+          any time: turn notifications off or remove a device in Settings, or block notifications
+          for this site in your browser. Signing out also removes the device you sign out from.
+        </li>
+        <li>
           <strong>Email digest.</strong> Off unless you turn it on in Settings. If you do, the site
           stores when you agreed and when it last sent you a digest, and once a day at most, only
           when something is new, it emails your account&apos;s address a summary of your unread
@@ -117,6 +133,11 @@ export default function Privacy() {
         remembers that choice in its local storage, for the last 200 cards. It stays on your device
         and is never sent to the site; clearing your browser data removes it.
       </p>
+      <p>
+        If you turn on browser notifications, your browser also keeps in its local storage your
+        handle and when it last checked its notification setting with the site, so it does that at
+        most once a day. Signing out removes it.
+      </p>
 
       <h2>Who else handles the data</h2>
       <p>These services process data on the site&apos;s behalf, only to run it:</p>
@@ -125,6 +146,10 @@ export default function Privacy() {
         <li>Supabase (the database)</li>
         <li>Cloudflare (domain and card images)</li>
         <li>Resend (sending sign-in emails and, if you turn it on, the daily digest)</li>
+        <li>
+          If you turn on browser notifications, the push service of your browser: Google, Apple,
+          Mozilla or Microsoft. It only carries the encrypted notification to your device.
+        </li>
       </ul>
       <p>
         The provider you sign in with (Discord, Google or Twitch) handles that step under its own
@@ -156,6 +181,12 @@ export default function Privacy() {
           earlier with your account or with the post they are about.
         </li>
         <li>
+          A device for browser notifications: until you turn it off, remove it or sign out on it,
+          until its push service says it no longer exists, or {LEGALE.giorniDispositiviPush} days
+          after your browser last confirmed it. The log of sent notifications:{' '}
+          {LEGALE.giorniRegistroPush} days.
+        </li>
+        <li>
           A suspension&apos;s end date and reason: until a moderator lifts it, or until you delete
           your account.
         </li>
@@ -168,7 +199,7 @@ export default function Privacy() {
       <p>
         Deleting your account from <Link href="/settings">Settings</Link> removes it immediately,
         together with everything you posted: clears, comments, tips, votes, the reports you
-        sent and your notifications.
+        sent, your notifications and your devices for browser notifications.
         Copies inside database
         backups disappear when those backups expire, within 30 days.
       </p>
