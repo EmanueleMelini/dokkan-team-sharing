@@ -531,8 +531,10 @@ di iTunes (Global `id=951627425`, Japan `id=951627670&country=jp`: senza
 `country` risponde `resultCount` 0), l'ultimo commit di `data/` (lo stesso
 `resolveCommit` di `fetch-datamine`, il token di GitHub solo verso
 `api.github.com`) e l'elenco della cartella con `database.db`
-(`UPSTREAM_DB_PATH`; se il file cambia nome si prende il `.db` che c'è e il
-riepilogo dice il percorso). Japan è solo informazione: il datamine è di
+(`UPSTREAM_DB_PATH`, cioè
+`Dokkan_Asset_Downloader/card_assets/global/en/sqlite/current/en/`; se il
+file cambia nome si prende il `.db` che c'è e il riepilogo dice il
+percorso). Japan è solo informazione: il datamine è di
 Global, e Japan è avanti per natura. Ogni avviso è un `::warning::` e una
 riga fra le cose da guardare; il riepilogo ha la sezione "Sources". Un'API
 che non risponde è un "not checked", un errore qualsiasi una notice: **il

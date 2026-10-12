@@ -34,10 +34,12 @@ export const DATAMINE_STALE_DAYS = 14    // nessun commit di data/ da due settim
 export const CARDS_STALE_DAYS = 21       // nessuna carta nuova da tre settimane
 export const GITHUB_FILE_LIMIT = 104857600   // 100 MiB
 export const UPSTREAM_DB_WARN_PCT = 98
-// Dove sta database.db nel repo del datamine. Se non c'e' piu' li', si
-// cerca un .db nella stessa cartella e il riepilogo dice il percorso
-// trovato: e' l'indizio per correggere la costante.
-export const UPSTREAM_DB_PATH = 'database.db'
+// Dove sta database.db nel repo del datamine: l'unico file di
+// card_assets che il suo .gitignore lascia committare (verificato il
+// 12 ottobre 2026, 101.199.872 byte). Se non c'e' piu' li', si cerca un .db
+// nella stessa cartella e il riepilogo dice il percorso trovato: e'
+// l'indizio per correggere la costante.
+export const UPSTREAM_DB_PATH = 'Dokkan_Asset_Downloader/card_assets/global/en/sqlite/current/en/database.db'
 export const ITUNES = { global: 951627425, japan: 951627670 }
 const PLAYABLE = /^[123]\d{6}$/
 

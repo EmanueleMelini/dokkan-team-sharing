@@ -83,14 +83,16 @@ console.log('\nle richieste (finte)')
   check('iTunes: nessun risultato e\' un "perche\'"', (await lookupApp(finta(200, { resultCount: 0 }), 1)).why === 'no result')
   check('iTunes: niente token, solo lo User-Agent', !chiamate.some((c) => 'Authorization' in c.headers) &&
     chiamate.every((c) => /^DokkanTeamSharing\//.test(c.headers['User-Agent'])))
-  const lista = [{ name: 'README.md', type: 'file', size: 10, path: 'README.md' },
-                 { name: 'database.db', type: 'file', size: 101199872, path: 'database.db' }]
+  const cartella = 'Dokkan_Asset_Downloader/card_assets/global/en/sqlite/current/en'
+  const lista = [{ name: 'other.json', type: 'file', size: 10, path: `${cartella}/other.json` },
+                 { name: 'database.db', type: 'file', size: 101199872, path: `${cartella}/database.db` }]
   const s = await upstreamDbSize(finta(200, lista), 'tok')
-  check('database.db: la dimensione dall\'elenco della cartella', s.bytes === 101199872 && s.path === 'database.db')
+  check('database.db: la dimensione dall\'elenco della cartella', s.bytes === 101199872 && s.path === `${cartella}/database.db`)
+  check('...la cartella vera del repo del datamine', chiamate.at(-1).url === `https://api.github.com/repos/Nicholas1006/dokkan-backend/contents/${cartella}`)
   check('...il token va solo ad api.github.com', chiamate.at(-1).url.startsWith('https://api.github.com/repos/Nicholas1006/dokkan-backend/contents')
     && chiamate.at(-1).headers.Authorization === 'Bearer tok')
-  const spostato = await upstreamDbSize(finta(200, [{ name: 'game.db', type: 'file', size: 5, path: 'game.db' }]), undefined)
-  check('...se non si chiama piu\' cosi\', il .db della cartella, col suo percorso', spostato.bytes === 5 && spostato.path === 'game.db')
+  const spostato = await upstreamDbSize(finta(200, [{ name: 'game.db', type: 'file', size: 5, path: `${cartella}/game.db` }]), undefined)
+  check('...se non si chiama piu\' cosi\', il .db della cartella, col suo percorso', spostato.bytes === 5 && spostato.path === `${cartella}/game.db`)
   check('...un 404 e\' un "perche\'"', (await upstreamDbSize(finta(404, {}), undefined)).why === 'HTTP 404')
   check('la carta piu\' recente: giocabile, senza il 2038', newestCardOpenAt([
     { id: '1034150', open_at: '2026-09-29 13:00:00' }, { id: '4034150', open_at: '2026-12-01 00:00:00' },
