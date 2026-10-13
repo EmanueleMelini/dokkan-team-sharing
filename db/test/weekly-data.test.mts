@@ -11,7 +11,7 @@
 // Crea solo l'utente weeklytest+author@example.invalid (e lo toglie) e un
 // database usa e getta <test>_mc_test per migrate --check (e lo cancella).
 import { spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import pg from 'pg'
@@ -98,6 +98,20 @@ console.log('compare: i limiti')
   check('minTotalPct ("*", tabelle senza limiti propri): al 96% violazione',
     viol(cmp(l0, t96, LIMITS), 'card_text').some((v: Violation) => v.rule.startsWith('total')))
   check('minTotalPct: al 98% no', cmp(l0, snap({ card_link: content(rows(1000)), card_text: content(rows(980)) }), LIMITS).ok)
+
+  // La riparazione delle miniature (0034): ~182 carte cambiano thumb_key,
+  // ~183 righe di asset nuove (le thumb-framed e le ferme che mancavano),
+  // nessuna tolta. Passa con i limiti veri; togliere anche una sola riga no.
+  const prima = snap({ card: content(rows(2800)), asset: content(rows(6246)) })
+  const riparata = snap({ card: content({ ...rows(2800), ...Object.fromEntries(Array.from({ length: 182 }, (_, i) => [String(i), 'nuova'])) }),
+                         asset: content({ ...rows(6246), ...rows(183, 100000) }) })
+  const rr = cmp(prima, riparata, LIMITS)
+  check('182 carte cambiate e 183 asset aggiunti: nei limiti', rr.ok &&
+    rr.tables.find((t: Row) => t.table === 'card')?.changed === 182 && rr.tables.find((t: Row) => t.table === 'asset')?.added === 183,
+    rr.violations.map((v) => `${v.table} ${v.rule}`).join('; '))
+  const senzaUnAsset = snap({ card: content(rows(2800)), asset: content({ ...rows(6245, 1), ...rows(183, 100000) }) })
+  check('...ma un asset tolto e\' una violazione, anche con 183 aggiunti', viol(cmp(prima, senzaUnAsset, LIMITS), 'asset').length === 1)
+  check('...e anche una carta tolta', viol(cmp(prima, snap({ card: content(rows(2799)), asset: content(rows(6246)) }), LIMITS), 'card').length === 1)
 
   const changed = snap({ card: content({ ...rows(100), 5: 'x' }), event: content(rows(2000)) })
   const rc = cmp(a, changed, LIMITS)
@@ -395,10 +409,21 @@ console.log('immagini mancanti, anche senza pagina wiki')
   const mdText = missingMarkdown(m, { plan: { jobs: [{ keyBase: 'cards/1034030/thumb', size: 30000 }], missing_quiet: 12, api_challenged: false } })
   check('il riepilogo: una riga per le carte senza pagina, e il piano', mdText.includes(`${senza.length} cards without a wiki page`) &&
     !mdText.includes('card 1034030 ') && /Plan: 1 files on the wiki to fetch/.test(mdText) && mdText.includes('12 not on the wiki yet'))
+  // 0034: le miniature nude contate, e il peso delle thumb-framed spiegato
+  check('bare_thumbs: un numero (0 senza immagini)', m.bare_thumbs === 0, String(m.bare_thumbs))
+  const conNude = missingMarkdown({ ...m, bare_thumbs: 16 }, { plan: { jobs: [
+    { keyBase: 'cards/1024930/thumb-framed', size: 4_400_000, framed: true }, { keyBase: 'cards/1034030/thumb', size: 30000 }] } })
+  check('...nel riepilogo, e le miniature con la cornice col peso degli APNG', conNude.includes('16 cards show a drawn frame') &&
+    conNude.includes('Of these, 1 are framed stills from animated thumbnails: their 4.4 MB are the animated originals') &&
+    !mdText.includes('drawn frame') && !mdText.includes('framed stills'))
   const loc = node('db/prod/missing-assets.mjs', ['--prod'], { PROD_DATABASE_URL: URL_TEST })
   check('missing-assets --prod rifiuta un database locale senza --allow-local', loc.status === 1 && /sviluppo/.test(loc.stderr), `uscita ${loc.status}`)
-  const ok = node('db/prod/missing-assets.mjs', ['--prod', '--allow-local'], { PROD_DATABASE_URL: URL_TEST })
+  const out = join(mkdtempSync(join(tmpdir(), 'dts-missing-')), 'output')
+  const ok = node('db/prod/missing-assets.mjs', ['--prod', '--allow-local'], { PROD_DATABASE_URL: URL_TEST, GITHUB_OUTPUT: out })
   check('...e con --allow-local legge e basta', ok.status === 0 && /immagini mancanti/.test(ok.stdout), ok.stderr.slice(-200))
+  // il settimanale scarica anche con le sole miniature nude: bare_thumbs fra gli output
+  const go = existsSync(out) ? readFileSync(out, 'utf8') : ''
+  check('...e scrive pending e bare_thumbs in GITHUB_OUTPUT', go.includes(`pending=${m.pending}\n`) && go.includes('bare_thumbs=0\n'), go)
 }
 
 console.log('provenienza degli asset (0033)')
@@ -413,7 +438,8 @@ console.log('provenienza degli asset (0033)')
     }
   }
   const WIKI = 'https://static.wikia.nocookie.net/dbz-dokkanbattle/images/a/ab/Card_1_thumb.png/revision/latest'
-  const riga = (key: string, source: string | null, url: string | null) => [key, 'card_thumb', 'image/webp', 1, 1, 1, 'x', source, url]
+  const riga = (key: string, source: string | null, url: string | null, frame: boolean | null = null, kind = 'card_thumb') =>
+    [key, kind, 'image/webp', 1, 1, 1, 'x', source, url, frame]
   await c.query('begin')
   try {
     check('una riga senza source: rifiutata (not null)', await errore(`insert into asset (key, kind, content_type, byte_size, checksum)
@@ -430,6 +456,26 @@ console.log('provenienza degli asset (0033)')
     check('una riadozione senza URL tiene quello che c\'era', dopo?.source === 'wiki' && dopo?.source_url === WIKI, JSON.stringify(dopo))
     await c.query(ASSET_SCARICA_SQL, riga('test/p3.webp', 'wiki', WIKI + '2'))
     check('un nuovo download lo sostituisce', (await c.query(`select source_url from asset where key = 'test/p3.webp'`)).rows[0]?.source_url === WIKI + '2')
+
+    // La cornice delle miniature (0034)
+    const frameDi = async (key: string) => (await c.query('select frame from asset where key = $1', [key])).rows[0]?.frame
+    const nuda = async (key: string | null) => (await c.query('select asset_bare($1) as b', [key])).rows[0]?.b
+    await c.query(ASSET_SCARICA_SQL, riga('test/f1.webp', 'wiki', WIKI, false))
+    check('un download scrive frame (false: il solo personaggio)', await frameDi('test/f1.webp') === false)
+    await c.query(ASSET_ADOTTA_SQL, riga('test/f1.webp', 'wiki', null, null))
+    check('una riadozione senza misura (ffmpeg non l\'ha letto) tiene frame', await frameDi('test/f1.webp') === false)
+    await c.query(ASSET_ADOTTA_SQL, riga('test/f1.webp', 'wiki', null, true))
+    check('...una con la misura lo aggiorna', await frameDi('test/f1.webp') === true)
+    await c.query(ASSET_SCARICA_SQL, riga('test/f1.webp', 'wiki', WIKI, null))
+    check('un nuovo download senza misura lo azzera: e\' un altro file', await frameDi('test/f1.webp') === null)
+    check('frame su un kind che non e\' card_thumb: rifiutato da asset_frame_card_thumb',
+      await errore(ASSET_SCARICA_SQL, riga('test/f2.webp', 'wiki', null, false, 'card_art')) === '23514 asset_frame_card_thumb')
+    check('...null va per ogni kind', await errore(ASSET_SCARICA_SQL, riga('test/f3.webp', 'wiki', null, null, 'card_art')) === 'ok')
+    await c.query(ASSET_SCARICA_SQL, riga('test/f4.webp', 'wiki', null, false))
+    await c.query(ASSET_SCARICA_SQL, riga('test/f5.webp', 'wiki', null, true))
+    check('asset_bare: true per frame false', await nuda('test/f4.webp') === true)
+    check('...false per frame true, null, una chiave che non c\'e\' e null',
+      [await nuda('test/f5.webp'), await nuda('test/f3.webp'), await nuda('test/non-c-e.webp'), await nuda(null)].every((b) => b === false))
   } finally { await c.query('rollback') }
   check('ogni riga di asset dopo l\'import ha source wiki', Number((await c.query(`select count(*) from asset where source is distinct from 'wiki'`)).rows[0].count) === 0)
 }
@@ -578,6 +624,10 @@ console.log('i workflow')
         /GO=false/.test(go({ DATAMINE_MODE: 'fallback', CHANGED: 'true', FORCE: 'true' })) &&
         !/GO=true/.test(go({ DATAMINE_MODE: 'fallback', CHANGED: 'true', FORCE: 'true' })))
       check('weekly Decide: senza ripiego, un commit nuovo da\' GO=true', /GO=true/.test(go({ CHANGED: 'true', FORCE: 'false' })))
+      // 0034: la cornice delle miniature nude si riprova anche quando non manca altro
+      const scarica = passo(wsteps, 'Download new images from the wiki')
+      check('weekly: "Download new images" parte con immagini mancanti o con miniature nude', scarica?.if ===
+        "env.GO == 'true' && (steps.images.outputs.pending != '0' || steps.images.outputs.bare_thumbs != '0')", String(scarica?.if))
 
       const gate = d.jobs.gate, img = d.jobs.images
       check('daily: il cancello non ha environment ne\' secret', !gate.environment && !JSON.stringify(gate).includes('secrets.'))

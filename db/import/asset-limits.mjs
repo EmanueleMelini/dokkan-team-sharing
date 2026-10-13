@@ -36,8 +36,13 @@ export const ANIM_THUMB_MAX_FILE = 1 * MiB
  */
 export function kindOfKey(key) {
   const k = String(key ?? '').replace(/^\/+/, '')
-  let m = k.match(/^cards\/\d+\/(thumb|thumb-animated|art|art-animated)\.[a-z0-9]+$/i)
-  if (m) return { thumb: 'card_thumb', 'thumb-animated': 'card_thumb_animated', art: 'card_art', 'art-animated': 'card_art_animated' }[m[1]]
+  // thumb-framed (0034) e' una miniatura ferma anche lei: quella con la
+  // cornice, dal primo fotogramma dell'APNG (asset-jobs.mjs)
+  let m = k.match(/^cards\/\d+\/(thumb|thumb-framed|thumb-animated|art|art-animated)\.[a-z0-9]+$/i)
+  if (m) {
+    return { thumb: 'card_thumb', 'thumb-framed': 'card_thumb', 'thumb-animated': 'card_thumb_animated',
+             art: 'card_art', 'art-animated': 'card_art_animated' }[m[1]]
+  }
   if (/^events\/\d+\/banner\.[a-z0-9]+$/i.test(k)) return 'event_banner'
   m = k.match(/^icons\/(type|rarity|item)\/[^/]+$/)
   if (m) return `${m[1]}_icon`

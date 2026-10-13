@@ -3,7 +3,8 @@
 #
 #   reset -> schema -> API di scrittura -> account -> id delle carte dal wiki
 #   (anche le pagine abbozzate) -> immagini (i job anche senza pagina, la
-#   CDN, la provenienza, i limiti di spazio) -> fonti fresche e copia del
+#   CDN, la provenienza, i limiti di spazio, la cornice delle miniature)
+#   -> fonti fresche e copia del
 #   datamine -> configurazione di produzione (pool, TLS, cron, IP) ->
 #   import dei dati veri (carte del wiki, poi quelle solo nel gioco) -> query
 #   delle pagine (lib/queries.ts vero) -> parametri dell'URL (lib/parametri.ts)
@@ -31,7 +32,7 @@
 #   gioco (load-windows) -> eventi creati dal gioco (load-game-events) ->
 #   stage delle riedizioni -> classificazione (story, SBR, archivi) ->
 #   missioni dal gioco (load-missions) -> aggiornamento settimanale e giro
-#   giornaliero delle immagini (weekly-data, daily-images, 0033)
+#   giornaliero delle immagini (weekly-data, daily-images, 0033, 0034)
 #
 # Gira su dokkan_test, o su TEST_DATABASE_URL se c'e' (il nome deve finire
 # per _test): il database di sviluppo non si tocca. Prima db:test lo
@@ -79,8 +80,11 @@ passo "account" verifica node_ts db/test/auth.test.mts
 passo "id delle carte dal wiki" verifica node db/test/wiki-card.test.mjs
 # Funzioni pure: i job di fetch-assets anche per le carte senza pagina (i
 # nomi per convenzione del wiki), le risposte della CDN e i ritenti, la
-# provenienza (0033) e i limiti di spazio (db/import/asset-limits.mjs).
-passo "immagini: job, limiti, provenienza" verifica node db/test/assets.test.mjs
+# provenienza (0033), i limiti di spazio (db/import/asset-limits.mjs) e la
+# cornice delle miniature (0034): il job thumb-framed delle LR, quale
+# miniatura va in card.thumb_key, il solo personaggio riconosciuto dai
+# pixel (le maschere di db/test/fixture/cornici, e con ffmpeg file veri).
+passo "immagini: job, limiti, provenienza, cornice" verifica node db/test/assets.test.mjs
 # Funzioni pure e richieste finte: le soglie di db/prod/freshness.mjs (il
 # gioco andato avanti e il datamine no) e i nomi dell'archivio privato del
 # datamine; push su un repo ops non privato non carica niente, e senza
@@ -195,7 +199,9 @@ passo "profili pubblici" verifica node_ts db/test/profiles.test.mts
 passo "temi" verifica node_ts db/test/temi.test.mts
 # I segnaposto delle immagini (lib/segnaposto.ts, components/segnaposto.tsx):
 # la scelta, l'iniziale, i colori del marchio con i contrasti in tutti i
-# temi, e niente icone del wiki. Funzioni pure e file, niente database.
+# temi, e niente icone del wiki; le miniature che non si deformano (ogni
+# next/image con le misure fissate ha un object-fit) e la cornice disegnata
+# attorno a una miniatura nuda (0034). Funzioni pure e file, niente database.
 passo "segnaposto delle immagini" verifica node_ts db/test/segnaposto.test.mts
 # Le notifiche nel sito (0028): i trigger su commenti, registro della
 # moderazione e segnalazioni (il destinatario giusto e nessun altro, mai a

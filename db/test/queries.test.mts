@@ -715,6 +715,64 @@ try {
         await db.query(`update clear set status = 'published' where id = $1::uuid`, [attesi[0]])
       }
     })
+
+    await sezione('la cornice disegnata: il flag delle miniature nude (0034)', async () => {
+      // Il database di test non ha miniature: tutti i flag sono false, e lo
+      // sarebbero anche con il join rotto. Tre carte ricevono una miniatura
+      // nuda finta (db/test/miniature-nude.ts): la copertina di un evento,
+      // un premio carta, una carta di un clear.
+      const { chiaveNuda, conMiniatureNude } = await import('@/db/test/miniature-nude')
+      const [cop] = await righe<{ ev: string; card: string; type: string; rarity: string }>(`
+        select e.id::text as ev, c.id::text as card, c.type::text as type, c.rarity::text as rarity
+        from event e join card c on c.id = e.cover_card_id
+        where e.banner_key is null
+          and exists (select 1 from event_run r where r.event_id = e.id and r.reg = 'global')
+        order by e.id limit 1`)
+      const [premio] = await righe<{ ev: string; run: string | null; card: string }>(`
+        select m.event_id::text as ev, m.run_id::text as run, gi.card_id::text as card
+        from mission_reward r join mission m on m.id = r.mission_id
+        join game_item gi on gi.item_type = r.item_type and gi.item_id = r.item_id
+        left join reward_item ri on ri.slug = gi.reward_item_slug
+        where gi.card_id is not null and ri.asset_key is null
+        order by m.event_id, m.id limit 1`)
+      const prima = await Q.listClears(TIER3, 'global')
+      const inClear = prima[0]?.cards[0]?.card_id
+      if (!check('ci sono una copertina, un premio carta e una carta in un clear', !!cop && !!premio && !!inClear)) return
+      tutte('senza miniature: thumb_bare false in ogni squadra', prima.flatMap((c) => c.cards), (k) => k.thumb_bare === false)
+      tutte('...e cover_thumb_bare false in ogni evento', await Q.listEvents({ reg: 'global', limit: GRANDE }),
+        (e) => e.cover_thumb_bare === false)
+      const ids = [...new Set([cop.card, premio.card, inClear])]
+      await conMiniatureNude((t, p) => db.query(t, p), ids, async () => {
+        const det = await Q.getEvent(cop.ev, 'global')
+        check('getEvent: la copertina nuda, con tipo e rarita\' del boss', det?.cover_thumb_key === chiaveNuda(cop.card) &&
+          det.cover_thumb_bare === true && det.cover_type === cop.type && det.cover_rarity === cop.rarity,
+          `${det?.cover_thumb_bare} ${det?.cover_type} ${det?.cover_rarity}`)
+        const lista = await Q.listEvents({ reg: 'global', limit: GRANDE })
+        const nella = lista.find((x) => x.id === cop.ev)
+        check('listEvents: lo stesso', nella?.cover_thumb_bare === true && nella.cover_type === cop.type &&
+          nella.cover_rarity === cop.rarity)
+        tutte('...e solo dove la copertina e\' una delle nude', lista,
+          (e) => e.cover_thumb_bare === (!!e.cover_thumb_key && ids.some((id) => e.cover_thumb_key === chiaveNuda(id))))
+
+        const premi = (await Q.getMissions(premio.ev, premio.run)).flatMap((m) => m.rewards)
+        const suo = premi.find((r) => r.icon_key === chiaveNuda(premio.card))
+        check('getMissions: icon_bare sull\'icona che e\' la miniatura nuda', suo?.icon_bare === true && !!suo.card)
+        tutte('...e su nessun altro premio', premi,
+          (r) => r.icon_bare === (!!r.icon_key && ids.some((id) => r.icon_key === chiaveNuda(id))))
+
+        const cl = await Q.listClears(TIER3, 'global')
+        tutte('listClears: thumb_bare solo sulle carte con la miniatura nuda', cl.flatMap((c) => c.cards),
+          (k) => k.thumb_bare === ids.includes(k.card_id))
+        const facets = await Q.getClearFacets(TIER3, 'global')
+        const opz = [...facets.cards, ...facets.leaders]
+        check('getClearFacets: la carta del clear fra le opzioni, nuda', opz.some((c) => c.id === inClear && c.thumb_bare === true))
+        tutte('...e le altre no', opz.filter((c) => !ids.includes(c.id)), (c) => c.thumb_bare === false)
+        const et = await Q.cardLabels([inClear])
+        check('cardLabels: lo stesso', et.length === 1 && et[0].thumb_bare === true)
+      })
+      check('dopo: le carte tornano senza miniatura', (await Q.getEvent(cop.ev, 'global'))?.cover_thumb_bare === false &&
+        Number(await valore('select count(*) from asset where key like \'test/nuda-%\'')) === 0)
+    })
   })()
 } finally {
   try {

@@ -93,6 +93,31 @@ t "clear con run di un evento e stage di un altro" \
    values ('11111111-1111-1111-1111-111111111111',99001,$TIER3,5001)" \
   fail 'clear_run_id_event_id_fkey'
 
+# 0034: la cornice e' solo delle miniature delle carte
+t "frame su un asset che non e' una miniatura" \
+  "insert into asset (key,kind,content_type,byte_size,checksum,source,frame) values ('test/frame-art.webp','card_art','image/webp',1,'x','wiki',false)" \
+  fail 'asset_frame_card_thumb'
+
+echo "la cornice delle miniature (0034):"
+eq "asset.frame: boolean, nullable, senza default" \
+  "select data_type||','||is_nullable||','||coalesce(column_default,'-') from information_schema.columns where table_schema='public' and table_name='asset' and column_name='frame'" \
+  "boolean,YES,-"
+eq "il vincolo asset_frame_card_thumb" \
+  "select count(*) from pg_constraint where conname='asset_frame_card_thumb' and conrelid='asset'::regclass and contype='c'" 1
+eq "la funzione asset_bare(text), stable, che torna boolean" \
+  "select pg_get_function_identity_arguments(p.oid)||','||p.provolatile::text||','||format_type(p.prorettype,null) from pg_proc p where p.proname='asset_bare' and p.pronamespace='public'::regnamespace" \
+  "p_key text,s,boolean"
+t "una miniatura nuda e una con la cornice; asset_bare le distingue" \
+  "begin;
+   insert into asset (key,kind,content_type,byte_size,checksum,source,frame) values
+     ('test/nuda.webp','card_thumb','image/webp',1,'x','wiki',false),('test/cornice.webp','card_thumb','image/webp',1,'x','wiki',true);
+   do \$\$ begin
+     if not asset_bare('test/nuda.webp') or asset_bare('test/cornice.webp') or asset_bare('test/nessuna.webp') or asset_bare(null)
+     then raise exception 'asset_bare sbaglia'; end if;
+   end \$\$;
+   rollback" \
+  ok
+
 echo "casi che devono passare:"
 # le due righe nella stessa istruzione: now() e' lo stesso, quindi la
 # finestra e' identica davvero (prima si inseriva solo quella Japan)

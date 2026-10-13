@@ -43,6 +43,14 @@
 // pubblica. L'adozione dal disco lo rilegge: in produzione la riga di
 // asset prende cosi' lo stesso source_url del giro di prova (0033).
 //
+// Le miniature ferme (0034): ogni riga card_thumb scritta qui, scaricata o
+// adottata dal disco, porta asset.frame, la cornice misurata dai pixel del
+// file (asset-cornice.mjs). Le righe che restano come sono non si misurano:
+// il giro di prova (senza i file) e la produzione (con l'albero intero)
+// cosi' scrivono lo stesso. Fra le due miniature di una carta, la ferma
+// (cards/<id>/thumb) e quella con la cornice (cards/<id>/thumb-framed),
+// card.thumb_key prende quella che dice miniaturaVincente (asset-jobs.mjs).
+//
 // Un 403 della CDN del wiki e' un controllo anti-bot (Cloudflare): al primo
 // si smette di scaricare, il resto si conta come "sfidato" e lo riprova il
 // giro di domani. Mai un altro User-Agent, mai un aggiramento. I 5xx, i 429
@@ -55,7 +63,8 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import pg from 'pg'
 import { connectionString, describeTarget } from '../env.mjs'
-import { cardJobs, normalizeFile } from './asset-jobs.mjs'
+import { cardJobs, cartaDellaFerma, collegaMiniature, normalizeFile } from './asset-jobs.mjs'
+import { cornice } from './asset-cornice.mjs'
 import { ANIM_ART_BUDGET, AVVISO_PCT, decisioneAnimato, mib } from './asset-limits.mjs'
 import {
   ASSET_ADOTTA_SQL, ASSET_SCARICA_SQL, MAX_RITENTI, attesaRitento, esitoHttp, provenienza, selectJobs, siMuove,
@@ -219,9 +228,11 @@ const EXT = { 'image/webp': 'webp', 'image/png': 'png', 'image/jpeg': 'jpg', 'im
 // Un artwork animato pesa fra i 9 e i 33 MB, ed e' inservibile in pagina.
 // Fandom non sa darne un fotogramma statico: il suo ridimensionatore
 // converte un WebP animato da 9 MB in un GIF da 33. Il fotogramma si
-// estrae qui, con ffmpeg: 32 MB diventano 40 KB.
-const isAnimated = (buf, ct) =>
-  ct === 'image/gif' || (ct === 'image/webp' && buf.toString('latin1', 0, 4096).includes('ANIM'))
+// estrae qui, con ffmpeg: 32 MB diventano 40 KB. Lo stesso controllo di
+// siMuove, che riconosce anche un APNG (acTL): la miniatura con la cornice
+// viene da un APNG, e se il ridimensionatore lo restituisse com'e' un
+// fotogramma fermo deve uscirne comunque.
+const isAnimated = (buf, ct) => ct === 'image/gif' || siMuove(buf.subarray(0, 65536))
 
 function flatten(buf, width) {
   const src = join(tmpdir(), `dts-in-${process.pid}-${Math.random().toString(36).slice(2)}`)
@@ -281,8 +292,25 @@ const client = { query: (...a) => (ro ?? pool).query(...a) }
 // Mai imported_from: quando load-datamine ha riscritto quel campo a
 // 'datamine' le immagini collegate erano crollate da 2632 a 1371, in
 // silenzio.
-const { rows: known } = await client.query('select id from card')
+//
+// La 0034 prima di tutto: senza asset.frame le letture qui sotto e le
+// scritture delle righe fallirebbero a meta' giro. Lo stesso controllo vale
+// per il piano, che gira sulla produzione prima del giro di prova.
+const { rows: [{ n: conFrame }] } = await client.query(`
+  select count(*)::int as n from information_schema.columns
+  where table_schema = current_schema() and table_name = 'asset' and column_name = 'frame'`)
+if (!conFrame) {
+  console.error('\n  manca asset.frame: applica prima la migrazione 0034 (npm run db:up, in produzione npm run prod:migrate -- --yes)\n')
+  if (ro) { await ro.query('rollback'); await ro.end() } else await pool.end()
+  process.exit(1)
+}
+const { rows: known } = await client.query('select id, rarity::text as rarity from card')
 const cardIds = new Set(known.map((r) => Number(r.id)))
+// la rarita' (una LR chiede anche la miniatura con la cornice) e le carte
+// la cui miniatura ferma e' misurata nuda (asset-jobs.mjs, cardJobs)
+const rarity = new Map(known.map((r) => [Number(r.id), r.rarity]))
+const { rows: nude } = await client.query(`select key from asset where kind = 'card_thumb' and frame = false`)
+const spoglie = new Set(nude.map((r) => cartaDellaFerma(r.key)).filter((id) => id != null))
 
 const jobs = []
 const thumbs = want('thumb') || ONLY === 'anim'
@@ -293,7 +321,7 @@ if (thumbs || arts) {
   // numero) o da una pagina abbozzata qui altrimenti non si
   // riconoscerebbero, e prenderebbero solo i nomi per convenzione.
   const ids = assignCardIds(pages, datamineCards())
-  jobs.push(...cardJobs({ pages, ids, cardIds, still: ONLY !== 'anim', thumbs, arts }))
+  jobs.push(...cardJobs({ pages, ids, cardIds, rarity, spoglie, still: ONLY !== 'anim', thumbs, arts }))
 }
 // I banner degli eventi: il nome del file sta nel template Events, e
 // gli id sono i pageid del wiki, gli stessi che usa load-events.
@@ -426,7 +454,7 @@ if (has('--flatten-existing')) {
 }
 
 // quali sono gia' a posto
-const { rows: existing } = await client.query('select key, byte_size, source_url from asset')
+const { rows: existing } = await client.query('select key, byte_size, source_url, frame from asset')
 const have = new Map(existing.map((r) => [r.key, r]))
 const rigaDi = (job) => [...have.keys()].find((k) => k.startsWith(job.keyBase + '.'))
 
@@ -498,7 +526,10 @@ if (PLAN) {
       if (d === 'oltre-il-budget') { oltreBudget++; continue }
       if (j.kind === 'card_art_animated' && size) simulato += size
     }
-    piano.push({ keyBase: j.keyBase, kind: j.kind, file: scelto?.[0] ?? null, size, quiet: Boolean(j.quiet) })
+    // framed: la miniatura con la cornice, il cui size e' quello dell'APNG
+    // originale (qualche MB); arriva come un fermo ridimensionato di 30 KB
+    piano.push({ keyBase: j.keyBase, kind: j.kind, file: scelto?.[0] ?? null, size, quiet: Boolean(j.quiet),
+                 ...(j.cornice ? { framed: true } : {}) })
   }
   writeFileSync(PLAN, JSON.stringify({
     taken_at: new Date().toISOString(), jobs: piano,
@@ -558,7 +589,9 @@ const sha256 = (buf) => createHash('sha256').update(buf).digest('hex')
 // giga per ricostruire delle righe che si possono ricavare dal file
 // stesso e' spreco: lo si riadotta. La provenienza: 'wiki', e l'URL solo
 // se il manifesto ha questo stesso file; una riga che l'URL lo sapeva gia'
-// non lo perde.
+// non lo perde. Una miniatura ferma si misura (la cornice, 0034).
+const frameDi = (kind, buf) => (kind === 'card_thumb' ? cornice(buf) : null)
+
 async function adoptFromDisk(job) {
   const dir = join(ASSET_DIR, dirname(job.keyBase))
   if (!existsSync(dir)) return null
@@ -573,9 +606,11 @@ async function adoptFromDisk(job) {
   const { width, height } = dimensions(buf)
   const checksum = sha256(buf)
   const prov = provenienza({ voceManifest: voceManifest(key), checksum })
+  const frame = frameDi(job.kind, buf)
   await client.query(ASSET_ADOTTA_SQL,
-    [key, job.kind, ct, buf.length, width, height, checksum, prov.source, prov.source_url])
-  return key
+    [key, job.kind, ct, buf.length, width, height, checksum, prov.source, prov.source_url, frame])
+  // quello che la riga dice ora: una misura non riuscita tiene la vecchia (coalesce)
+  return { key, frame: frame ?? have.get(key)?.frame ?? null }
 }
 
 // Un animato oltre il tetto o il budget: si salta, la versione ferma e'
@@ -603,7 +638,7 @@ async function run(job) {
     }
     if (!FORCE) {
       const adopted = await adoptFromDisk(job)
-      if (adopted) { adoptedN++; results.push({ ...job, key: adopted }); return }
+      if (adopted) { adoptedN++; results.push({ ...job, ...adopted }); return }
     }
     if (OFFLINE) { failed++; return }   // non e' sul disco: qui non si scarica
     if (!base) { if (!apiFerma) senzaFonte++; return }   // gia' contati sopra
@@ -630,11 +665,12 @@ async function run(job) {
     const { width, height } = dimensions(buf)
     const checksum = sha256(buf)
     const prov = provenienza({ scaricatoDa: from })
+    const frame = frameDi(job.kind, buf)
     await client.query(ASSET_SCARICA_SQL,
-      [key, job.kind, ct, buf.length, width, height, checksum, prov.source, prov.source_url])
+      [key, job.kind, ct, buf.length, width, height, checksum, prov.source, prov.source_url, frame])
     if (MANIFEST) appendFileSync(MANIFEST, JSON.stringify({ key, ...prov, checksum, byte_size: buf.length }) + '\n')
     bytes += buf.length; done++
-    results.push({ ...job, key })
+    results.push({ ...job, key, frame })
   } catch (err) {
     totaleAnim -= riservati
     // Un 403 della CDN e' un controllo anti-bot: non si ritenta (insistere
@@ -703,7 +739,14 @@ try {
   }
 
   const cardCols = { thumb_key: [], art_key: [], thumb_animated_key: [], art_animated_key: [] }
-  for (const r of results) if (r.col) cardCols[r.col].push([r.card, r.key])
+  for (const r of results) if (r.col && r.col !== 'thumb_key') cardCols[r.col].push([r.card, r.key])
+  // La miniatura ferma: fra i due job di ogni carta, quello che dice
+  // miniaturaVincente (asset-jobs.mjs, collegaMiniature)
+  {
+    const m = collegaMiniature({ jobs, results, have })
+    cardCols.thumb_key.push(...m.coppie)
+    if (m.conCornice || m.nude) console.log(`  card.thumb_key: ${m.conCornice} con la cornice dall'APNG, ${m.nude} ancora nude (la cornice la disegna il sito)`)
+  }
   // Un "animato" che non si muove si scollega (siMuove in asset-select).
   // Senza il file su questo disco (--offline in produzione) non si puo'
   // sapere: il collegamento resta com'e'.

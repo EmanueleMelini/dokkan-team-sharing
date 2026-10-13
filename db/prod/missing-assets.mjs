@@ -7,8 +7,9 @@
 //   PROD_DATABASE_URL=... PROD_DATABASE_CA_CERT=... node db/prod/missing-assets.mjs --prod
 //        [--allow-local] [--plan piano.json] ...
 //
-// La CI lo lancia sul giro di prova: se l'elenco e' vuoto non chiede
-// niente al wiki. Con GITHUB_OUTPUT scrive pending=<n> per i passi dopo.
+// La CI lo lancia sul giro di prova: se l'elenco e' vuoto e nessuna
+// miniatura e' nuda non chiede niente al wiki. Con GITHUB_OUTPUT scrive
+// pending=<n> e bare_thumbs=<n> per i passi dopo.
 //
 // --prod e' per il giro giornaliero delle immagini (daily-images.yml): il
 // bersaglio lo decide target.mjs (TLS verificato, niente database locale
@@ -41,14 +42,22 @@ export async function missingAssets(client) {
     left join event_text t on t.event_id = e.id and t.locale = 'en'
     where e.wiki_title is not null and e.banner_key is null order by e.id`)
   const { rows: [{ n }] } = await client.query('select count(*)::int as n from card where wiki_title is null')
-  return { cards, events, cards_without_wiki: n, pending: cards.length + events.length }
+  // Le carte la cui sola miniatura e' il personaggio senza cornice (0034):
+  // il sito le mostra dentro una cornice disegnata, e il giro le riprova.
+  // null su un database senza la 0034: il piano poi si ferma e lo dice
+  const { rows: [{ n: conFrame }] } = await client.query(`
+    select count(*)::int as n from information_schema.columns
+    where table_schema = current_schema() and table_name = 'asset' and column_name = 'frame'`)
+  const nude = conFrame ? (await client.query(`
+    select count(*)::int as n from card c join asset a on a.key = c.thumb_key where a.frame = false`)).rows[0].n : null
+  return { cards, events, cards_without_wiki: n, bare_thumbs: nude, pending: cards.length + events.length }
 }
 
 const MB = (b) => (b / 1e6).toFixed(1)
 
 /**
  * I numeri del piano di fetch-assets --plan, per il riepilogo e GITHUB_OUTPUT.
- * @param {{ jobs?: { keyBase: string, size: number | null }[], missing_quiet?: number, missing_loud?: number,
+ * @param {{ jobs?: { keyBase: string, size: number | null, framed?: boolean }[], missing_quiet?: number, missing_loud?: number,
  *           over_cap?: number, over_budget?: number, api_challenged?: boolean, api_unavailable?: boolean,
  *           challenged?: number } | null} plan
  */
@@ -58,6 +67,9 @@ export function planNumbers(plan) {
   return {
     fetchable: jobs.length,
     fetchable_bytes: jobs.reduce((n, j) => n + (j.size ?? 0), 0),
+    // le miniature con la cornice (0034): il loro size e' l'APNG originale
+    framed: jobs.filter((j) => j.framed).length,
+    framed_bytes: jobs.filter((j) => j.framed).reduce((n, j) => n + (j.size ?? 0), 0),
     missing: (plan.missing_quiet ?? 0) + (plan.missing_loud ?? 0),
     over_limits: (plan.over_cap ?? 0) + (plan.over_budget ?? 0),
     challenged: (plan.challenged ?? 0) + (plan.api_challenged || plan.api_unavailable ? 1 : 0),
@@ -87,10 +99,16 @@ export function missingMarkdown(m, { downloaded = null, deployed = null, plan = 
   if (senzaPagina.length) {
     out.push('', `${senzaPagina.length} cards without a wiki page: only the conventional file names are tried, every run.`)
   }
+  if (m.bare_thumbs) {
+    out.push('', `${m.bare_thumbs} cards show a drawn frame: their only still thumbnail is the bare character layer, the framed one is retried every run.`)
+  }
   const p = planNumbers(plan)
   if (p) {
     out.push('', `Plan: ${p.fetchable} files on the wiki to fetch (up to ${MB(p.fetchable_bytes)} MB, originals; stills arrive resized)` +
                  `${p.first.length ? `: ${p.first.map(md).join(', ')}${p.fetchable > p.first.length ? ', ...' : ''}` : ''}.`)
+    if (p.framed) {
+      out.push(`Of these, ${p.framed} are framed stills from animated thumbnails: their ${MB(p.framed_bytes)} MB are the animated originals, each arrives as a still of about 30 KB.`)
+    }
     out.push(`${p.missing} not on the wiki yet (retried every run)` +
              `${p.over_limits ? `, ${p.over_limits} animated files over the storage limits` : ''}.`)
     if (p.api_challenged) out.push('The wiki API answered 403 (anti-bot challenge): the plan is partial, the next run retries.')
@@ -144,7 +162,10 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   }
   if (process.env.GITHUB_OUTPUT) {
     const p = planNumbers(plan)
-    appendFileSync(process.env.GITHUB_OUTPUT, `pending=${m.pending}\n` + (p
+    // bare_thumbs a parte: pending resta "le immagini che mancano", ma il
+    // settimanale scarica anche quando ci sono solo miniature nude, cosi' la
+    // cornice si riprova a ogni giro anche li' (il giornaliero parte dal piano)
+    appendFileSync(process.env.GITHUB_OUTPUT, `pending=${m.pending}\nbare_thumbs=${m.bare_thumbs ?? 0}\n` + (p
       ? `fetchable=${p.fetchable}\nfetchable_bytes=${p.fetchable_bytes}\nchallenged=${p.challenged}\nmissing=${p.missing}\n` : ''))
   }
   const senza = m.cards.filter((x) => x.no_page).length

@@ -4,7 +4,7 @@ import { useEffect, useId, useState } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { useViewer } from '@/components/viewer/provider'
-import { SegnapostoCarta } from '@/components/segnaposto'
+import { CorniceCarta, SegnapostoCarta } from '@/components/segnaposto'
 import {
   artStorage, formatBytes, readArtChoice, resolveArt, saveArtChoice, type ArtMode,
 } from '@/lib/card-art'
@@ -19,7 +19,9 @@ type Props = {
   animated: string | null
   animatedBytes: number | null
   thumb: string | null
-  /** tipo e rarita': per il segnaposto quando non c'e' nessuna immagine */
+  /** la miniatura e' il solo personaggio (asset_bare, 0034): dentro la cornice disegnata */
+  thumbBare?: boolean
+  /** tipo e rarita': per il segnaposto quando non c'e' nessuna immagine, e per la cornice */
   type: string
   rarity: string
 }
@@ -40,7 +42,7 @@ function risparmioDati(): boolean {
  * mostra l'animato: e' l'immagine che si vede subito (LCP), e copre
  * l'attesa dei 4 MB.
  */
-export function ArtToggle({ cardId, name, still, stillW, stillH, animated, animatedBytes, thumb, type, rarity }: Props) {
+export function ArtToggle({ cardId, name, still, stillW, stillH, animated, animatedBytes, thumb, thumbBare = false, type, rarity }: Props) {
   const { user } = useViewer()
   const id = useId()
   const [amb, setAmb] = useState<Ambiente | null>(null)
@@ -104,9 +106,17 @@ export function ArtToggle({ cardId, name, still, stillW, stillH, animated, anima
           )}
         </div>
       ) : thumb ? (
-        // Senza artwork ma con la miniatura: alla sua misura, non ingrandita
+        // Senza artwork ma con la miniatura: alla sua misura, non ingrandita.
+        // Nuda (il solo personaggio) dentro la cornice disegnata, larga al
+        // massimo 250 px e il 70% del riquadro, quadrata anche su un telefono
         <div className="flex aspect-[3/4] items-center justify-center rounded-[var(--raggio)] border border-linea bg-superficie-2">
-          <Image src={thumb} alt={`${name} thumbnail`} width={250} height={250} preload className="max-w-[70%] h-auto" />
+          {thumbBare ? (
+            <CorniceCarta type={type} rarity={rarity} size={250} fluida className="max-w-[70%]">
+              <Image src={thumb} alt={`${name} thumbnail`} width={250} height={250} preload className="w-full h-auto" />
+            </CorniceCarta>
+          ) : (
+            <Image src={thumb} alt={`${name} thumbnail`} width={250} height={250} preload className="max-w-[70%] h-auto" />
+          )}
         </div>
       ) : (
         // Nessuna immagine (una carta presa dal gioco): il segnaposto, e la

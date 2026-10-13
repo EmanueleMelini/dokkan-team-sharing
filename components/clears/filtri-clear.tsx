@@ -131,7 +131,7 @@ export function FiltriClear({ eventId, reg, tier, filtri, opzioni, sostituisci, 
   const carteOpzioni = [...opzioni.cards]
   for (const id of f.cards) {
     if (!carteOpzioni.some((c) => c.id === id)) {
-      carteOpzioni.unshift({ id, name: etichette[id] ?? null, epithet: null, type: '', class: '', thumb: null, n: 0 })
+      carteOpzioni.unshift({ id, name: etichette[id] ?? null, epithet: null, type: '', class: '', thumb: null, bare: false, n: 0 })
     }
   }
   const leaderFuori = f.leader && !opzioni.leaders.some((c) => c.id === f.leader)

@@ -20,6 +20,8 @@ export type LineupCard = {
   class: string
   rarity: string
   thumb_key: string | null
+  /** la miniatura e' il solo personaggio (asset_bare, 0034) */
+  thumb_bare: boolean
   /** la build congelata dello slot (0018), o null */
   build: SlotBuild | null
 }
@@ -39,7 +41,7 @@ const cardsJson = (alias: string, from: 'clear_lineup_card' | 'clear_card' = 'cl
            'rotation_index', k.rotation_index, 'pos', k.pos, 'role', k.role,
            'card_id', k.card_id::text, 'name', ct.name, 'epithet', ct.epithet,
            'type', cd.type::text, 'class', cd.class::text, 'rarity', cd.rarity::text,
-           'thumb_key', cd.thumb_key,
+           'thumb_key', cd.thumb_key, 'thumb_bare', asset_bare(cd.thumb_key),
            'build', ${from === 'clear_lineup_card'
              ? buildJson('k.version_id', 'k.seq', 'k.rotation_index', 'k.pos')
              : buildJson('k.version_id', '1', 'k.rotation_index', 'k.pos')})

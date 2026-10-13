@@ -13,7 +13,7 @@ import { AttesaLink } from '@/components/attesa-link'
 import { ConteggioClear } from '@/components/conteggio-clear'
 import { Paginazione } from '@/components/paginazione'
 import { AvvisoAccountCancellato } from '@/components/eventi/avviso-cancellato'
-import { SegnapostoEvento } from '@/components/segnaposto'
+import { CorniceCarta, SegnapostoEvento } from '@/components/segnaposto'
 import { segnapostoEvento } from '@/lib/segnaposto'
 
 // La lista degli eventi, comune a /events (statica: Global, nessun filtro,
@@ -281,7 +281,12 @@ export async function EventList({ filtri }: { filtri: FiltriLista }) {
                       // la carta del boss, se la conosciamo, altrimenti l'icona
                       // del tipo; sotto, il tipo di evento scritto.
                       <div className="flex flex-col items-center gap-1.5">
-                        {copertina ? (
+                        {copertina && e.cover_thumb_bare ? (
+                          // il boss e' il solo personaggio: la cornice disegnata
+                          <CorniceCarta type={e.cover_type} rarity={e.cover_rarity} size={56}>
+                            <Image src={copertina} alt="" width={56} height={56} className="rounded-[var(--raggio)]" />
+                          </CorniceCarta>
+                        ) : copertina ? (
                           <Image src={copertina} alt="" width={56} height={56} className="rounded-[var(--raggio)]" />
                         ) : (
                           <SegnapostoEvento kind={e.kind} misura="scheda" />

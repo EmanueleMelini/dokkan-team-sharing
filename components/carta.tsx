@@ -3,7 +3,7 @@ import Link from 'next/link'
 import { assetUrl } from '@/lib/db'
 import { cardHref } from '@/lib/urls'
 import { Tipo } from '@/components/tipo'
-import { SegnapostoCarta } from '@/components/segnaposto'
+import { CorniceCarta, SegnapostoCarta } from '@/components/segnaposto'
 
 export type CartaProps = {
   // NULL per le carte che il wiki non ha ancora (0015): la riga resta
@@ -14,6 +14,8 @@ export type CartaProps = {
   class?: string | null
   rarity?: string | null
   thumbKey: string | null
+  /** la miniatura e' il solo personaggio (asset_bare, 0034): dentro la cornice disegnata */
+  thumbBare?: boolean
   ruolo?: 'leader' | 'member' | 'friend'
   /**
    * Con l'id il nome porta alla pagina della carta, nella stessa scheda.
@@ -26,23 +28,28 @@ export type CartaProps = {
 const RUOLO: Record<string, string> = { leader: 'Leader', friend: 'Friend' }
 
 /** Una carta in una squadra: miniatura, ruolo, nome, tipo. */
-export function Carta({ epithet, name, type, class: classe, rarity, thumbKey, ruolo, cardId }: CartaProps) {
+export function Carta({ epithet, name, type, class: classe, rarity, thumbKey, thumbBare = false, ruolo, cardId }: CartaProps) {
   const src = assetUrl(thumbKey)
   const etichetta = ruolo ? RUOLO[ruolo] : undefined
+  // alt vuoto: il nome della carta è scritto accanto, l'immagine lo
+  // ripeterebbe soltanto
+  const img = src && (
+    <Image
+      src={src}
+      alt=""
+      width={48}
+      height={48}
+      className="rounded-[var(--raggio)] bg-superficie-2"
+    />
+  )
 
   return (
     <div className="flex items-start gap-2.5 min-w-0">
       <div className="relative shrink-0">
-        {/* alt vuoto: il nome della carta è scritto accanto, l'immagine
-            lo ripeterebbe soltanto */}
-        {src ? (
-          <Image
-            src={src}
-            alt=""
-            width={48}
-            height={48}
-            className="rounded-[var(--raggio)] bg-superficie-2"
-          />
+        {img ? (
+          // Una miniatura nuda: la cornice disegnata, con la rarita' in alto
+          // come il segnaposto qui sotto (in basso c'e' l'etichetta del ruolo)
+          thumbBare ? <CorniceCarta type={type} rarity={rarity} size={48} angolo="alto">{img}</CorniceCarta> : img
         ) : (
           // Senza miniatura (le carte prese dal gioco): il riquadro del
           // tipo, decorativo come l'immagine. La rarita' in alto, sotto la

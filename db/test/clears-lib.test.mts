@@ -19,6 +19,7 @@ import {
 import { searchCards } from '@/lib/cards'
 import { CLEAR_PER_PAGINA, clearPage, listClears } from '@/lib/queries'
 import { GET } from '@/app/api/cards/route'
+import { chiaveNuda, conMiniatureNude } from '@/db/test/miniature-nude'
 import { SUBMIT, REVISE, check, dati, guardia, num, one, payload, stato, utente } from '@/db/test/builder-helpers'
 
 guardia()
@@ -100,7 +101,7 @@ async function letture() {
   check('ed e\' lo stesso inviato', !!rilegge?.ok &&
     JSON.stringify(rilegge.value) === JSON.stringify((parseBuilderPayload(base) as { value: unknown }).value))
   check('con nomi e miniature per il builder', !!e && e.lineups.length === 2 && e.lineups[0].cards.length === 7 &&
-    e.lineups[0].cards.every((k) => 'thumb_key' in k && 'epithet' in k))
+    e.lineups[0].cards.every((k) => 'thumb_key' in k && 'epithet' in k && k.thumb_bare === false))
   const v2 = (await one<{ id: string }>(REVISE, [autore, clear, 'Same team, new run.', JSON.stringify(e!.payload)])).id
   check('e si rimanda tale e quale come revisione', !!v2)
 
@@ -252,12 +253,26 @@ async function carte() {
   const r = await chiama('q=goku&type=AGL')
   check('la rotta risponde in JSON compatto', r.status === 200 && Array.isArray(r.body.cards) &&
     r.body.cards.every((c: Record<string, unknown>) =>
-      Object.keys(c).sort().join() === 'class,epithet,id,name,rarity,thumb,type'), JSON.stringify(r.body.cards?.[0]))
+      Object.keys(c).sort().join() === 'bare,class,epithet,id,name,rarity,thumb,type' && c.bare === false),
+    JSON.stringify(r.body.cards?.[0]))
   // Cache-Control per il browser, CDN-Cache-Control (piu' lunga) per la CDN di Vercel
   check('con la cache pubblica', /public/.test(r.cache) && /max-age=300/.test(r.cache) &&
     /s-maxage=21600/.test(r.cdn) && /stale-while-revalidate=86400/.test(r.cdn), `${r.cache} | ${r.cdn}`)
   const tutte = await chiama('')
   check('pagina da 40 con il prossimo offset', tutte.body.cards.length === 40 && tutte.body.next === 40)
+  // La miniatura nuda (0034): searchCards e la rotta dicono bare, la
+  // Miniatura del picker e dello slot la incornicia
+  const nuda = goku[0]
+  if (check('c\'e\' una carta da rendere nuda', !!nuda)) {
+    await conMiniatureNude((t, p) => db.query(t, p), [nuda.id], async () => {
+      const hit = (await searchCards({ q: 'goku', limit: 40 })).find((c) => c.id === nuda.id)
+      check('searchCards: thumb_bare per la miniatura nuda', hit?.thumb_bare === true && hit.thumb_key === chiaveNuda(nuda.id))
+      const j = (await chiama('q=goku')).body.cards as { id: string; bare: boolean; thumb: string | null }[]
+      const nella = j.find((c) => c.id === nuda.id)
+      check('/api/cards: bare true per lei, false per le altre', nella?.bare === true && !!nella.thumb?.endsWith(chiaveNuda(nuda.id)) &&
+        j.filter((c) => c.id !== nuda.id).every((c) => c.bare === false), JSON.stringify(nella))
+    })
+  }
   for (const qs of ['type=XXX', 'class=Mega', 'rarity=SSSR', 'category=abc', 'offset=-1', 'offset=99999', `q=${'x'.repeat(61)}`]) {
     const b = await chiama(qs)
     check(`400 per ${qs.slice(0, 20)}`, b.status === 400 && typeof b.body.error === 'string' && /no-store/.test(b.cache))

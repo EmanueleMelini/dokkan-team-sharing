@@ -94,6 +94,49 @@ export function segnapostoCarta({ name, type, rarity, size, angolo = 'basso' }: 
 }
 
 /**
+ * La cornice che il sito disegna attorno a una miniatura nuda: il solo
+ * personaggio, senza la cornice del gioco, il badge del tipo e il logo (le
+ * LR del wiki, asset.frame false, migrazione 0034). Il bordo ha il colore
+ * del tipo come la banda del segnaposto, la rarita' sta in un'etichetta
+ * dentro il bordo, a sinistra.
+ */
+export type CorniceDisegnata = {
+  /** 1..5 per --marchio-N, 0 per un tipo sconosciuto (bordo neutro, --tenue) */
+  settore: number
+  /** lo spessore del bordo in px */
+  bordo: number
+  /** null sotto RARITA_DA o con una rarita' che il gioco non ha */
+  rarita: string | null
+  /** il corpo dell'etichetta in px: con leading-none e' anche la sua altezza, senza il padding */
+  corpoRarita: number
+  /** dove sta l'etichetta: px dal bordo esterno, appena dentro il bordo disegnato */
+  posRarita: { top: number } | { bottom: number }
+}
+
+/** Il padding verticale dell'etichetta della rarita' in CorniceCarta (py-px), per lato. */
+export const PAD_RARITA = 1
+
+/** Le misure della cornice disegnata attorno a una miniatura nuda, a una misura in px. */
+export function corniceDisegnata({ type, rarity, size, angolo = 'basso' }: {
+  type: string | null | undefined
+  rarity?: string | null
+  size: number
+  angolo?: AngoloRarita
+}): CorniceDisegnata {
+  // un sedicesimo del lato come la banda (3 px a 48, 10 a 160, 16 a 250);
+  // 1 px nei riquadri sotto INIZIALE_DA (i 16 px dei premi), dove 4 px
+  // coprirebbero mezzo personaggio
+  const bordo = size < INIZIALE_DA ? 1 : Math.max(2, Math.round(size / 16))
+  return {
+    settore: settoreTipo(type),
+    bordo,
+    rarita: size >= RARITA_DA && rarity && RARITA.has(rarity) ? rarity : null,
+    corpoRarita: Math.max(9, Math.round(size * 0.12)),
+    posRarita: angolo === 'alto' ? { top: bordo } : { bottom: bordo },
+  }
+}
+
+/**
  * Tipo e classe per esteso, per i lettori di schermo: "Super AGL",
  * "Extreme INT", il solo tipo senza classe. La stessa regola di
  * components/tipo.tsx, che scrive "SAGL" ed "EINT" (S per Super, E per

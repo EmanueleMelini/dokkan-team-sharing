@@ -33,6 +33,8 @@ export type CardHit = {
   class: CardClass
   rarity: CardRarity
   thumb_key: string | null
+  /** la miniatura e' il solo personaggio (asset_bare, 0034) */
+  thumb_bare: boolean
   // il giorno di uscita su Global, 'YYYY-MM-DD': una data, non un istante
   released_at: string | null
   links?: string[]
@@ -56,7 +58,8 @@ export async function searchCards(opts: CardSearch = {}): Promise<CardHit[]> {
   const like = q ? `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%` : null
   return sql<CardHit>(
     `select c.id::text, ct.name, ct.epithet, c.type::text as type, c.class::text as class,
-            c.rarity::text as rarity, c.thumb_key, r.released_at::text as released_at,
+            c.rarity::text as rarity, c.thumb_key, asset_bare(c.thumb_key) as thumb_bare,
+            r.released_at::text as released_at,
             ${opts.withLinks ? `coalesce((
               select json_agg(lt.name order by lt.name)
               from card_link cl

@@ -15,14 +15,20 @@
 //     al nome dove il riquadro e' piccolo, e quella del builder non finisce
 //     nel payload;
 //   - la geometria vera: la rarita' non tocca l'iniziale e non finisce
-//     sotto l'etichetta Leader/Friend.
+//     sotto l'etichetta Leader/Friend;
+//   - le miniature non si deformano: ogni next/image con larghezza e
+//     altezza fissate (o fill) ha un object-fit (la Miniatura del builder le
+//     stirava di un settimo);
+//   - la cornice disegnata attorno a una miniatura nuda (0034, CorniceCarta):
+//     le misure, l'etichetta della rarita' dentro il bordo e fuori
+//     dall'etichetta del ruolo, ogni riquadro che la usa col suo flag.
 //
 // Funzioni pure e file, niente database.
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import {
-  ETICHETTA_EVENTO, INIZIALE_DA, RARITA_DA, TIPI_MARCHIO,
-  inizialeCarta, segnapostoCarta, segnapostoEvento, settoreTipo, tipoPerEsteso,
+  ETICHETTA_EVENTO, INIZIALE_DA, PAD_RARITA, RARITA_DA, TIPI_MARCHIO,
+  corniceDisegnata, inizialeCarta, segnapostoCarta, segnapostoEvento, settoreTipo, tipoPerEsteso,
   type AngoloRarita, type SegnapostoCarta,
 } from '@/lib/segnaposto'
 import { TEMI, TEMA_IDS } from '@/lib/tema/temi'
@@ -349,8 +355,8 @@ console.log('\n  -- tipo e classe accanto al nome, dove il riquadro e\' piccolo'
 // Nello slot del builder (40 px) e nel menu "Uses card" (32 px) il
 // riquadro di prima scriveva "SAGL"; il segnaposto no: lo scrive chi lo usa
 const tipoAccanto = funzione(miniaturaTsx, 'TipoSenzaMiniatura')
-check('TipoSenzaMiniatura: niente con la miniatura del gioco, che il tipo lo mostra da se\'',
-  /if \(carta\.thumb\) return null/.test(tipoAccanto))
+check('TipoSenzaMiniatura: niente con la miniatura del gioco, che il tipo lo mostra da se\', se non e\' nuda',
+  /if \(carta\.thumb && !carta\.bare\) return null/.test(tipoAccanto))
 check('...a vista "SAGL" (Tipo), per i lettori di schermo "Super AGL"',
   /<span aria-hidden><Tipo tipo=\{carta\.type\} classe=\{carta\.class\} \/><\/span>/.test(tipoAccanto) &&
   /<span className="sr-only">, \{tipoPerEsteso\(carta\.type, carta\.class\)\}<\/span>/.test(tipoAccanto))
@@ -366,6 +372,176 @@ const stato = reducer(statoVuoto('42'), { t: 'carta', l: 0, i: 0, carta })
 check('la carta nello stato tiene la rarita\' (per il segnaposto)', stato.squadre[0].slots[0].carta?.rarity === 'LR')
 const payload = JSON.stringify(payloadDa(stato))
 check('il payload non la porta', !/rarity|"LR"/.test(payload) && payload.includes('1034150'), payload.slice(0, 160))
+const nuda: CartaScelta = { ...carta, thumb: '/assets/cards/1034150/thumb.webp', bare: true }
+const conNuda = reducer(statoVuoto('42'), { t: 'carta', l: 0, i: 0, carta: nuda })
+check('...e nemmeno il flag della miniatura nuda (bare)', conNuda.squadre[0].slots[0].carta?.bare === true &&
+  !/bare|thumb/.test(JSON.stringify(payloadDa(conNuda))))
+
+// ---------------------------------------------------------------------
+//  Le miniature non si deformano
+// ---------------------------------------------------------------------
+
+console.log('\n  -- le miniature non si deformano')
+// I tag <Image ... /> di un file, interi: le graffe contano (un onLoad con
+// "=>" dentro non chiude il tag)
+function tagImage(testo: string): string[] {
+  const out: string[] = []
+  for (let i = testo.indexOf('<Image'); i >= 0; i = testo.indexOf('<Image', i + 1)) {
+    if (/\w/.test(testo[i + 6] ?? '')) continue
+    let graffe = 0
+    for (let j = i; j < testo.length; j++) {
+      const ch = testo[j]
+      if (ch === '{') graffe++
+      else if (ch === '}') graffe--
+      else if (graffe === 0 && ch === '/' && testo[j + 1] === '>') { out.push(testo.slice(i, j + 2)); break }
+    }
+  }
+  return out
+}
+// Larghezza e altezza fissate entrambe (nello style, o con le classi w-/h-
+// o size-), o fill: senza object-fit il browser stira l'immagine nel
+// riquadro. Con le sole width/height come attributi il preflight di
+// Tailwind (img { height: auto }) tiene le proporzioni: va bene.
+function deforma(tag: string): boolean {
+  const stile = /style=\{\{([\s\S]*?)\}\}/.exec(tag)?.[1] ?? ''
+  const classi = /className=(?:"([^"]*)"|\{`([^`]*)`\})/.exec(tag)
+  const cl = (classi?.[1] ?? classi?.[2] ?? '').split(/\s+/)
+  const fisse = (/(^|[\s,{])width\s*:/.test(stile) && /(^|[\s,{])height\s*:\s*(?!'auto')/.test(stile))
+    || (cl.some((c) => /^w-(?!auto$)/.test(c)) && cl.some((c) => /^h-(?!auto$)/.test(c)))
+    || cl.some((c) => /^size-/.test(c))
+  const riempie = /\sfill(\s|\/|=\{true\})/.test(tag)
+  const adatta = /objectFit:\s*'(contain|cover)'/.test(stile) || cl.some((c) => /^object-(contain|cover)$/.test(c))
+  return (fisse || riempie) && !adatta
+}
+const VECCHIA = `<Image src={carta.thumb} alt="" width={size} height={size}
+  style={{ width: size, height: size }} className="shrink-0 rounded-[var(--raggio)] bg-superficie-2" />`
+check('la guardia riconosce la Miniatura di prima (larghezza e altezza nello style, niente object-fit)', deforma(VECCHIA))
+check('...e non le immagini con le sole width e height come attributi',
+  !deforma('<Image src={src} alt="" width={48} height={48} className="rounded-[var(--raggio)] bg-superficie-2" />') &&
+  !deforma('<Image src={x} alt="" width={28} height={28} className="h-5 w-auto" />') &&
+  deforma('<Image src={x} alt="" fill sizes="1px" />') && !deforma('<Image src={x} alt="" fill className="object-cover" />'))
+const tsx = (dir: string): string[] => readdirSync(new URL(`../../${dir}/`, import.meta.url), { withFileTypes: true })
+  .flatMap((e) => (e.isDirectory() ? tsx(`${dir}/${e.name}`) : e.name.endsWith('.tsx') ? [`${dir}/${e.name}`] : []))
+const immagini = [...tsx('components'), ...tsx('app')].flatMap((f) => tagImage(senzaCommenti(leggi(f))).map((tag) => ({ f, tag })))
+check('ogni next/image dei componenti trovato', immagini.length >= 20, `${immagini.length}`)
+const deformate = immagini.filter((x) => deforma(x.tag))
+check('nessuna con larghezza e altezza fissate (o fill) senza object-fit', deformate.length === 0,
+  deformate.map((x) => `${x.f}: ${x.tag.replace(/\s+/g, ' ').slice(0, 90)}`).join(' | '))
+const tagMiniatura = tagImage(funzione(miniaturaTsx, 'Miniatura'))
+check('Miniatura: il riquadro resta quadrato (width e height = size) e l\'immagine contenuta',
+  tagMiniatura.length === 1 && /width=\{size\}/.test(tagMiniatura[0]) && /height=\{size\}/.test(tagMiniatura[0]) &&
+  /style=\{\{ width: size, height: size, objectFit: 'contain' \}\}/.test(tagMiniatura[0]),
+  (tagMiniatura[0] ?? '').replace(/\s+/g, ' ').slice(0, 120))
+
+// ---------------------------------------------------------------------
+//  La cornice disegnata attorno a una miniatura nuda (0034)
+// ---------------------------------------------------------------------
+
+console.log('\n  -- la cornice disegnata: le misure')
+vale('il bordo: 1 px sotto i 24, poi un sedicesimo del lato, almeno 2',
+  [16, 32, 40, 44, 48, 56, 96, 160, 250].map((size) => corniceDisegnata({ type: 'AGL', size }).bordo), [1, 2, 3, 3, 3, 4, 6, 10, 16])
+vale(`la rarita\' da ${RARITA_DA} px, solo quelle del gioco`,
+  [[RARITA_DA - 1, 'LR'], [RARITA_DA, 'LR'], [48, 'UR'], [48, 'XR'], [48, null], [96, 'lr']]
+    .map(([size, rarity]) => corniceDisegnata({ type: 'TEQ', rarity: rarity as string | null, size: size as number }).rarita),
+  [null, 'LR', 'UR', null, null, null])
+vale('il settore del tipo nell\'ordine del marchio, 0 per uno sconosciuto',
+  [...TIPI_MARCHIO, '', 'XYZ', null].map((type) => corniceDisegnata({ type, size: 48 }).settore), [1, 2, 3, 4, 5, 0, 0, 0])
+vale('l\'etichetta appena dentro il bordo: in basso, o in alto con angolo="alto"',
+  [corniceDisegnata({ type: 'INT', rarity: 'LR', size: 44 }).posRarita, corniceDisegnata({ type: 'INT', rarity: 'LR', size: 48, angolo: 'alto' }).posRarita],
+  [{ bottom: 3 }, { top: 3 }])
+vale('il corpo dell\'etichetta come quello della rarita\' del segnaposto',
+  [40, 48, 56, 96, 250].map((size) => corniceDisegnata({ type: 'PHY', rarity: 'LR', size }).corpoRarita),
+  [40, 48, 56, 96, 250].map((size) => segnapostoCarta({ name: 'X', type: 'PHY', rarity: 'LR', size }).corpoRarita))
+
+console.log('\n  -- la cornice disegnata: il componente')
+const cornice = funzione(comp, 'CorniceCarta')
+check('CorniceCarta c\'e\', in components/segnaposto.tsx (gia\' senza \'use client\', hook, next/image, URL)', cornice.length > 0)
+check('...senza <style> ne\' <img>', !/<style\b|<img\b/i.test(cornice))
+check('...il bordo col colore del tipo dentro .colori-marchio, neutro con --tenue',
+  /colori-marchio/.test(cornice) && /var\(--marchio-\$\{c\.settore\}\)/.test(cornice) && /: 'var\(--tenue\)'/.test(cornice) &&
+  /border: `\$\{c\.bordo\}px solid/.test(cornice))
+check('...l\'etichetta inchiostro su superficie-2 (il contrasto provato qui sopra in ogni tema), decorativa',
+  /aria-hidden\s+className="numeri absolute rounded-\[2px\] bg-superficie-2 px-0\.5 py-px font-semibold leading-none text-inchiostro"/.test(cornice) &&
+  /style=\{\{ fontSize: c\.corpoRarita, left: c\.bordo, \.\.\.c\.posRarita \}\}/.test(cornice))
+check('...il bordo disegnato e\' decorativo e non prende i clic', /aria-hidden\s+className=\{`pointer-events-none absolute inset-0/.test(cornice))
+check('...l\'immagine centrata, mai stirata dal flex (items-center)', /inline-flex shrink-0 align-top items-center justify-center overflow-hidden/.test(cornice))
+// Nei genitori a blocchi (Carta, il <li> del profilo) una inline-flex con la
+// sola immagine sta sulla linea di base del testo: senza vertical-align la
+// riga le aggiunge sotto la discesa del font e Leader/Friend si stacca
+const radice = /data-cornice="disegnata"[\s\S]*?className=\{`([^`]*)`\}/.exec(cornice)?.[1] ?? ''
+check('...e allineata in alto, mai sulla linea di base del testo (align-top)',
+  /\binline-flex\b/.test(radice) && /\balign-(top|middle|bottom|text-top|text-bottom)\b/.test(radice), radice)
+check('...PAD_RARITA e\' il py-px della sua etichetta', PAD_RARITA === 1 && /\bpy-px\b/.test(cornice))
+
+console.log('\n  -- la cornice disegnata: chi la usa, e dove sta l\'etichetta')
+// Ogni riquadro che mostra una miniatura: la incornicia quando il suo flag
+// dice che e' nuda
+const NUDE: [string, string][] = [
+  ['components/carta.tsx', 'thumbBare'], ['components/builder/miniatura.tsx', 'carta\\.bare'],
+  ['components/cards/catena.tsx', 'c\\.thumb_bare'], ['components/cards/art-toggle.tsx', 'thumbBare'],
+  ['components/profile/riga-clear.tsx', 'k\\.thumb_bare'], ['components/missioni.tsx', 'r\\.icon_bare'],
+  ['components/eventi/lista.tsx', 'e\\.cover_thumb_bare'], ['components/evento/pagina.tsx', 'e\\.cover_thumb_bare'],
+]
+vale('gli stessi file che usano i segnaposto', NUDE.map(([f]) => f).sort(), [...USANO].sort())
+const senzaCornice = NUDE.filter(([f, flag]) => {
+  const t = senzaCommenti(leggi(f))
+  return !/import \{[^}]*\bCorniceCarta\b[^}]*\} from '@\/components\/segnaposto'/.test(t) ||
+    !new RegExp(`${flag}\\s*\\?\\s*\\(?\\s*<CorniceCarta\\b`).test(t)
+}).map(([f]) => f)
+check('ognuno avvolge la miniatura nuda in <CorniceCarta> col suo flag', senzaCornice.length === 0, senzaCornice.join())
+// Il flag arriva da asset_bare() fino al riquadro
+const FLAG: [string, RegExp][] = [
+  ['lib/queries.ts', /asset_bare\(cv\.thumb_key\) as cover_thumb_bare[\s\S]*asset_bare\(cv\.thumb_key\) as cover_thumb_bare/],
+  ['lib/queries.ts', /'icon_bare', ri\.asset_key is null and asset_bare\(c\.thumb_key\)/],
+  ['lib/queries.ts', /'thumb_bare', asset_bare\(cd\.thumb_key\),\s*'build'/],
+  ['lib/queries.ts', /asset_bare\(cd\.thumb_key\) as thumb_bare, 0 as n/],
+  ['lib/cards.ts', /asset_bare\(c\.thumb_key\) as thumb_bare/],
+  ['lib/clears.ts', /'thumb_bare', asset_bare\(cd\.thumb_key\)/],
+  ['lib/card-page.ts', /asset_bare\(c\.thumb_key\) as thumb_bare[\s\S]*'thumb_bare', asset_bare\(kc\.thumb_key\)/],
+  ['lib/profiles.ts', /'thumb_bare', asset_bare\(cd\.thumb_key\)/],
+  ['app/api/cards/route.ts', /bare: c\.thumb_bare/],
+  ['lib/clears/builder-iniziale.ts', /bare: k\.thumb_bare/],
+  ['lib/clears/filtri-pagina.ts', /bare: c\.thumb_bare/],
+  ['components/clears/squadra.tsx', /thumbBare=\{c\.thumb_bare\}/],
+  ['components/cards/pagina.tsx', /thumbBare=\{card\.thumb_bare\}/],
+]
+const senzaFlag = FLAG.filter(([f, re]) => !re.test(leggi(f))).map(([f, re]) => `${f} ${re.source.slice(0, 40)}`)
+check('il flag da asset_bare() fino a ogni riquadro', senzaFlag.length === 0, senzaFlag.join(' | '))
+const facetsQ = leggi('lib/queries.ts')
+check('...in tutte e due le liste dei filtri (carte e leader)',
+  (facetsQ.match(/'thumb_bare', asset_bare\(cd\.thumb_key\), 'n', x\.n/g) ?? []).length === 2)
+
+// Dove sta l'etichetta, come la disegna il componente: dentro il bordo, in
+// alto o in basso, alta corpo + 2 x PAD_RARITA
+const cornici: { dove: string; size: number; angolo: AngoloRarita; rarity: boolean }[] = []
+for (const f of USANO) {
+  for (const m of leggi(f).matchAll(/<CorniceCarta\b([^>]*)>/g)) {
+    const attr = m[1]
+    const size = Number(/size=\{(\d+)\}/.exec(attr)?.[1] ?? (/size=\{size\}/.test(attr) ? 44 : NaN))
+    cornici.push({ dove: f, size, angolo: /angolo="alto"/.test(attr) ? 'alto' : 'basso', rarity: /rarity=/.test(attr) })
+  }
+}
+check('le cornici dei riquadri: Carta, Miniatura, catena, artwork, profilo, premi, i due eventi', cornici.length === 8 &&
+  cornici.every((c) => Number.isFinite(c.size)), cornici.map((c) => `${c.dove.split('/').pop()} ${c.size} ${c.angolo}`).join(', '))
+const rigaEtichetta = (size: number, angolo: AngoloRarita): Riga => {
+  const c = corniceDisegnata({ type: 'AGL', rarity: 'LR', size, angolo })
+  const alta = c.corpoRarita + 2 * PAD_RARITA
+  return 'top' in c.posRarita ? [c.posRarita.top, c.posRarita.top + alta] : [size - c.posRarita.bottom - alta, size - c.posRarita.bottom]
+}
+const misure = [...new Set([...cornici.map((c) => c.size), 32, 40, 44])].filter((x) => x >= RARITA_DA)
+for (const size of misure) {
+  for (const angolo of ['basso', 'alto'] as const) {
+    const c = corniceDisegnata({ type: 'AGL', rarity: 'LR', size, angolo }), r = rigaEtichetta(size, angolo)
+    check(`${size} px, ${angolo}: l'etichetta dentro il bordo`, r[0] >= c.bordo && r[1] <= size - c.bordo, `${r.join('-')}, bordo ${c.bordo}`)
+  }
+}
+const inCartaCornice = cornici.filter((c) => c.dove === 'components/carta.tsx')
+check('Carta: la cornice da 48 px con la rarita\' in alto', inCartaCornice.length === 1 && inCartaCornice[0].size === 48 &&
+  inCartaCornice[0].angolo === 'alto' && inCartaCornice[0].rarity, mostra(inCartaCornice))
+const eAlto = rigaEtichetta(48, 'alto')
+check('...sopra l\'etichetta Leader/Friend anche con la riga piu\' alta', eAlto[1] <= cimaEt(2 * corpoEt),
+  `etichetta LR ${eAlto.join('-')}, ruolo da ${cimaEt(2 * corpoEt)}`)
+check('...mentre in basso la coprirebbe', rigaEtichetta(48, 'basso')[1] > cimaEt(corpoEt))
 
 console.log(fails ? `\n  ${passes} verdi, ${fails} rosse\n` : `\n  ${passes} verifiche, TUTTO VERDE\n`)
 process.exit(fails ? 1 : 0)

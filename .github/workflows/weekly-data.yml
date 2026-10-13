@@ -346,10 +346,12 @@ jobs:
       # contro un controllo anti-bot e' come lo si fa salire. Al primo 403
       # fetch-assets smette, e il giro giornaliero riprova domani. Il
       # manifesto (fuori dall'albero, mai pubblicato) da' alla produzione la
-      # stessa provenienza delle righe del giro di prova.
+      # stessa provenienza delle righe del giro di prova. Parte anche quando
+      # non manca niente ma qualche miniatura e' nuda (bare_thumbs, 0034):
+      # la sua thumb-framed non ha riga, e --missing la riprova.
       - name: Download new images from the wiki
         id: download
-        if: env.GO == 'true' && steps.images.outputs.pending != '0'
+        if: env.GO == 'true' && (steps.images.outputs.pending != '0' || steps.images.outputs.bare_thumbs != '0')
         env:
           DATABASE_URL: ${{ env.REHEARSAL_URL }}
           ASSET_DIR: ${{ runner.temp }}/new

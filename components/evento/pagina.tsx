@@ -28,7 +28,7 @@ import { FiltriClear, type OpzioniFiltri } from '@/components/clears/filtri-clea
 import { FiltriAttivi } from '@/components/clears/filtri-attivi'
 import { SPIEGA_ORDINE, VUOTI, filtriAttivi, soloOrdine, type FiltriClear as Filtri } from '@/lib/clears/filtri'
 import { datiFiltri } from '@/lib/clears/filtri-pagina'
-import { SegnapostoEvento } from '@/components/segnaposto'
+import { CorniceCarta, SegnapostoEvento } from '@/components/segnaposto'
 import { segnapostoEvento } from '@/lib/segnaposto'
 
 // Il corpo della pagina di un evento, per tutte le sue viste
@@ -212,6 +212,11 @@ export async function EventPage({ id, view, filtri }: { id: string; view: EventV
         <div className="relative aspect-[16/7] rounded-[var(--raggio)] overflow-hidden bg-superficie-2 border border-linea flex items-center justify-center">
           {banner ? (
             <Image src={banner} alt="" fill preload sizes="(max-width: 768px) 100vw, 50vw" className="object-cover" />
+          ) : copertina && e.cover_thumb_bare ? (
+            // ...la carta del boss che e' il solo personaggio: la cornice disegnata
+            <CorniceCarta type={e.cover_type} rarity={e.cover_rarity} size={96}>
+              <Image src={copertina} alt="" width={96} height={96} preload className="rounded-[var(--raggio)]" />
+            </CorniceCarta>
           ) : copertina ? (
             // Gli eventi presi dal gioco non hanno banner: la carta del boss
             <Image src={copertina} alt="" width={96} height={96} preload className="rounded-[var(--raggio)]" />

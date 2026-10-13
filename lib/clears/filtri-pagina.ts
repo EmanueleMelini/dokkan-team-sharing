@@ -16,7 +16,7 @@ export const CLEAR_PER_BARRA = 2
 
 const opzione = (c: CartaFiltro): OpzioneCarta => ({
   id: c.id, name: c.name, epithet: c.epithet, type: c.type, class: c.class,
-  thumb: assetUrl(c.thumb_key), n: c.n,
+  thumb: assetUrl(c.thumb_key), bare: c.thumb_bare, n: c.n,
 })
 
 function opzioni(f: FacetClear): OpzioniFiltri {

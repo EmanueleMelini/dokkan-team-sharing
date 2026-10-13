@@ -96,6 +96,7 @@ export function CardPage({ card, clears }: { card: CardDetail; clears: { rows: C
             animated={assetUrl(card.art_animated_key)}
             animatedBytes={card.art_animated_bytes}
             thumb={assetUrl(card.thumb_key)}
+            thumbBare={card.thumb_bare}
             type={card.type}
             rarity={card.rarity}
           />

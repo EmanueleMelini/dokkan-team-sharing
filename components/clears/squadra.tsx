@@ -23,6 +23,8 @@ export type CartaSquadra = {
   /** per il segnaposto di una carta senza miniatura */
   rarity?: string | null
   thumb_key: string | null
+  /** la miniatura e' il solo personaggio (asset_bare, 0034) */
+  thumb_bare?: boolean
   /** la build dello slot (0018), se l'autore l'ha scritta */
   build?: SlotBuild | null
 }
@@ -55,6 +57,7 @@ export function Squadra({ carte, idBase }: { carte: CartaSquadra[]; idBase: stri
                     class={c.class}
                     rarity={c.rarity}
                     thumbKey={c.thumb_key}
+                    thumbBare={c.thumb_bare}
                     ruolo={c.role}
                     cardId={c.card_id}
                   />

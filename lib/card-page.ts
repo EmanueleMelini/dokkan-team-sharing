@@ -54,6 +54,8 @@ export type ChainItem = {
   type: string
   class: string | null
   thumb_key: string | null
+  /** la miniatura e' il solo personaggio (asset_bare, 0034) */
+  thumb_bare: boolean
   global: boolean
 }
 
@@ -74,6 +76,8 @@ export type CardDetail = {
   /** 'YYYY-MM-DD' per regione */
   releases: { reg: Region; date: string }[]
   thumb_key: string | null
+  /** la miniatura e' il solo personaggio (asset_bare, 0034) */
+  thumb_bare: boolean
   art_key: string | null
   art_animated_key: string | null
   /** il peso dell'artwork animato, per dirlo prima di scaricarlo */
@@ -122,7 +126,7 @@ export async function getCard(id: string): Promise<CardDetail | null> {
      )
      select c.id::text, c.type::text, c.class::text, c.rarity::text, c.has_eza, c.is_seza,
             c.hp, c.atk, c.def, c.wiki_title, ct.name, ct.epithet,
-            c.thumb_key, c.art_key, c.art_animated_key,
+            c.thumb_key, asset_bare(c.thumb_key) as thumb_bare, c.art_key, c.art_animated_key,
             (select a.byte_size from asset a where a.key = c.art_animated_key) as art_animated_bytes,
             (select a.width from asset a where a.key = c.art_key) as art_w,
             (select a.height from asset a where a.key = c.art_key) as art_h,
@@ -156,6 +160,7 @@ export async function getCard(id: string): Promise<CardDetail | null> {
             (select json_agg(json_build_object(
                       'id', k.id::text, 'name', kt.name, 'epithet', kt.epithet, 'rarity', kc.rarity,
                       'type', kc.type, 'class', kc.class, 'thumb_key', kc.thumb_key,
+                      'thumb_bare', asset_bare(kc.thumb_key),
                       'global', exists (select 1 from card_release r
                                          where r.card_id = k.id and r.reg = 'global'))
                     order by k.ord)

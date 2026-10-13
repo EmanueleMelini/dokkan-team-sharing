@@ -2,7 +2,9 @@ import type { Icon } from '@phosphor-icons/react'
 import {
   BookOpenText, CalendarBlank, Gift, Hourglass, Lightning, Medal, Trophy,
 } from '@phosphor-icons/react/dist/ssr'
-import { segnapostoCarta, segnapostoEvento, type AngoloRarita, type IconaEvento } from '@/lib/segnaposto'
+import {
+  INIZIALE_DA, corniceDisegnata, segnapostoCarta, segnapostoEvento, type AngoloRarita, type IconaEvento,
+} from '@/lib/segnaposto'
 
 /*
  * I segnaposto delle immagini che non abbiamo: la miniatura di una carta,
@@ -75,6 +77,67 @@ export function SegnapostoCarta({ name, type, rarity, size, angolo, etichetta }:
           style={{ fontSize: s.corpoRarita, ...s.posRarita }}
         >
           {s.rarita}
+        </span>
+      )}
+    </span>
+  )
+}
+
+/**
+ * Una miniatura che e' il solo personaggio (asset.frame false, 0034: le LR
+ * del wiki, il cui "Card <id> thumb.png" e' uno strato della miniatura che
+ * Module:Thumb compone nel browser) dentro una cornice nostra: il bordo col
+ * colore del tipo, come la banda del segnaposto, e la rarita' in
+ * un'etichetta dentro il bordo, a sinistra (in basso, o in alto con
+ * angolo="alto" dove il fondo lo copre l'etichetta Leader/Friend). Senza,
+ * la carta sembrerebbe rotta: niente cornice, niente tipo, niente logo.
+ *
+ * children e' l'immagine, che chi chiama dimensiona (object-fit contain:
+ * mai deformata). Il riquadro e' size x size; con fluida e' largo size,
+ * className puo' stringerlo (max-w-[70%] al posto dell'artwork che manca)
+ * e l'altezza lo segue (aspect-ratio). Bordo ed etichetta sono
+ * decorativi: l'alt resta quello dell'immagine.
+ *
+ * Come i segnaposto: niente 'use client', hook, next/image o <style>, e la
+ * stessa risposta per tutti (il flag viene dai dati, asset_bare()).
+ */
+export function CorniceCarta({ type, rarity, size, angolo, fluida = false, className = '', children }: {
+  type: string | null | undefined
+  rarity?: string | null
+  size: number
+  angolo?: AngoloRarita
+  fluida?: boolean
+  className?: string
+  children: React.ReactNode
+}) {
+  const c = corniceDisegnata({ type, rarity, size, angolo })
+  // piccola come le icone dei premi (16 px): il raggio di quelle, come il segnaposto
+  const raggio = size >= INIZIALE_DA ? 'rounded-[var(--raggio)]' : 'rounded-[2px]'
+  return (
+    <span
+      data-cornice="disegnata"
+      style={fluida ? { width: size, aspectRatio: '1 / 1' } : { width: size, height: size }}
+      // align-top: inline-flex con la sola immagine in flusso ha la linea di
+      // base in fondo all'immagine, e in un genitore a blocchi (il riquadro
+      // di Carta, il <li> del profilo) la riga gli aggiungerebbe sotto la
+      // discesa del testo, ~6 px: l'etichetta Leader/Friend si staccherebbe
+      // e la riga della squadra si allungherebbe. Nei genitori flex non conta
+      className={`colori-marchio relative inline-flex shrink-0 align-top items-center justify-center overflow-hidden bg-superficie-2 ${raggio} ${className}`}
+    >
+      {children}
+      <span
+        aria-hidden
+        className={`pointer-events-none absolute inset-0 ${raggio}`}
+        // un tipo sconosciuto: il grigio del testo tenue, come la banda neutra
+        style={{ border: `${c.bordo}px solid ${c.settore ? `var(--marchio-${c.settore})` : 'var(--tenue)'}` }}
+      />
+      {c.rarita && (
+        <span
+          aria-hidden
+          className="numeri absolute rounded-[2px] bg-superficie-2 px-0.5 py-px font-semibold leading-none text-inchiostro"
+          style={{ fontSize: c.corpoRarita, left: c.bordo, ...c.posRarita }}
+        >
+          {c.rarita}
         </span>
       )}
     </span>

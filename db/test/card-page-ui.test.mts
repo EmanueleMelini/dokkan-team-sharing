@@ -19,6 +19,7 @@ import {
 import {
   DOMINIO, SUBMIT, check, dati, guardia, num, one, payload, q, stato, utente,
 } from '@/db/test/builder-helpers'
+import { chiaveNuda, conMiniatureNude } from '@/db/test/miniature-nude'
 
 guardia()
 const P = 'cardpageui'
@@ -131,6 +132,16 @@ async function carte() {
     const p = await getCard(c.prima)
     vale('dalla prima la stessa catena', p?.chain.map((k) => k.id), [c.prima, c.mezzo, c.ultima])
     check('Global segnato per ogni anello', !!m && m.chain.every((k) => typeof k.global === 'boolean'))
+    check('nessuna miniatura nuda senza immagini: thumb_bare false, anche nella catena',
+      m?.thumb_bare === false && !!m && m.chain.every((k) => k.thumb_bare === false))
+    // La miniatura nuda (0034): la pagina e la catena la incorniciano
+    await conMiniatureNude((t, p) => db.query(t, p), [c.mezzo], async () => {
+      const n = await getCard(c.mezzo)
+      check('getCard: thumb_bare per la miniatura nuda', n?.thumb_bare === true && n.thumb_key === chiaveNuda(c.mezzo))
+      vale('...e nella catena solo il suo anello', n?.chain.map((k) => k.thumb_bare), [false, true, false])
+      vale('dalla prima: lei no, l\'anello di mezzo si\'', [(await getCard(c.prima))?.thumb_bare,
+        (await getCard(c.prima))?.chain.map((k) => k.thumb_bare)], [false, [false, true, false]])
+    })
   }
   const sola = await one<{ id: string }>(`
     select c.id::text from card c where c.awakens_from is null

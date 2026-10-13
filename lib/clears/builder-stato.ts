@@ -17,6 +17,8 @@ export type CartaScelta = {
   thumb: string | null
   /** solo per il segnaposto di una carta senza miniatura: non va mai nel payload */
   rarity?: string | null
+  /** la miniatura e' il solo personaggio (0034), per la cornice disegnata: mai nel payload */
+  bare?: boolean
 }
 
 /** Una ricorrenza dell'evento nel selettore, con la data già scritta. */

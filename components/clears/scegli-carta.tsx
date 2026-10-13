@@ -13,6 +13,8 @@ export type OpzioneCarta = {
   type: string
   class: string
   thumb: string | null
+  /** la miniatura e' il solo personaggio (0034): Miniatura la incornicia */
+  bare: boolean
   /** in quanti clear del tier; 0 per una carta che arriva solo dall'URL */
   n: number
 }

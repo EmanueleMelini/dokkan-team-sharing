@@ -50,7 +50,7 @@ export async function GET(request: NextRequest) {
     {
       cards: hits.map((c) => ({
         id: c.id, name: c.name, epithet: c.epithet, type: c.type, class: c.class,
-        rarity: c.rarity, thumb: assetUrl(c.thumb_key),
+        rarity: c.rarity, thumb: assetUrl(c.thumb_key), bare: c.thumb_bare,
       })),
       total,
       next: from + hits.length < total ? from + hits.length : null,

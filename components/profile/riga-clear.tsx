@@ -2,7 +2,7 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { Camera, Prohibit, ShieldCheck } from '@phosphor-icons/react/dist/ssr'
 import { assetUrl } from '@/lib/db'
-import { SegnapostoCarta } from '@/components/segnaposto'
+import { CorniceCarta, SegnapostoCarta } from '@/components/segnaposto'
 import { soloGiorno } from '@/lib/date'
 import { DIFFICOLTA } from '@/lib/livelli'
 import { clearAnchor, eventHref } from '@/lib/urls'
@@ -48,7 +48,12 @@ export function RigaClear({ c }: { c: ProfileClear }) {
               const nome = k.name ?? `Card ${k.card_id}`
               return (
                 <li key={`${k.rot}-${k.pos}`}>
-                  {src ? (
+                  {src && k.thumb_bare ? (
+                    // il solo personaggio: la cornice disegnata, l'alt resta all'immagine
+                    <CorniceCarta type={k.type} size={32}>
+                      <Image src={src} alt={nome} title={nome} width={32} height={32} className="rounded-[var(--raggio)] bg-superficie-2" />
+                    </CorniceCarta>
+                  ) : src ? (
                     <Image src={src} alt={nome} title={nome} width={32} height={32} className="rounded-[var(--raggio)] bg-superficie-2" />
                   ) : (
                     // qui il riquadro e' l'unica cosa che dice la carta: porta il nome

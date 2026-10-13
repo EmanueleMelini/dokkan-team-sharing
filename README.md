@@ -133,8 +133,8 @@ immagini") ha solo `fetch-assets --offline` (`PIPELINE_IMAGES`).
    **l'API di scrittura** (`write_api.test.sh`, 68), poi le funzioni pure
    dell'import: l'id delle carte dal wiki e le pagine abbozzate
    (`wiki-card.test.mjs`), i job delle immagini anche senza pagina, le
-   risposte della CDN e i ritenti, la provenienza e i limiti di spazio
-   (`assets.test.mjs`), le soglie della freschezza delle fonti e l'archivio
+   risposte della CDN e i ritenti, la provenienza, i limiti di spazio e la
+   cornice delle miniature (`assets.test.mjs`), le soglie della freschezza delle fonti e l'archivio
    del datamine (`fonti.test.mjs`);
 3. ci importa i dati veri dalle cache locali (carte, eventi, datamine), senza
    nessuna richiesta di rete;
@@ -153,7 +153,7 @@ immagini") ha solo `fetch-assets --offline` (`PIPELINE_IMAGES`).
    per ultima, dell'aggiornamento settimanale e del giro giornaliero delle
    immagini (`weekly-data.test.mts`: i due workflow e i permessi job per
    job, la guardia della cache di Actions, `import_run`, le immagini
-   mancanti, i vincoli della 0033).
+   mancanti, i vincoli della 0033 e della 0034).
 
 Un passo che prepara i dati, se fallisce, ferma tutto; una suite rossa non
 ferma le altre. Alla fine c'è un riepilogo, e il comando esce con errore se
@@ -341,11 +341,11 @@ lib/
   dal.ts                      chi e' l'utente: requireUser / requireOnboardedUser / requireFreshUser (mai nelle pagine pubbliche)
   moderation/                 motivi, frasi d'errore, Report, requireAdmin, letture e azioni di /admin
   legale.ts                   i numeri e i testi di privacy e terms
-  segnaposto.ts               cosa mostra un segnaposto (puro): settore del tipo, iniziale, misure, icona ed etichetta dell'evento
+  segnaposto.ts               cosa mostra un segnaposto (puro): settore del tipo, iniziale, misure, icona ed etichetta dell'evento, la cornice disegnata
   db.ts, db-config.ts         la pool (una per processo) e le sue impostazioni: dimensioni, TLS
   cron.ts                     l'autenticazione delle rotte di Vercel Cron
 db/
-  migrations/                 NNNN_*.sql, applicate in ordine, mai modificate (0001-0033, elenco sotto)
+  migrations/                 NNNN_*.sql, applicate in ordine, mai modificate (0001-0034, elenco sotto)
   migrate.mjs                 runner: applica le pendenti, una transazione ciascuna (--check per sapere se e' indietro)
   reset.mjs                   ricostruisce un database da zero (--fixture per i test)
   env.mjs                     la sorgente unica di DATABASE_URL per gli script
@@ -362,8 +362,9 @@ db/
     load-missions.mjs, missions/   le missioni Global e i loro premi
     load-equipment.mjs, equipment-limits.mjs   le Skill Orb e le loro regole
     fetch-assets.mjs          le immagini (--offline: solo dal disco; --missing: solo quelle senza riga; --plan: solo il piano)
-    asset-jobs.mjs            quali file chiedere al wiki per ogni carta, anche senza pagina (i nomi per convenzione)
+    asset-jobs.mjs            quali file chiedere al wiki per ogni carta, anche senza pagina (i nomi per convenzione), e quale miniatura collegare (0034)
     asset-select.mjs          quali job fare, le risposte della CDN e i ritenti, la provenienza (0033)
+    asset-cornice.mjs         se una miniatura ha la cornice o e' il solo personaggio, dai pixel (ffmpeg, 0034)
     asset-limits.mjs          i limiti di spazio: file per deploy di Pages, tetto e budget degli animati
     .cache/                   wikitext e CSV scaricati (non versionati)
   prod/                       gli script contro la produzione (prod:setup, prod:migrate, prod:update, prod:backup, ...)
@@ -418,6 +419,7 @@ Le migrazioni che contano per il sito, oltre allo schema dei dati (0001-0013, 00
 | `0031_push.sql` | le push del browser: `push_subscription`, `push_sent`, `push_claim` |
 | `0032_site_activity.sql` | l'attività del sito per gli admin: il feed, una push per azione, mai per email |
 | `0033_asset_source.sql` | `asset.source` e `source_url`: da dove viene ogni immagine |
+| `0034_thumb_frame.sql` | `asset.frame` e `asset_bare()`: le miniature senza cornice (le LR del wiki), che il sito incornicia |
 
 ### Sulle migrazioni
 
@@ -433,7 +435,7 @@ controllano i test, che girano solo su un nome che finisce per `_test`.
 **In produzione l'ordine con il codice non è sempre lo stesso**, e la CI non
 migra mai (`npm run prod:migrate -- --yes` è un gesto a mano). Una colonna
 che il codice nuovo legge va online **prima** del codice: senza, il codice
-nuovo si rompe (0027, 0028). Un vincolo che il codice di prima non
+nuovo si rompe (0027, 0028, 0034). Un vincolo che il codice di prima non
 rispetta va online **subito dopo** il codice: prima, il codice di prima
 fallirebbe a ogni scrittura (la 0033, `asset.source` not null senza
 default). Ma conta solo dove il codice di prima scrive davvero: la 0033
@@ -778,7 +780,7 @@ carta non ha ancora (anche senza pagina: sotto, "Le carte senza pagina").
 ```bash
 npm run db:assets                       # tutto
 npm run db:assets -- --only icons
-npm run db:assets -- --only thumb        # statiche e animate
+npm run db:assets -- --only thumb        # statiche (anche quelle con la cornice, 0034) e animate
 npm run db:assets -- --only anim         # solo le animate
 npm run db:assets -- --only art --limit 50
 npm run db:assets -- --flatten-existing  # ripara gli animati salvati male
@@ -935,6 +937,227 @@ fermano il settimanale e il giornaliero con il loro messaggio, prima di
 scrivere qualsiasi cosa (la CI non migra mai); il sito non legge
 `asset.source`, quindi non se ne accorge. La 0032 e la 0033 sono nate in
 parallelo; `migrate.mjs` applica le pendenti per nome.
+
+### Le miniature e la cornice (migrazione 0034)
+
+**Il problema.** Sul wiki la miniatura di una LR non è un file: il modulo
+`Module:Thumb` la compone nel browser a strati (la cornice `Frame SSR <tipo>
+thumb.png`, la spirale, i raggi animati, `Card <id> thumb.png`, il logo
+`LR icon thumb.png` e l'icona del tipo). `Card <id> thumb.png` di una LR è
+quindi **il solo personaggio**, senza cornice, badge del tipo né logo LR, e
+`fetch-assets` lo prendeva per convenzione. Misurato il 13 ottobre 2026 su
+`dokkan_dev`: 179 delle 183 miniature LR erano così, tutte 250x250. La
+versione con la cornice c'è quasi sempre: è `|thumb apng`, l'APNG animato
+che la pagina incolla (`Card <id> thumb apng.png`, 4,4 MB in media), il cui
+primo fotogramma è la miniatura giusta.
+
+**Due job per la miniatura ferma** (`db/import/asset-jobs.mjs`, `cardJobs`):
+
+- `cards/<id>/thumb`, quello di sempre: il file scritto sulla pagina, poi
+  `Card <id> thumb.png`;
+- `cards/<id>/thumb-framed` (kind `card_thumb`, colonna `thumb_key`): il
+  primo fotogramma dell'APNG, chiesto col nome del file nell'URL della
+  pagina e poi con quello per convenzione, `Card <id> thumb apng.png` (171
+  dei 172 APNG dichiarati si chiamano così). Si chiede quando la pagina ha `|thumb apng` e nessun
+  `|thumb` fermo; quando la carta è LR e la pagina non dichiara un `|thumb`
+  fermo (un `{{ThumbLR|...}}` non è un file: sono gli strati del wiki), o
+  la pagina non c'è (allora solo il nome per convenzione, *quiet*); e quando
+  la ferma che abbiamo è misurata nuda (`asset.frame = false`). Allora
+  l'APNG è suo, e la ferma non lo usa più come ripiego: lo stesso file non
+  si scarica due volte. Un `|thumb` dichiarato resta il primo: niente
+  cornice, a meno che non sia misurato nudo. Le quattro LR con un `|thumb`
+  dichiarato (1032580, 1033940, 1034340, 1034380) hanno già la cornice.
+
+Il fotogramma arriva come le altre ferme, dal ridimensionatore di Fandom
+(`scale-to-width-down/256?format=webp`): sugli APNG risponde con un WebP
+fermo di circa 30 KB. Se mai restituisse un file che si muove (anche un
+APNG: ora il controllo è `siMuove`, che riconosce `acTL`), `fetch-assets`
+lo appiattisce al primo fotogramma con `ffmpeg`, come gli artwork animati.
+
+**Quale va in `card.thumb_key`** lo decide `miniaturaVincente`: quella con
+la cornice, se c'è e non è misurata nuda (null, non misurata, vale come
+incorniciata); altrimenti la ferma; altrimenti quella che c'è.
+`collegaMiniature` lo applica a fine giro solo alle carte con almeno un
+risultato in quel giro, e fra i soli job chiesti: un job che `--missing` ha
+tolto prende chiave e cornice dalla riga di `asset`. Così il giro di prova
+(`--missing`, senza file) e la produzione (`--offline`, con l'albero
+intero) scelgono allo stesso modo.
+
+**Una chiave nuova, mai una sovrascritta.** Le immagini stanno in cache un
+anno, `immutable` (`public/assets/_headers`): un file corretto sotto la
+stessa chiave arriverebbe a chi l'aveva già solo quando la sua cache scade.
+Per questo la miniatura con la cornice ha la sua chiave,
+`cards/<id>/thumb-framed.webp`, e le vecchie `cards/<id>/thumb.webp`
+restano, righe e file: niente si cancella. Una correzione futura avrà a
+sua volta una chiave nuova. `kindOfKey` (`asset-limits.mjs`) la conta fra
+le `card_thumb` nel riepilogo dello spazio.
+
+**Come si riconosce il solo personaggio** (`db/import/asset-cornice.mjs`):
+dai pixel, con `ffmpeg`, che l'import usa già. Il primo fotogramma ridotto a
+64x64 (`scale=64:64:flags=area,format=rgba`), e due misure sull'alfa:
+
+- la **striscia**, l'alfa medio della barra in basso della cornice (x dal
+  30 al 70%, y dall'86 al 92%; a 64 px le colonne 19-44 e le righe 55-58):
+  nella cornice del gioco lì c'è la barra del nome, piena; sotto un
+  personaggio scontornato è vuota;
+- la **copertura**, la parte del riquadro con alfa almeno 128.
+
+Nuda quando la striscia è sotto 0,5 **e** la copertura sotto 0,55. Sulle 2632
+miniature collegate di `dokkan_dev`: le 179 nude hanno striscia 0,000 e
+copertura 0,264-0,462; le 2453 incorniciate striscia 1,000 e copertura da
+0,650 (p01 0,689); i 171 fotogrammi degli APNG striscia 0,797-1,000 e
+copertura 0,600-0,697. Nessun falso, nessuna mancata, e ognuna delle due
+misure da sola separa già: con tutte e due una cornice doppia su una carta
+che l'ha già vorrebbe due sbagli indipendenti. Né il nome né la misura
+bastano: le miniature nuove con la cornice sono 255x255 e 11 APNG 120x120, e
+un file caricato domani come `Card <id> thumb.png` potrebbe avere la
+cornice. Se `ffmpeg` non legge un file (1 su 2632 con ffmpeg 8, una UR
+incorniciata) la misura è null, e vale come incorniciata. I test usano 4
+maschere alfa 64x64 in `db/test/fixture/cornici` (PGM: solo la sagoma,
+nessuna immagine del gioco nel repository; il comando che le ha fatte sta
+in `db/test/assets.test.mjs`) e, se c'è `ffmpeg`, file fatti al volo (PNG,
+WebP, un APNG di due fotogrammi).
+
+**`asset.frame`** (0034): `true` con la cornice, `false` il solo personaggio,
+null non misurato o non una miniatura (il vincolo `asset_frame_card_thumb`
+lo tiene solo alle `card_thumb`). Si scrive solo con la riga, in un
+download o in un'adozione dal disco; le righe che restano come sono non si
+rimisurano. Un'adozione la cui misura non riesce tiene quella di prima
+(coalesce, come `source_url`). Il riempimento della 0034 non legge i pixel:
+mette `false` alle miniature collegate di LR 250x250, che sul disco
+coincidono con le 179 misurate (la produzione serve gli stessi file, con
+gli stessi checksum). `asset_bare(key)` dice se una chiave è nuda (false
+anche per null, per una chiave senza riga o non misurata): le query delle
+pagine la chiamano accanto a ogni `thumb_key` (`lib/queries.ts`,
+`lib/cards.ts`, `lib/clears.ts`, `lib/card-page.ts`, `lib/profiles.ts`).
+`fetch-assets` senza `asset.frame` si ferma subito e dice di applicare la
+0034; `missing-assets.mjs` conta nel riepilogo le carte che il sito
+incornicia ("N cards show a drawn frame") e lo scrive in `GITHUB_OUTPUT`
+(`bare_thumbs`, accanto a `pending`): il passo "Download new images" del
+settimanale parte anche quando non manca nessuna immagine ma qualche
+miniatura è nuda, così la `thumb-framed` si riprova a ogni giro in tutti e
+due i workflow (il giornaliero parte dal piano, che la conta già).
+
+**La cornice disegnata.** Dove la sola miniatura che abbiamo è nuda (sul wiki
+non c'è ancora la versione con la cornice) il sito la mette dentro
+`CorniceCarta` (`components/segnaposto.tsx`, misure da `corniceDisegnata` in
+`lib/segnaposto.ts`): un bordo col colore del tipo, come la banda dei
+segnaposto (`--marchio-1`…`--marchio-5` dentro `.colori-marchio`, `--tenue`
+per un tipo sconosciuto), spesso un sedicesimo del lato (1 px a 16, 3 a 48,
+6 a 96, 16 a 250), e da 40 px un'etichetta con la rarità ("LR") appena
+dentro il bordo, a sinistra: in basso, in alto nelle squadre dei clear,
+dove il fondo lo copre Leader o Friend. Inchiostro su `--superficie-2`, la
+coppia che il test dei segnaposto prova in ogni tema. Accanto al nome,
+nello slot del builder e nel menu "Uses card", si scrivono tipo e classe
+(`TipoSenzaMiniatura`), come per una carta senza miniatura: la nuda non ha
+il badge del tipo. Vale in tutti gli otto riquadri che mostrano una
+miniatura: le squadre dei clear, il builder (slot, picker) e i filtri, la
+catena di risveglio, la pagina della carta senza artwork (fino a 250 px e
+al 70% del riquadro, quadrata anche su un telefono), il profilo, i premi
+delle missioni e le copertine degli eventi. Niente sessione, hook o
+`<style>`: il flag viene dai dati, quindi l'HTML in cache è lo stesso per
+tutti, e nel builder `bare` sta nello stato del form, mai nel payload.
+Il riquadro è `inline-flex` con la sola immagine in flusso, quindi
+`align-top`: nei genitori a blocchi (il riquadro di `Carta`, il `<li>` del
+profilo) sulla linea di base del testo la riga gli aggiungerebbe sotto la
+discesa del font, circa 6 px, e Leader/Friend si staccherebbe dal bordo.
+Il 13 ottobre 2026, dopo la riparazione, resterebbero 16 carte con la
+cornice disegnata (5 sono copertine di eventi) e 2 LR senza nessuna
+miniatura (1034150, 1034200).
+
+**Le miniature non si deformano.** `components/builder/miniatura.tsx` dava
+a `next/image` larghezza e altezza anche nello style, senza `object-fit`:
+2449 miniature su 2632 non sono quadrate (2088 sono 256x224), e nel picker,
+negli slot e nel menu "Uses card" si allungavano di un settimo, su ogni
+browser e anche in modalità desktop sul telefono. Ora il riquadro resta
+quadrato (le righe restano allineate) e l'immagine ha
+`objectFit: 'contain'`: intera, nelle sue proporzioni, col fondo
+`--superficie-2` nei due o tre px che avanzano. Le altre miniature davano
+solo gli attributi `width` e `height`, e il preflight di Tailwind
+(`img { height: auto }`) le teneva giuste. Il test dei segnaposto controlla
+ogni `<Image>` dei componenti: larghezza e altezza fissate entrambe (o
+`fill`) vogliono un `object-fit`.
+
+**In produzione la 0034 va online PRIMA del codice**, l'ordine contrario
+della 0033: le pagine chiamano `asset_bare()` e leggono `asset.frame`, e
+`fetch-assets` scrive `frame` in ogni riga, quindi il codice nuovo senza la
+0034 darebbe 500 sulle pagine (anche le anteprime di Vercel che puntano
+alla produzione) e righe di `asset` rifiutate. La colonna è nullable e senza
+default, e la funzione nuova: il codice di prima continua a funzionare
+sopra. Quindi `npm run prod:migrate -- --yes` da un export pulito del
+commit, poi subito il push su `main`. Se mancasse, il piano del giornaliero
+si ferma con il messaggio di `fetch-assets`, e il giro di prova a
+`migrate --check`.
+
+**La riparazione** passa dalla strada normale: le chiavi `thumb-framed` non
+hanno una riga, quindi `--missing` le prende. I numeri attesi, misurati il
+13 ottobre 2026 su `dokkan_dev` e sull'API del wiki:
+
+- 191 job con la cornice: 172 dalle pagine con `|thumb apng` (le 171 nude e
+  1032550, senza miniatura) e 19 LR senza `|thumb` né APNG (12 con la
+  pagina, 7 senza). Il wiki ne ha 173: le 172 e 1031820 col nome per
+  convenzione (120x120). Le altre 18 restano "not on the wiki yet", quiet,
+  e si riprovano a ogni giro (circa una richiesta in più all'API);
+- 10 miniature ferme nuove, nude, per le LR che non ne avevano (1031920,
+  1032010, 1032550, 1033060, 1032710, 1032770, 1033970, 1034030, 1034070,
+  1034120), più quelle delle altre carte senza miniatura che nel frattempo
+  il wiki avesse caricato;
+- righe di `asset` in più: circa 183 per le LR (173 `thumb-framed` e 10
+  `thumb`, circa 5 MB), nessuna tolta; carte LR cambiate: 182 (le 171 e
+  1031820 dalla nuda alla cornice, 1032550 da niente alla cornice, 9 da
+  niente a una nuda);
+- nello stesso giro `--missing` prende anche le miniature che il wiki ha già
+  per le altre carte senza miniatura: il 13 ottobre su `dokkan_dev` erano
+  circa 43 in più, per 257 job in tutto e 30 immagini ancora assenti dal
+  wiki. I numeri del riepilogo saranno quindi più alti dei soli 183.
+
+In sviluppo, a codice arrivato e test verdi (finché la 0034 manca, le pagine
+del server di sviluppo e `next build`, che prerenderizza da `dokkan_dev`,
+falliscono con `function asset_bare(text) does not exist`: è il primo passo):
+
+1. `npm run db:up`: la 0034. Controllo: `select count(*) from asset where
+   frame = false` dà 179;
+2. `npm run db:assets -- --only thumb --missing`: la stessa strada della CI,
+   circa 6 richieste `imageinfo` e circa 226 download dalla CDN (le 183 LR
+   più le altre miniature che il wiki ha già). Dal Mac la CDN del wiki può
+   rispondere con il controllo anti-bot (403): lo script si ferma al primo
+   e si riprova un altro giorno, oppure ci pensa il giro della CI;
+3. `npm run cache:clear`;
+4. controlli in sola lettura: `select count(*) from card where thumb_key
+   like 'cards/%/thumb-framed.%'` dà 173; `select count(*) from card c join
+   asset a on a.key = c.thumb_key where a.frame = false` dà 16; `select
+   count(*) from card where rarity = 'LR' and thumb_key is null` dà 2; le
+   vecchie `cards/<id>/thumb.webp` ci sono ancora tutte.
+
+In produzione:
+
+1. `npm run prod:migrate -- --yes` (da un export pulito del commit), poi il
+   push su `main`. Controllo: `select count(*) from asset where frame =
+   false` dà 179 (se è meno, le righe che mancano restano null: nessuna
+   cornice disegnata, come oggi);
+2. GitHub Actions, Daily images, Run workflow su `main` con `dry_run`
+   acceso: "Dry run: would fetch ≈226 files (up to ≈775 MB)": le 183 LR più
+   le miniature che il wiki ha già per le altre carte senza. I MB contano gli
+   APNG originali (4,4 MB l'uno): i download veri sono fermi di circa 30 KB,
+   e il riepilogo lo dice ("Of these, N are framed stills from animated
+   thumbnails"). Non il venerdì: il cancello salta se il settimanale gira o
+   è in coda;
+3. lo stesso con `dry_run` spento. Il giro fa il resto da solo: il backup,
+   `fetch-assets --missing` sul giro di prova, il confronto (asset circa +226 e
+   0 tolte, card circa 225 cambiate e 0 tolte: "All within limits", perché
+   `db/prod/limits.json` limita solo le righe tolte e i totali, e
+   `compare.mjs` non ha un tetto alle righe cambiate o aggiunte; non c'è
+   niente da cambiare), l'albero con i file nuovi (≈6430 file sui 20000 di
+   Pages), il deploy, `update.mjs --images-only` (con `--offline` adotta i
+   file nuovi dall'albero e misura la cornice dagli stessi byte del giro di
+   prova) e il controllo dopo, uguale al giro di prova;
+4. dopo: le pagine del catalogo e la lista degli eventi si rinfrescano; le
+   liste dei clear in cache mostrano le miniature nuove quando la loro
+   cache scade (le vecchie URL funzionano ancora). Il riepilogo delle
+   immagini dice "16 cards show a drawn frame".
+
+Lo stesso lo fa il settimanale del venerdì nel suo passo dei download, una
+volta che `WEEKLY_APPLY=true`.
 
 ### Il giro giornaliero delle immagini
 
@@ -2173,6 +2396,7 @@ Una carta senza miniatura e un evento senza immagine non mostrano più un riquad
 - **L'evento**: l'icona Phosphor del tipo, già nel bundle, con il tipo scritto accanto: Extreme Z-Battle un fulmine, Challenge una coppa, Story un libro, Limited una clessidra, Bonus un regalo, World Tournament una medaglia, tutto il resto un calendario. Le etichette sono quelle della pagina dell'evento (`ETICHETTA_EVENTO`). Un evento senza banner ma con la carta del boss mostra la carta, come prima.
 - **Dove**: le carte dei clear (`components/carta.tsx`, 48 px), il builder (slot 40 px, picker 44 px) e il menu "Uses card" dei filtri (32 px), tutti da `components/builder/miniatura.tsx`; la catena di risveglio (48 px); l'artwork della pagina della carta quando non c'è nemmeno la miniatura (160 px, sopra "Artwork not available yet"); la squadra nel profilo (32 px); i premi delle missioni (16 px, solo le carte: gli altri premi senza icona restano solo testo); la lista degli eventi e la pagina dell'evento.
 - **I temi**: la banda prende la variante chiara o scura del marchio con lo stesso CSS (la classe `colori-marchio`), il resto i token di `app/globals.css`. Il testo non sta mai sul colore del marchio: l'iniziale è `--inchiostro` e la rarità `--tenue`, su `--superficie-2`. In tutti gli 11 temi, con System chiaro e scuro: le cinque bande dei tipi e quella neutra almeno 3:1 sul fondo (il minimo è 4,04, PHY Sand; la neutra almeno 4,69), l'iniziale almeno 13,16:1, la rarità almeno 4,69:1.
+- **La cornice disegnata (0034)**: una miniatura che è il solo personaggio (le LR del wiki, `asset.frame = false`) non è un segnaposto ma ci somiglia: `CorniceCarta`, nello stesso file, le mette attorno un bordo col colore del tipo e, da 40 px, l'etichetta della rarità dentro il bordo (in alto in `Carta`, sopra Leader e Friend). Le misure le dà `corniceDisegnata`; il resto nella sezione "Le miniature e la cornice".
 - **Accessibilità**: dove il nome è scritto accanto il riquadro è decorativo (`aria-hidden`), come l'immagine con `alt=""` che sostituisce; nel profilo, dove la squadra è fatta di sole miniature, è un'immagine col nome (`role="img"`, `aria-label`, `title`), come la miniatura vera.
 - **La cache**: nessuna isola nuova, nessuna sessione, nessuno stato, quindi l'HTML in cache cambia solo dove compare un segnaposto; i colori del marchio stanno nel foglio di stile, e una pagina con tanti segnaposto non porta il loro CSS nel payload. Le letture aggiungono solo quello che il segnaposto mostra: il tipo alle carte delle squadre dei profili (`listUserClears`) e ai premi delle missioni che sono carte (`card: { type }` in `getMissions`); a 32 e 16 px la rarità non si scrive, quindi non si legge. Le carte dei clear avevano già tipo e rarità, le opzioni dei filtri il tipo (a 32 px nemmeno lì si scrive la rarità). Nel builder la rarità sta nello stato del form solo per il segnaposto, mai nel payload dell'invio.
 - **Il test**: il passo "segnaposto delle immagini" di `npm run db:test` (`db/test/segnaposto.test.mts`, senza database) prova iniziale e misure, le icone e le etichette di ogni valore di `event_kind`, i contrasti tema per tema (anche della banda neutra), che i temi scuri della regola del marchio siano esattamente quelli con `color-scheme: dark`, che `marchio.tsx` e `globals.css` coincidano ancora con gli SVG sorgente, che nessun componente rimetta uno `<style>` col marchio, che i file che mostrano immagini usino il segnaposto e che il componente resti senza sessione e senza niente del wiki. La geometria la prova con i numeri veri: per ogni riquadro che scrive la rarità (misura e angolo letti dai file) la rarità sta dentro, sotto la banda e staccata dall'iniziale, e in `Carta` sta sopra l'etichetta del ruolo, misurata dalle sue classi anche con la riga più alta (in basso, com'era, la coprirebbe). Controlla anche tipo e classe accanto al nome nello slot e nel menu dei filtri. `db/test/queries.test.mts` e `db/test/profiles.test.mts` provano che i premi carta senza miniatura e le carte delle squadre dei profili portano il tipo. Un tema scuro nuovo che manca dalla regola scura del marchio lo fa fallire.
@@ -2405,7 +2629,7 @@ Per un fork, in breve:
    `npm run prod:migrate -- --yes` (migrazioni e permessi, senza rifare
    l'import). L'ordine rispetto al codice dipende dalla migrazione (sezione
    "Sulle migrazioni"): una colonna che il codice nuovo legge va **prima**
-   del codice (0027, 0028), un vincolo che il codice di prima non rispetta
+   del codice (0027, 0028, 0034), un vincolo che il codice di prima non rispetta
    va **subito dopo**, a meno che il codice di prima non scriva mai in
    quel frattempo (la 0033, punto 5).
 2. Le immagini di `public/assets` su un host statico
@@ -2460,7 +2684,9 @@ può fare, e poi il lavoro sui dati e sulle pagine.
    giornaliero delle immagini, che in prova scrive solo il piano ("Dry run:
    would fetch N files"). La 0032 e la 0033 vanno online con
    `npm run prod:migrate -- --yes` subito prima del push di questo codice
-   (il settimanale è in prova: vedi la sezione della 0033). Nei riepiloghi guarda anche le sezioni "Sources"
+   (il settimanale è in prova: vedi la sezione della 0033), e lo stesso la
+   0034, sempre prima del codice; poi un giro a mano del giornaliero ripara
+   le miniature LR senza cornice (sezione "Le miniature e la cornice"). Nei riepiloghi guarda anche le sezioni "Sources"
    (la freschezza del datamine) e "Storage". Japan resta senza finestre
    vere, e 374 eventi Global restano "attivi, fine non nota" (312 del wiki,
    62 del gioco). Le corse di un'area riaperta dopo più di un mese partono

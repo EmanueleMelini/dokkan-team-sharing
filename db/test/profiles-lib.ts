@@ -8,6 +8,7 @@ import {
   REVISE, SUBMIT, check, dati, esito, num, one, payload, q, utente,
 } from '@/db/test/builder-helpers'
 import { P } from '@/db/test/profiles-handle'
+import { chiaveNuda, conMiniatureNude } from '@/db/test/miniature-nude'
 
 export const HANDLE_LIB = ['proflib_x', 'proflib_y', 'proflib_z', 'user_proflib0']
 const VOTE = 'select vote_clear_version($1::uuid, $2::uuid, $3::smallint)'
@@ -135,6 +136,16 @@ export async function lista(ctx: Contesto) {
   vale('la squadra di partenza: le sette carte, leader prima', [riga.cards.length, riga.cards[0]?.role, riga.cards.at(-1)?.role],
     [7, 'leader', 'friend'])
   check('...con miniatura e nome', riga.cards.every((k) => 'thumb_key' in k && 'name' in k && /^\d+$/.test(k.card_id)))
+  // La miniatura nuda (0034): la riga del profilo la incornicia
+  check('...e thumb_bare false senza immagini', riga.cards.every((k) => k.thumb_bare === false))
+  const nuda = riga.cards[0]?.card_id
+  if (nuda) {
+    await conMiniatureNude((t, p) => db.query(t, p), [nuda], async () => {
+      const dopo = (await listUserClears('proflib_x')).find((c) => c.id === riga.id)
+      check('una miniatura nuda: thumb_bare per quella carta, e per le altre no', !!dopo &&
+        dopo.cards.every((k) => k.thumb_bare === (k.card_id === nuda)) && dopo.cards.some((k) => k.thumb_key === chiaveNuda(nuda)))
+    })
+  }
   // il tipo serve al segnaposto di una carta senza miniatura (riga-clear.tsx)
   const tipi = new Map((await db.query<{ id: string; type: string }>(
     'select id::text, type::text from card where id = any($1::bigint[])', [riga.cards.map((k) => k.card_id)])).rows

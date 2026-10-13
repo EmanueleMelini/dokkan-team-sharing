@@ -151,25 +151,32 @@ export function provenienza({ scaricatoDa = null, voceManifest = null, checksum 
 // Le scritture di una riga di asset in fetch-assets, qui perche' i test le
 // provino cosi' come sono (weekly-data.test.mts). I parametri, in ordine:
 // key, kind, content_type, byte_size, width, height, checksum, source,
-// source_url.
+// source_url, frame.
+//
+// frame (0034) e' la cornice di una miniatura misurata dai pixel di questo
+// file (asset-cornice.mjs): null per gli altri kind, o se ffmpeg non l'ha
+// letto.
 //
 // Un file adottato dal disco non sa sempre da dove viene: un URL gia' noto
 // resta (coalesce), un db:reset seguito da una riadozione non lo cancella.
+// Lo stesso per frame: una misura che non e' riuscita non toglie quella di
+// prima.
 export const ASSET_ADOTTA_SQL = `
-  insert into asset (key, kind, content_type, byte_size, width, height, checksum, source, source_url, fetched_at)
-  values ($1,$2,$3,$4,$5,$6,$7,$8,$9, now())
+  insert into asset (key, kind, content_type, byte_size, width, height, checksum, source, source_url, frame, fetched_at)
+  values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10, now())
   on conflict (key) do update set
     kind = excluded.kind, content_type = excluded.content_type,
     byte_size = excluded.byte_size, width = excluded.width, height = excluded.height,
     checksum = excluded.checksum, source = excluded.source,
-    source_url = coalesce(excluded.source_url, asset.source_url)`
+    source_url = coalesce(excluded.source_url, asset.source_url),
+    frame = coalesce(excluded.frame, asset.frame)`
 
-// Un download invece sa da dove viene il file appena scritto
+// Un download invece sa da dove viene il file appena scritto, e com'e'
 export const ASSET_SCARICA_SQL = `
-  insert into asset (key, kind, content_type, byte_size, width, height, checksum, source, source_url, fetched_at)
-  values ($1,$2,$3,$4,$5,$6,$7,$8,$9, now())
+  insert into asset (key, kind, content_type, byte_size, width, height, checksum, source, source_url, frame, fetched_at)
+  values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10, now())
   on conflict (key) do update set
     kind = excluded.kind, content_type = excluded.content_type,
     byte_size = excluded.byte_size, width = excluded.width, height = excluded.height,
     checksum = excluded.checksum, source = excluded.source, source_url = excluded.source_url,
-    fetched_at = now()`
+    frame = excluded.frame, fetched_at = now()`

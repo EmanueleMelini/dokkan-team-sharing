@@ -30,6 +30,11 @@ export type EventRow = {
   // Gli eventi presi dal gioco non hanno banner: al suo posto la miniatura
   // della carta del boss principale (event.cover_card_id).
   cover_thumb_key: string | null
+  // la miniatura e' il solo personaggio (asset_bare, 0034): con tipo e
+  // rarita' del boss il sito le disegna attorno la cornice
+  cover_thumb_bare: boolean
+  cover_type: string | null
+  cover_rarity: string | null
   stages: number
   // Vero quando ogni tier è un livello EZA: la lista lo usa per dire
   // "livelli" invece di "stage", come fa la pagina dell'evento.
@@ -82,7 +87,8 @@ export async function listEvents(opts: {
      )
      select e.id::text, et.name, e.kind::text as kind,
             u.status, u.starts_at, u.ends_at, u.ends_at_known, u.source, e.banner_key,
-            cv.thumb_key as cover_thumb_key,
+            cv.thumb_key as cover_thumb_key, asset_bare(cv.thumb_key) as cover_thumb_bare,
+            cv.type::text as cover_type, cv.rarity::text as cover_rarity,
             (select count(*) from stage s where s.event_id = e.id)::int as stages,
             coalesce((select bool_and(st.difficulty = 'eza_level')
                         from stage_tier st where st.event_id = e.id), false) as is_eza,
@@ -112,6 +118,10 @@ export type EventDetail = {
   description: string | null
   banner_key: string | null
   cover_thumb_key: string | null
+  /** come in EventRow: la miniatura del boss e' il solo personaggio (0034) */
+  cover_thumb_bare: boolean
+  cover_type: string | null
+  cover_rarity: string | null
   // Null quando l'evento non è mai uscito in questa regione: il left join
   // laterale restituisce l'evento comunque, senza una run da mostrare.
   status: Status | null
@@ -127,7 +137,8 @@ export async function getEvent(id: string, reg: Region): Promise<EventDetail | n
   return sqlOne<EventDetail>(
     `select e.id::text, et.name, e.kind::text as kind,
             et.official_description as description, e.banner_key,
-            cv.thumb_key as cover_thumb_key,
+            cv.thumb_key as cover_thumb_key, asset_bare(cv.thumb_key) as cover_thumb_bare,
+            cv.type::text as cover_type, cv.rarity::text as cover_rarity,
             u.status, u.starts_at, u.ends_at, u.ends_at_known, u.source, u.run_id
      from event e
      join event_text et on et.event_id = e.id and et.locale = 'en'
@@ -149,6 +160,8 @@ export type MissionReward = {
   quantity: number
   // l'icona del catalogo premi, o la miniatura se il premio è una carta
   icon_key: string | null
+  // l'icona e' la miniatura di una carta, ed e' il solo personaggio (0034)
+  icon_bare: boolean
   // solo se il premio è una carta: il tipo, per il segnaposto quando manca
   // la miniatura (a 16 px ha solo la banda del tipo)
   card: { type: string } | null
@@ -177,6 +190,7 @@ export async function getMissions(eventId: string, runId: string | null): Promis
                        'name', coalesce(git.name, r.item_type),
                        'quantity', r.quantity,
                        'icon_key', coalesce(ri.asset_key, c.thumb_key),
+                       'icon_bare', ri.asset_key is null and asset_bare(c.thumb_key),
                        'card', case when c.id is not null then json_build_object('type', c.type) end)
                      order by r.seq)
               from mission_reward r
@@ -268,6 +282,8 @@ export type ClearCard = {
   class: string
   rarity: string
   thumb_key: string | null
+  /** la miniatura e' il solo personaggio (asset_bare, 0034) */
+  thumb_bare: boolean
   // La build dello slot (0018), null se non c'e'. I clear di prima del
   // 0016 non hanno assetti congelati e quindi nemmeno build.
   build: SlotBuild | null
@@ -392,6 +408,7 @@ export async function listClears(
                        'name', ct.name, 'epithet', ct.epithet,
                        'type', cd.type::text, 'class', cd.class::text,
                        'rarity', cd.rarity::text, 'thumb_key', cd.thumb_key,
+                       'thumb_bare', asset_bare(cd.thumb_key),
                        'build', ${buildJson('cl.version_id', '1', 'cl.rotation_index', 'cl.pos')})
                      order by cl.rotation_index, cl.pos)
               from clear_card cl
@@ -430,6 +447,8 @@ export type CartaFiltro = {
   type: TipoCarta
   class: Classe
   thumb_key: string | null
+  /** la miniatura e' il solo personaggio (asset_bare, 0034) */
+  thumb_bare: boolean
   /** in quanti clear del tier (0 per un'etichetta letta da cardLabels) */
   n: number
 }
@@ -483,13 +502,15 @@ export async function getClearFacets(tierId: string, reg: Region): Promise<Facet
      select
        coalesce((select json_agg(json_build_object(
                   'id', x.card_id::text, 'name', ct.name, 'epithet', ct.epithet,
-                  'type', cd.type, 'class', cd.class, 'thumb_key', cd.thumb_key, 'n', x.n)
+                  'type', cd.type, 'class', cd.class, 'thumb_key', cd.thumb_key,
+                  'thumb_bare', asset_bare(cd.thumb_key), 'n', x.n)
                 order by x.n desc, ct.name nulls last, x.card_id)
          from carte x join card cd on cd.id = x.card_id
          left join card_text ct on ct.card_id = x.card_id and ct.locale = 'en'), '[]'::json) as cards,
        coalesce((select json_agg(json_build_object(
                   'id', x.card_id::text, 'name', ct.name, 'epithet', ct.epithet,
-                  'type', cd.type, 'class', cd.class, 'thumb_key', cd.thumb_key, 'n', x.n)
+                  'type', cd.type, 'class', cd.class, 'thumb_key', cd.thumb_key,
+                  'thumb_bare', asset_bare(cd.thumb_key), 'n', x.n)
                 order by x.n desc, ct.name nulls last, x.card_id)
          from leader x join card cd on cd.id = x.card_id
          left join card_text ct on ct.card_id = x.card_id and ct.locale = 'en'), '[]'::json) as leaders,
@@ -520,7 +541,8 @@ export async function cardLabels(ids: string[]): Promise<CartaFiltro[]> {
   const validi = ids.filter((id) => /^[1-9]\d{0,17}$/.test(id))
   if (!validi.length) return []
   return sql<CartaFiltro>(
-    `select cd.id::text, ct.name, ct.epithet, cd.type::text as type, cd.class::text as class, cd.thumb_key, 0 as n
+    `select cd.id::text, ct.name, ct.epithet, cd.type::text as type, cd.class::text as class, cd.thumb_key,
+            asset_bare(cd.thumb_key) as thumb_bare, 0 as n
      from card cd left join card_text ct on ct.card_id = cd.id and ct.locale = 'en'
      where cd.id = any($1::bigint[])
      order by cd.id`,
