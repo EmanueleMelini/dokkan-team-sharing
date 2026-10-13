@@ -226,7 +226,16 @@ if [ -n "${STAGE:-}" ]; then
   jp "Japan: le barre doppie, prima il 308 del router" "/events//$STAGE" 308 "/events/$STAGE"
   jp "Japan: una navigazione del client tiene _rsc" "/events/$STAGE?_rsc=x1" 307 "/events/$STAGE/japan?_rsc=x1" 'RSC: 1'
   jp "Japan: un link esplicito (?region=global) resta" "/events/$STAGE?region=global" 200 ''
-  jp "Japan: una Server Action non si tocca" "/events/$STAGE" 200 '' 'Next-Action: 0123456789abcdef'
+  # Conta che non ci sia un 307. Su Vercel una GET con un Next-Action finto la
+  # ferma il firewall della piattaforma prima del sito (403 con
+  # x-vercel-mitigated: deny, anche senza il cookie); in locale arriva al
+  # sito e risponde 200.
+  intestazioni=$(curl -s -D - -o /dev/null --max-time 120 -H 'Cookie: dts_version=japan' \
+    -H 'Next-Action: 0123456789abcdef' "$BASE/events/$STAGE" | tr -d '\r')
+  codice=$(head -1 <<<"$intestazioni" | awk '{print $2}')
+  if [ "$codice" = 200 ] || { [ "$codice" = 403 ] && grep -qi '^x-vercel-mitigated: deny' <<<"$intestazioni"; }; then
+    pass "Japan: una Server Action non si tocca ($codice)"
+  else fail "Japan: una Server Action non si tocca: /events/$STAGE col cookie Japan ha risposto $codice, atteso 200 (o il 403 del firewall di Vercel), mai un 307"; fi
   verifica "senza cookie: la pagina giapponese si apre" "/events/$STAGE/japan" 200 '' "$ERRORE"
   read -r codice dove < <(curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' --max-time 60 "$BASE/events/$STAGE")
   [ "$codice" = 200 ] && [ -z "$dove" ] && pass "senza cookie: nessun redirect (200)" || fail "senza cookie /events/$STAGE: $codice $dove"

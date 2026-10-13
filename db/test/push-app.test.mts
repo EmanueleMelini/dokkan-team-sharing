@@ -52,7 +52,7 @@ vale('una sola: spente', pushEnvProblem({ VAPID_PUBLIC_KEY: chiaviVapid.publicKe
 vale('formato sbagliato: spente', pushEnvProblem({ ...envOk, VAPID_PRIVATE_KEY: 'abc' }), 'invalid')
 vale('soggetto sbagliato: spente', pushEnvProblem({ ...envOk, VAPID_SUBJECT: 'privacy@example.com' }), 'invalid')
 vale('le chiavi di web-push vanno, soggetto per difetto quello della privacy',
-  readPushEnv(envOk)?.subject, 'mailto:privacy@emanuelemelini.dev')
+  readPushEnv(envOk)?.subject, 'mailto:privacy@dokkants.app')
 vale('VAPID_SUBJECT https', readPushEnv({ ...envOk, VAPID_SUBJECT: 'https://dokkants.example' })?.subject, 'https://dokkants.example')
 
 console.log('lib/notify/push-kinds.ts')
