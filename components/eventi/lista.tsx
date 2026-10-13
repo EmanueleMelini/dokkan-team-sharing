@@ -14,6 +14,7 @@ import { ConteggioClear } from '@/components/conteggio-clear'
 import { Paginazione } from '@/components/paginazione'
 import { AvvisoAccountCancellato } from '@/components/eventi/avviso-cancellato'
 import { CorniceCarta, SegnapostoEvento } from '@/components/segnaposto'
+import { CAMPO_DITO } from '@/components/scelta/stile'
 import { AvvisoVersione } from '@/components/versione/avviso-versione'
 import { segnapostoEvento } from '@/lib/segnaposto'
 import { altraVersione } from '@/lib/versione/versione'
@@ -197,7 +198,8 @@ export async function EventList({ filtri }: { filtri: FiltriLista }) {
               defaultValue={search ?? ''}
               placeholder="event name"
               maxLength={100}
-              className="w-full pl-8 pr-3 py-1.5 text-[13px] rounded-[var(--raggio)] bg-superficie border border-campo text-inchiostro placeholder:text-tenue"
+              // il modello dei menu a scelta, anche col dito (CAMPO_DITO)
+              className={`w-full pl-8 pr-3 py-1.5 text-[13px] rounded-[var(--raggio)] bg-superficie border border-campo text-inchiostro placeholder:text-tenue ${CAMPO_DITO}`}
             />
           </div>
         </Form>

@@ -5,6 +5,7 @@ import { ArrowSquareOut, MagnifyingGlass, X } from '@phosphor-icons/react/dist/s
 import { PickerFiltri, type Categoria } from '@/components/builder/picker-filtri'
 import { opzioneId, PickerRisultati } from '@/components/builder/picker-risultati'
 import { FILTRI_VUOTI, useCarte, type CartaTrovata, type Filtri } from '@/components/builder/use-carte'
+import { CAMPO_DITO } from '@/components/scelta/stile'
 import { cardHref } from '@/lib/urls'
 import type { Region } from '@/lib/queries'
 
@@ -99,7 +100,8 @@ export function Picker({ titolo, categorie, reg, onScegli, onChiudi }: Props) {
               value={filtri.q}
               onChange={(e) => cambiaFiltri({ ...filtri, q: e.target.value })}
               onKeyDown={tasti}
-              className="w-full pl-8 pr-3 py-1.5 text-[13px] rounded-[var(--raggio)] bg-superficie border border-campo text-inchiostro"
+              // col dito alto quanto i quattro menu sotto (CAMPO_DITO)
+              className={`w-full pl-8 pr-3 py-1.5 text-[13px] rounded-[var(--raggio)] bg-superficie border border-campo text-inchiostro ${CAMPO_DITO}`}
             />
           </div>
           <PickerFiltri filtri={filtri} onFiltri={cambiaFiltri} categorie={categorie} idBase={id} />

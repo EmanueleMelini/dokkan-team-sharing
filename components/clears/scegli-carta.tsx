@@ -4,6 +4,8 @@ import { useEffect, useId, useRef, useState } from 'react'
 import { CaretDown } from '@phosphor-icons/react/dist/ssr'
 import { Miniatura, TipoSenzaMiniatura } from '@/components/builder/miniatura'
 import { CARTE_MAX } from '@/lib/clears/filtri'
+import { nomeCarta } from '@/lib/clears/filtri-opzioni'
+import { CAMPO_DITO } from '@/components/scelta/stile'
 
 /** Una carta fra le opzioni dei filtri, con la miniatura gia' come URL. */
 export type OpzioneCarta = {
@@ -19,8 +21,6 @@ export type OpzioneCarta = {
   n: number
 }
 
-export const nomeCarta = (c: Pick<OpzioneCarta, 'name' | 'id'>) => c.name ?? `Card ${c.id}`
-
 /*
  * "Usa la carta": un popover con le carte che compaiono nei clear del
  * tier, fino a 3 scelte. E' un <details> con dentro caselle vere
@@ -34,8 +34,18 @@ export function ScegliCarta({ opzioni, scelte, onCambia }: {
   onCambia: (ids: string[]) => void
 }) {
   const [testo, setTesto] = useState('')
-  // Il popover si apre verso destra; se uscirebbe dallo schermo, verso sinistra
-  const [aDestra, setADestra] = useState(false)
+  // Dove si apre il popover rispetto al bottone (px): sotto il bottone, ma
+  // sempre dentro lo schermo con 16px di margine. Allinearlo al bordo destro
+  // del bottone non basta: su un telefono il bottone e' piu' stretto del
+  // popover, che usciva a sinistra.
+  const [scarto, setScarto] = useState(0)
+  const posiziona = (d: HTMLElement) => {
+    const vista = document.documentElement.clientWidth
+    const largo = Math.min(320, vista - 40)
+    const sx = d.getBoundingClientRect().left
+    const dove = Math.max(16, Math.min(sx, vista - 16 - largo))
+    setScarto(Math.floor(dove - sx))
+  }
   const box = useRef<HTMLDetailsElement>(null)
   const idLista = useId()
   const pieno = scelte.length >= CARTE_MAX
@@ -60,12 +70,7 @@ export function ScegliCarta({ opzioni, scelte, onCambia }: {
     <details
       ref={box}
       className="relative"
-      onToggle={(e) => {
-        const d = e.currentTarget
-        if (!d.open) return
-        const largo = Math.min(320, window.innerWidth - 40)
-        setADestra(d.getBoundingClientRect().left + largo > window.innerWidth - 16)
-      }}
+      onToggle={(e) => { if (e.currentTarget.open) posiziona(e.currentTarget) }}
       onKeyDown={(e) => {
         if (e.key === 'Escape' && box.current?.open) {
           box.current.open = false
@@ -73,12 +78,20 @@ export function ScegliCarta({ opzioni, scelte, onCambia }: {
         }
       }}
     >
-      <summary data-fuoco="carte" className="list-none [&::-webkit-details-marker]:hidden cursor-pointer inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[13px] rounded-[var(--raggio)] bg-superficie border border-campo text-inchiostro hover:border-linea-forte">
+      {/* col dito alto quanto i menu accanto (44px e 15px, come le pillole
+          di filtri-clear.tsx); al passaggio il bordo non scende sotto campo */}
+      {/* la posizione si calcola al clic, prima che si apra (anche da tastiera:
+          Invio e Spazio sul summary sono un click): aperto fuori posto, un
+          telefono allargherebbe la pagina per farlo stare, e il conto dopo
+          partirebbe da una larghezza sbagliata */}
+      <summary
+        onClick={(e) => { const d = e.currentTarget.parentElement; if (d instanceof HTMLDetailsElement && !d.open) posiziona(d) }}
+        data-fuoco="carte" className="list-none [&::-webkit-details-marker]:hidden cursor-pointer inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[13px] rounded-[var(--raggio)] bg-superficie border border-campo text-inchiostro hover:border-tenue pointer-coarse:min-h-11 pointer-coarse:text-[15px]">
         Uses card
         {scelte.length > 0 && <span className="numeri text-[11px] px-1 rounded-[var(--raggio)] bg-oro-tenue text-inchiostro">{scelte.length}</span>}
         <CaretDown size={12} weight="bold" aria-hidden />
       </summary>
-      <div className={`absolute ${aDestra ? 'right-0' : 'left-0'} z-20 mt-1 w-[min(20rem,calc(100vw-2.5rem))] rounded-[var(--raggio)] border border-linea-forte bg-superficie shadow-lg`}>
+      <div style={{ left: scarto }} className={`absolute z-20 mt-1 w-[min(20rem,calc(100vw-2.5rem))] rounded-[var(--raggio)] border border-linea-forte bg-superficie shadow-lg`}>
         <div className="p-2 border-b border-linea">
           <label htmlFor={`${idLista}-q`} className="sr-only">Search the cards used here</label>
           <input
@@ -89,11 +102,13 @@ export function ScegliCarta({ opzioni, scelte, onCambia }: {
             onChange={(e) => setTesto(e.target.value)}
             placeholder="Search cards"
             autoComplete="off"
-            className="w-full px-2 py-1.5 text-[13px] rounded-[var(--raggio)] bg-superficie border border-campo text-inchiostro"
+            className={`w-full px-2 py-1.5 text-[13px] rounded-[var(--raggio)] bg-superficie border border-campo text-inchiostro ${CAMPO_DITO}`}
           />
           <p className="mt-1.5 text-[11px] text-tenue">Up to {CARTE_MAX} cards. A clear must use all of them.</p>
         </div>
-        <fieldset className="max-h-72 overflow-y-auto">
+        {/* min-w-0: un fieldset per difetto non scende sotto il suo contenuto
+            piu' lungo, e con nomi lunghi usciva dal popover e allargava la pagina */}
+        <fieldset className="min-w-0 max-h-72 overflow-y-auto">
           <legend className="sr-only">Cards used in these clears</legend>
           {visibili.length === 0 && <p className="px-3 py-3 text-[12px] text-tenue">No card matches.</p>}
           {visibili.map((c) => {

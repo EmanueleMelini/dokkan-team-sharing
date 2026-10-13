@@ -36,8 +36,10 @@ export function InvitoInstalla() {
       {/* Lo spazio sotto il footer: il banner e' fisso e altrimenti
           coprirebbe l'ultima riga della pagina. */}
       <div aria-hidden="true" className="h-24 shrink-0" />
+      {/* data-copre-fondo: i menu a scelta aprono l'elenco sopra (components/scelta) */}
       <section
         aria-label="Install the app"
+        data-copre-fondo=""
         className="fixed inset-x-0 bottom-0 z-40 px-3 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] pointer-events-none"
       >
         <div className="pointer-events-auto mx-auto max-w-md flex items-center gap-3 border border-linea rounded-[var(--raggio)] bg-superficie pl-3 pr-1.5 py-2.5 shadow-lg">

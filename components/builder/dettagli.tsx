@@ -1,11 +1,16 @@
 'use client'
 
+import { useMemo } from 'react'
 import { LIMITS } from '@/lib/clears/validate'
 import type { Azione, BuilderStato, RunScelta } from '@/lib/clears/builder-stato'
+import { OPZIONI_LINGUA, opzioniRun } from '@/lib/clears/builder-opzioni'
+import { Scelta } from '@/components/scelta/scelta'
+import { CAMPO_DITO } from '@/components/scelta/stile'
 
 export type { RunScelta }
 
-const campo = 'mt-1 block w-full px-3 py-1.5 text-[13px] rounded-[var(--raggio)] bg-superficie border border-campo text-inchiostro'
+// col dito alti quanto i menu (CAMPO_DITO)
+const campo = `mt-1 block w-full px-3 py-1.5 text-[13px] rounded-[var(--raggio)] bg-superficie border border-campo text-inchiostro ${CAMPO_DITO}`
 const etichetta = 'block text-[12px] text-tenue'
 
 type Props = {
@@ -19,6 +24,7 @@ type Props = {
 /** Quando, in quanti turni, con quali regole, e la nota per chi legge. */
 export function Dettagli({ stato, runs, runFissa = false, dispatch }: Props) {
   const set = (c: Parameters<typeof dispatch>[0] & { t: 'campo' }) => dispatch(c)
+  const vociRun = useMemo(() => opzioniRun(runs), [runs])
   return (
     <div className="grid gap-4 sm:grid-cols-2">
       {runFissa ? (
@@ -32,14 +38,15 @@ export function Dettagli({ stato, runs, runFissa = false, dispatch }: Props) {
       ) : (
         <div>
           <label htmlFor="b-run" className={etichetta}>When you cleared it</label>
-          <select
+          {/* Senza name: la run la manda gia' il campo nascosto di builder.tsx */}
+          <Scelta
             id="b-run"
-            value={stato.run}
-            onChange={(e) => set({ t: 'campo', campo: 'run', valore: e.target.value })}
-            className={campo}
-          >
-            {runs.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
-          </select>
+            etichetta="When you cleared it"
+            opzioni={vociRun}
+            valore={stato.run}
+            onCambia={(v) => set({ t: 'campo', campo: 'run', valore: v })}
+            className="mt-1 w-full"
+          />
         </div>
       )}
       <div>
@@ -80,17 +87,18 @@ export function Dettagli({ stato, runs, runFissa = false, dispatch }: Props) {
       <div className="sm:col-span-2">
         <div className="flex flex-wrap items-end justify-between gap-2">
           <label htmlFor="b-note" className={etichetta}>Note (optional)</label>
-          <label className="inline-flex items-center gap-1.5 text-[11px] text-tenue">
-            Written in
-            <select
-              value={stato.lang}
-              onChange={(e) => set({ t: 'campo', campo: 'lang', valore: e.target.value })}
-              className="px-1.5 py-0.5 text-[12px] rounded-[var(--raggio)] bg-superficie border border-campo text-inchiostro"
-            >
-              <option value="en">English</option>
-              <option value="ja">Japanese</option>
-            </select>
-          </label>
+          <div className="inline-flex items-center gap-1.5 text-[11px] text-tenue">
+            <label htmlFor="b-lang">Written in</label>
+            <Scelta
+              id="b-lang"
+              etichetta="Written in"
+              misura="compatta"
+              opzioni={OPZIONI_LINGUA}
+              valore={stato.lang}
+              onCambia={(v) => set({ t: 'campo', campo: 'lang', valore: v })}
+              className="w-[7.5rem]"
+            />
+          </div>
         </div>
         <textarea
           id="b-note"

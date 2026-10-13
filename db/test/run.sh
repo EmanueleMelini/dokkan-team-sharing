@@ -22,6 +22,8 @@
 #   lo specchio per le Server Action, l'interruttore, il cookie) e la sua
 #   interfaccia (l'interruttore, gli avvisi, i colori nei temi) ->
 #   segnaposto delle immagini (lib/segnaposto.ts, i contrasti nei temi)
+#   -> menu a scelta (components/scelta: la ricerca, i testi di prima, dove
+#   si apre l'elenco, i contrasti, nessun <select> fuori dalla forma nativa)
 #   -> notifiche nel sito (0028) e il loro lato app (lib/notify)
 #   -> digest email (0029: budget, selezione, disiscrizione) e il suo lato
 #   app (lib/notify: token, testi, cron, one-click)
@@ -225,6 +227,15 @@ passo "versione del sito (interfaccia)" verifica node_ts db/test/versione-ui.tes
 # next/image con le misure fissate ha un object-fit) e la cornice disegnata
 # attorno a una miniatura nuda (0034). Funzioni pure e file, niente database.
 passo "segnaposto delle immagini" verifica node_ts db/test/segnaposto.test.mts
+# I menu a scelta (lib/scelta.ts, components/scelta): il combobox di
+# Headless UI al posto di ogni <select>. La ricerca (accenti, maiuscole,
+# tutta larghezza, a capo, l'ordine), i testi e i valori di ogni menu
+# uguali agli <option> di prima, dove si apre l'elenco (la tastiera del
+# telefono, 320px, i dialog), i contrasti in tutti i temi, la guardia
+# sui <select> (col parser di TypeScript, con la controprova) e quelle su
+# Headless (un file, solo con import()), i name del form dei filtri, le
+# etichette, modal e anchor. Funzioni pure e file, niente database.
+passo "menu a scelta (componente)" verifica node_ts db/test/scelta.test.mts
 # Le notifiche nel sito (0028): i trigger su commenti, registro della
 # moderazione e segnalazioni (il destinatario giusto e nessun altro, mai a
 # se stessi, mai a chi segnala ne' a chi e' segnalato, il sospeso che

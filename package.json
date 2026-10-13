@@ -42,6 +42,7 @@
     "db:test:queries": "./db/test/queries.test.sh",
     "test:parametri": "node --experimental-strip-types --disable-warning=ExperimentalWarning --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./db/test/alias.mjs db/test/parametri.test.mts",
     "test:filtri": "node --experimental-strip-types --disable-warning=ExperimentalWarning --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./db/test/alias.mjs db/test/filtri.test.mts",
+    "test:scelta": "node --experimental-strip-types --disable-warning=ExperimentalWarning --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./db/test/alias.mjs db/test/scelta.test.mts",
     "test:pwa": "node --experimental-strip-types --disable-warning=ExperimentalWarning --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./db/test/alias.mjs db/test/pwa.test.mts",
     "test:push": "node --experimental-strip-types --disable-warning=ExperimentalWarning --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./db/test/alias.mjs db/test/push-app.test.mts",
     "test:smoke": "./test/smoke.sh",
@@ -49,6 +50,7 @@
     "test:cpu": "./test/cpu.sh"
   },
   "dependencies": {
+    "@headlessui/react": "2.2.10",
     "@phosphor-icons/react": "^2.1.10",
     "better-auth": "1.7.7",
     "next": "16.3.8",

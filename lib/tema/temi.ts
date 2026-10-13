@@ -43,6 +43,9 @@ export const TEMI: readonly Tema[] = [
   { id: 'alto-contrasto', label: 'High contrast', sfondo: '#ffffff' },
 ]
 
+/** Le voci del selettore del footer (components/scelta): l'id e il nome, nello stesso ordine. */
+export const OPZIONI_TEMA: readonly { valore: string; testo: string }[] = TEMI.map((t) => ({ valore: t.id, testo: t.label }))
+
 /** La barra del browser mobile con System: i due sfondi di oggi, per media query. */
 export const BARRA_SISTEMA = { light: '#f3f4f8', dark: '#0f111d' } as const
 

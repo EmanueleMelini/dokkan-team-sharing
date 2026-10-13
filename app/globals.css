@@ -392,6 +392,16 @@ body {
 }
 
 /*
+ * I menu a scelta (components/scelta): l'anello sta sulla scatola del
+ * menu (has-[:focus-visible] in components/scelta/stile.ts), che contiene
+ * il valore, la freccia e il campo vero. Il campo (il <select> o l'<input>
+ * del combobox) non ne disegna un secondo dentro la scatola.
+ */
+.scelta-campo:focus-visible {
+  outline: none;
+}
+
+/*
  * Con i colori forzati l'opzione scelta ha il pieno di sistema Highlight
  * (scelta-versione.tsx). L'anello che il browser da' alle altre e' dello
  * stesso colore, e attaccato al pieno ci si confonderebbe: su quella

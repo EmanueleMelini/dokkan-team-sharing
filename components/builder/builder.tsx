@@ -9,6 +9,7 @@ import { Picker } from '@/components/builder/picker'
 import type { Categoria } from '@/components/builder/picker-filtri'
 import { Prove } from '@/components/builder/prove'
 import { SquadraEditor } from '@/components/builder/squadra-editor'
+import { CAMPO_DITO } from '@/components/scelta/stile'
 import { reviseClear, submitClear, type ClearActionState } from '@/lib/clears/actions'
 import { comeLaPartenza, payloadDa, reducer, type BuilderStato } from '@/lib/clears/builder-stato'
 import { LIMITS, parseChangeNote, parsePayloadField } from '@/lib/clears/validate'
@@ -138,7 +139,7 @@ export function Builder({ modo, eventId, tierId, reg, clearId, runs, categorie, 
             maxLength={LIMITS.changeNote}
             required
             aria-describedby="b-change-aiuto"
-            className="mt-2 block w-full px-3 py-1.5 text-[13px] rounded-[var(--raggio)] bg-superficie border border-campo text-inchiostro"
+            className={`mt-2 block w-full px-3 py-1.5 text-[13px] rounded-[var(--raggio)] bg-superficie border border-campo text-inchiostro ${CAMPO_DITO}`}
           />
         </section>
       )}

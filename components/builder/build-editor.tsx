@@ -3,7 +3,10 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { X } from '@phosphor-icons/react/dist/ssr'
 import { SferaPicker } from '@/components/builder/sfera-picker'
-import { GRADI, nomeRoutes } from '@/lib/clears/build'
+import { Scelta } from '@/components/scelta/scelta'
+import { CAMPO_DITO } from '@/components/scelta/stile'
+import { GRADI } from '@/lib/clears/build'
+import { OPZIONI_ROUTES } from '@/lib/clears/builder-opzioni'
 import { buildPiena, type Azione, type BuildStato } from '@/lib/clears/builder-stato'
 import { LIMITS } from '@/lib/clears/validate'
 
@@ -19,7 +22,8 @@ type Props = {
   onChiudi: () => void
 }
 
-const campo = 'mt-1 block w-full px-3 py-1.5 text-[13px] rounded-[var(--raggio)] bg-superficie border border-campo text-inchiostro'
+// col dito alti quanto i menu (CAMPO_DITO)
+const campo = `mt-1 block w-full px-3 py-1.5 text-[13px] rounded-[var(--raggio)] bg-superficie border border-campo text-inchiostro ${CAMPO_DITO}`
 const piccolo = 'px-2 py-1 text-[12px] rounded-[var(--raggio)] border border-campo bg-superficie text-inchiostro hover:border-linea-forte'
 
 /**
@@ -29,7 +33,8 @@ const piccolo = 'px-2 py-1 text-[12px] rounded-[var(--raggio)] border border-cam
  */
 export function BuildEditor({ aperta, build, abilita, dispatch, onChiudi }: Props) {
   const dialogo = useRef<HTMLDialogElement>(null)
-  const primo = useRef<HTMLSelectElement>(null)
+  // il primo campo: il menu del Hidden Potential (il <select> prima del cambio, poi l'<input>)
+  const primo = useRef<HTMLInputElement | HTMLSelectElement>(null)
   const id = useId()
   const [cerca, setCerca] = useState<number | null>(null)
   // Chiusa la ricerca di una sfera, il focus torna al bottone del suo
@@ -47,7 +52,8 @@ export function BuildEditor({ aperta, build, abilita, dispatch, onChiudi }: Prop
   useEffect(() => {
     const d = dialogo.current
     if (!d) return
-    // showModal metterebbe il focus su Close: va al primo campo
+    // showModal metterebbe il focus su Close: va al primo campo (il focus
+    // da programma non apre l'elenco)
     if (aperto && !d.open) { d.showModal(); primo.current?.focus() }
     if (!aperto && d.open) d.close()
   }, [aperto])
@@ -82,10 +88,15 @@ export function BuildEditor({ aperta, build, abilita, dispatch, onChiudi }: Prop
             <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)]">
               <div>
                 <label htmlFor={`${id}-routes`} className="block text-[12px] text-tenue">Hidden Potential</label>
-                <select id={`${id}-routes`} ref={primo} value={b.routes} onChange={(e) => set('routes', e.target.value)} className={campo}>
-                  <option value="">Not set</option>
-                  {[0, 1, 2, 3, 4].map((n) => <option key={n} value={String(n)}>{nomeRoutes(n)}</option>)}
-                </select>
+                <Scelta
+                  id={`${id}-routes`}
+                  ref={primo}
+                  etichetta="Hidden Potential"
+                  opzioni={OPZIONI_ROUTES}
+                  valore={b.routes}
+                  onCambia={(v) => set('routes', v)}
+                  className="mt-1 w-full"
+                />
               </div>
               <div>
                 <label htmlFor={`${id}-path`} className="block text-[12px] text-tenue">Path or skills (optional)</label>

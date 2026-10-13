@@ -1,16 +1,21 @@
 'use client'
 
-import { useEffect, useId, useRef, useState, useTransition } from 'react'
+import { useEffect, useId, useMemo, useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { Funnel } from '@phosphor-icons/react/dist/ssr'
 import {
-  ETICHETTA_ORDINE, ORDINI, SCELTE_TURNI, TIPI, filtriAttivi, parametriFiltri,
+  ORDINI, TIPI, filtriAttivi, parametriFiltri,
   type Classe, type FiltriClear, type Ordine, type TipoCarta,
 } from '@/lib/clears/filtri'
+import {
+  CLASSI, OPZIONI_ORDINE, opzioniCategoria, opzioniClasse, opzioniLeader, opzioniMono, opzioniTurni,
+} from '@/lib/clears/filtri-opzioni'
 import { clearListHref } from '@/lib/urls'
 import type { Region } from '@/lib/queries'
-import { ScegliCarta, nomeCarta, type OpzioneCarta } from '@/components/clears/scegli-carta'
-import { campoAttivo, lasciaSegno, prendiSegno, rimettiFuoco } from '@/components/clears/fuoco-filtri'
+import { ScegliCarta, type OpzioneCarta } from '@/components/clears/scegli-carta'
+import { campoAttivo, lasciaSegno, prendiSegno, rimettiFuoco, type Segno } from '@/components/clears/fuoco-filtri'
+import { Scelta } from '@/components/scelta/scelta'
+import type { Opzione } from '@/lib/scelta'
 
 /** Le opzioni della barra, contate sui clear del tier (getClearFacets). */
 export type OpzioniFiltri = {
@@ -21,18 +26,53 @@ export type OpzioniFiltri = {
   categories: { id: number; name: string; n: number }[]
 }
 
-const SELECT =
-  'mt-1 w-full min-w-0 px-2 py-1.5 text-[13px] rounded-[var(--raggio)] bg-superficie border border-campo text-inchiostro'
+// Col dito le pillole, Filters e "Uses card" sono alti quanto i menu
+// accanto (44px, components/scelta), con 15px come le voci dei menu: una
+// riga sola, un'altezza sola. Al passaggio il bordo si fa piu' forte,
+// mai piu' debole di campo (3:1).
+const COL_DITO = 'pointer-coarse:min-h-11 pointer-coarse:text-[15px]'
 const PILLOLA =
-  'relative inline-flex items-center px-2.5 py-1.5 text-[13px] rounded-[var(--raggio)] border cursor-pointer select-none transition-colors ' +
-  'bg-superficie text-testo border-campo hover:border-linea-forte ' +
+  `relative inline-flex items-center px-2.5 py-1.5 text-[13px] ${COL_DITO} rounded-[var(--raggio)] border cursor-pointer select-none transition-colors ` +
+  'bg-superficie text-testo border-campo hover:border-tenue ' +
   'has-[:checked]:bg-inchiostro has-[:checked]:text-sfondo has-[:checked]:border-inchiostro ' +
   'has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-oro'
-const CLASSI: { id: Classe; t: string; url: string }[] = [
-  { id: 'Super', t: 'All Super', url: 'super' },
-  { id: 'Extreme', t: 'All Extreme', url: 'extreme' },
-]
-const conta = (n: number) => (n > 0 ? ` (${n})` : ' (0 here)')
+// Le larghezze dei menu: fisse, cosi' una scelta non allarga la riga.
+// Sotto md Leader e Category stanno a tutta riga (i nomi lunghi vanno a
+// capo, mai tagliati), Max turns, Type e Class a meta'.
+const MEZZA = 'w-[calc(50%-0.25rem)] md:w-[8.5rem]'
+const LARGHEZZA = { turns: MEZZA, leader: 'w-full md:w-[18rem]', mono: MEZZA, class: MEZZA, cat: 'w-full md:w-[16rem]', sort: 'w-[9rem]' }
+
+/**
+ * Uno dei sei menu (components/scelta): l'etichetta sopra, il name del
+ * form GET di prima e il data-fuoco per rimettere il focus dopo un cambio
+ * di route (fuoco-filtri.ts).
+ */
+function CampoFiltro({ idBase, id, etichetta, voci, valore, onCambia, nota }: {
+  idBase: string
+  id: keyof typeof LARGHEZZA
+  etichetta: string
+  voci: readonly Opzione[]
+  valore: string
+  onCambia: (v: string) => void
+  nota?: React.ReactNode
+}) {
+  return (
+    <div className={`min-w-0 ${LARGHEZZA[id]}`}>
+      <label htmlFor={`${idBase}-${id}`} className="block text-[11px] text-tenue">{etichetta}</label>
+      <Scelta
+        id={`${idBase}-${id}`}
+        etichetta={etichetta}
+        name={id}
+        data-fuoco={id}
+        opzioni={voci}
+        valore={valore}
+        onCambia={onCambia}
+        className="mt-1 w-full"
+      />
+      {nota}
+    </div>
+  )
+}
 
 /*
  * La barra dei filtri dei clear di un tier. E' un vero <form method="get">
@@ -62,7 +102,11 @@ export function FiltriClear({ eventId, reg, tier, filtri, opzioni, sostituisci, 
   const [aperta, setAperta] = useState(false)
   const barra = useRef<HTMLFormElement>(null)
   // Il controllo da rimettere a fuoco quando il pannello si sara' aperto
-  const daRiprendere = useRef<string | null>(null)
+  const daRiprendere = useRef<Segno | null>(null)
+  // Il Tab che si sta premendo nella barra, se c'e' (1, o -1 con
+  // Maiuscolo): un menu aperto lo usa per scegliere, e vai() arriva prima
+  // che il focus si sposti (fuoco-filtri.ts)
+  const tabRef = useRef<0 | 1 | -1>(0)
 
   // Arrivati da un'altra route con un filtro scelto da tastiera: il focus
   // torna sul controllo (con il popover e il pannello aperti com'erano).
@@ -75,17 +119,17 @@ export function FiltriClear({ eventId, reg, tier, filtri, opzioni, sostituisci, 
       // l'effetto qui sotto, quando il pannello e' visibile. Niente
       // cancel nel cleanup: il segno e' gia' consumato, e in StrictMode il
       // secondo giro dell'effetto non lo ritroverebbe.
-      daRiprendere.current = s.campo
+      daRiprendere.current = s
       requestAnimationFrame(() => setAperta(true))
-    } else if (!rimettiFuoco(barra.current, s.campo)) {
+    } else if (!rimettiFuoco(barra.current, s.campo, s.tab)) {
       rimettiFuoco(barra.current, 'sort')
     }
   }, [])
   useEffect(() => {
-    const campo = daRiprendere.current
-    if (!aperta || !campo) return
+    const s = daRiprendere.current
+    if (!aperta || !s) return
     daRiprendere.current = null
-    if (!rimettiFuoco(barra.current, campo)) rimettiFuoco(barra.current, 'pannello')
+    if (!rimettiFuoco(barra.current, s.campo, s.tab)) rimettiFuoco(barra.current, 'pannello')
   }, [aperta])
 
   // La scelta appena fatta, finche' l'URL non la raggiunge; null = l'URL.
@@ -109,7 +153,8 @@ export function FiltriClear({ eventId, reg, tier, filtri, opzioni, sostituisci, 
     // Cambiare route rimonta la barra: si lascia detto dov'era il focus
     if (new URL(url, window.location.href).pathname !== window.location.pathname) {
       const campo = campoAttivo(barra.current)
-      if (campo) lasciaSegno(url, { campo, aperta })
+      const tab = tabRef.current
+      if (campo) lasciaSegno(url, { campo, aperta, ...(tab ? { tab } : {}) })
     }
     startTransition(() => {
       if (sostituisci) router.replace(url, { scroll: false })
@@ -119,14 +164,6 @@ export function FiltriClear({ eventId, reg, tier, filtri, opzioni, sostituisci, 
 
   const attivi = filtriAttivi(f)
   const idPannello = `${idBase}-pannello`
-  const campo = (id: string, etichetta: string, controllo: React.ReactNode, nota?: React.ReactNode) => (
-    <div className="min-w-0">
-      <label htmlFor={`${idBase}-${id}`} className="block text-[11px] text-tenue">{etichetta}</label>
-      {controllo}
-      {nota}
-    </div>
-  )
-
   // Una carta dell'URL che qui nessuno usa resta scelta, con "0 here"
   const carteOpzioni = [...opzioni.cards]
   for (const id of f.cards) {
@@ -134,7 +171,11 @@ export function FiltriClear({ eventId, reg, tier, filtri, opzioni, sostituisci, 
       carteOpzioni.unshift({ id, name: etichette[id] ?? null, epithet: null, type: '', class: '', thumb: null, bare: false, n: 0 })
     }
   }
-  const leaderFuori = f.leader && !opzioni.leaders.some((c) => c.id === f.leader)
+  const vociTurni = useMemo(() => opzioniTurni(f.turns), [f.turns])
+  const vociLeader = useMemo(() => opzioniLeader(f.leader, opzioni.leaders, etichette), [f.leader, opzioni.leaders, etichette])
+  const vociMono = useMemo(() => opzioniMono(f.mono, opzioni.types), [f.mono, opzioni.types])
+  const vociClasse = useMemo(() => opzioniClasse(f.cls, opzioni.classes), [f.cls, opzioni.classes])
+  const vociCategoria = useMemo(() => opzioniCategoria(f.cat, opzioni.categories), [f.cat, opzioni.categories])
 
   return (
     <>
@@ -143,6 +184,13 @@ export function FiltriClear({ eventId, reg, tier, filtri, opzioni, sostituisci, 
         method="get"
         action={`/events/${eventId}/clears`}
         onSubmit={(e) => { e.preventDefault(); vai(f) }}
+        onKeyDownCapture={(e) => {
+          if (e.key !== 'Tab') return
+          tabRef.current = e.shiftKey ? -1 : 1
+          // dopo tutto l'evento: la fase di cattura e quella di bolla sono
+          // due ascoltatori di React, e fra i due girerebbe un microtask
+          setTimeout(() => { tabRef.current = 0 }, 0)
+        }}
         aria-label="Filter clears"
         className="mt-4"
       >
@@ -156,7 +204,7 @@ export function FiltriClear({ eventId, reg, tier, filtri, opzioni, sostituisci, 
             onClick={() => setAperta((a) => !a)}
             aria-expanded={aperta}
             aria-controls={idPannello}
-            className="md:hidden inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[13px] rounded-[var(--raggio)] bg-superficie border border-campo text-inchiostro"
+            className={`md:hidden inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[13px] ${COL_DITO} rounded-[var(--raggio)] bg-superficie border border-campo text-inchiostro`}
           >
             <Funnel size={14} weight="bold" aria-hidden />
             Filters
@@ -184,110 +232,58 @@ export function FiltriClear({ eventId, reg, tier, filtri, opzioni, sostituisci, 
                 </label>
               ))}
             </div>
-            {campo('turns', 'Max turns', (
-              <select
-                id={`${idBase}-turns`}
-                data-fuoco="turns"
-                name="turns"
-                value={f.turns ?? ''}
-                onChange={(e) => vai({ ...f, turns: e.target.value ? Number(e.target.value) : null })}
-                className={SELECT}
-              >
-                <option value="">Any</option>
-                {[...new Set([...SCELTE_TURNI, ...(f.turns != null ? [f.turns] : [])])].sort((a, b) => a - b)
-                  .map((n) => <option key={n} value={n}>{n} or fewer</option>)}
-              </select>
-            ), f.turns != null && (
-              <p className="mt-1 text-[11px] text-tenue max-w-[12rem]">Clears that don’t report turns are hidden.</p>
-            ))}
+            <CampoFiltro
+              idBase={idBase} id="turns" etichetta="Max turns" voci={vociTurni} valore={f.turns != null ? String(f.turns) : ''}
+              onCambia={(v) => vai({ ...f, turns: v ? Number(v) : null })}
+              nota={f.turns != null && <p className="mt-1 text-[11px] text-tenue">Clears that don’t report turns are hidden.</p>}
+            />
             {(opzioni.cards.length > 0 || f.cards.length > 0) && (
               <ScegliCarta opzioni={carteOpzioni} scelte={f.cards} onCambia={(cards) => vai({ ...f, cards })} />
             )}
-            {(opzioni.leaders.length > 0 || f.leader) && campo('leader', 'Leader', (
-              <select
-                id={`${idBase}-leader`}
-                data-fuoco="leader"
-                name="leader"
-                value={f.leader ?? ''}
-                onChange={(e) => vai({ ...f, leader: e.target.value || null })}
-                className={`${SELECT} max-w-[16rem]`}
-              >
-                <option value="">Any leader</option>
-                {leaderFuori && <option value={f.leader!}>{`${etichette[f.leader!] ?? `Card ${f.leader}`} (0 here)`}</option>}
-                {opzioni.leaders.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {nomeCarta(c)}{c.epithet ? `, ${c.epithet}` : ''}{conta(c.n)}
-                  </option>
-                ))}
-              </select>
-            ))}
-            {(opzioni.types.length > 0 || f.mono) && campo('mono', 'Type', (
-              <select
-                id={`${idBase}-mono`}
-                data-fuoco="mono"
-                name="mono"
-                value={f.mono ?? ''}
-                onChange={(e) => vai({ ...f, mono: (e.target.value || null) as TipoCarta | null })}
-                className={SELECT}
-              >
-                <option value="">Any type</option>
-                {TIPI.filter((t) => t === f.mono || opzioni.types.some((x) => x.id === t)).map((t) => (
-                  <option key={t} value={t}>Mono {t}{conta(opzioni.types.find((x) => x.id === t)?.n ?? 0)}</option>
-                ))}
-              </select>
-            ))}
-            {(opzioni.classes.length > 0 || f.cls) && campo('class', 'Class', (
-              <select
-                id={`${idBase}-class`}
-                data-fuoco="class"
-                name="class"
-                value={CLASSI.find((c) => c.id === f.cls)?.url ?? ''}
-                onChange={(e) => vai({ ...f, cls: CLASSI.find((c) => c.url === e.target.value)?.id ?? null })}
-                className={SELECT}
-              >
-                <option value="">Any class</option>
-                {CLASSI.filter((c) => c.id === f.cls || opzioni.classes.some((x) => x.id === c.id)).map((c) => (
-                  <option key={c.id} value={c.url}>{c.t}{conta(opzioni.classes.find((x) => x.id === c.id)?.n ?? 0)}</option>
-                ))}
-              </select>
-            ))}
-            {(opzioni.categories.length > 0 || f.cat != null) && campo('cat', 'Category', (
-              <select
-                id={`${idBase}-cat`}
-                data-fuoco="cat"
-                name="cat"
-                value={f.cat ?? ''}
-                onChange={(e) => vai({ ...f, cat: e.target.value ? Number(e.target.value) : null })}
-                className={`${SELECT} max-w-[16rem]`}
-              >
-                <option value="">Any category</option>
-                {f.cat != null && !opzioni.categories.some((c) => c.id === f.cat) && (
-                  <option value={f.cat}>{`Category ${f.cat} (0 here)`}</option>
-                )}
-                {opzioni.categories.map((c) => <option key={c.id} value={c.id}>{c.name}{conta(c.n)}</option>)}
-              </select>
-            ))}
+            {(opzioni.leaders.length > 0 || f.leader) && (
+              <CampoFiltro
+                idBase={idBase} id="leader" etichetta="Leader" voci={vociLeader} valore={f.leader ?? ''}
+                onCambia={(v) => vai({ ...f, leader: v || null })}
+              />
+            )}
+            {(opzioni.types.length > 0 || f.mono) && (
+              <CampoFiltro
+                idBase={idBase} id="mono" etichetta="Type" voci={vociMono} valore={f.mono ?? ''}
+                onCambia={(v) => vai({ ...f, mono: (TIPI as readonly string[]).includes(v) ? (v as TipoCarta) : null })}
+              />
+            )}
+            {(opzioni.classes.length > 0 || f.cls) && (
+              <CampoFiltro
+                idBase={idBase} id="class" etichetta="Class" voci={vociClasse} valore={CLASSI.find((c) => c.id === f.cls)?.url ?? ''}
+                onCambia={(v) => vai({ ...f, cls: CLASSI.find((c) => c.url === v)?.id ?? null })}
+              />
+            )}
+            {(opzioni.categories.length > 0 || f.cat != null) && (
+              <CampoFiltro
+                idBase={idBase} id="cat" etichetta="Category" voci={vociCategoria} valore={f.cat != null ? String(f.cat) : ''}
+                onCambia={(v) => vai({ ...f, cat: v ? Number(v) : null })}
+              />
+            )}
           </div>
-          <div className="ml-auto min-w-[9rem]">
-            {campo('sort', 'Sort', (
-              <select
-                id={`${idBase}-sort`}
-                data-fuoco="sort"
-                name="sort"
-                value={f.sort}
-                onChange={(e) => vai({ ...f, sort: e.target.value as Ordine })}
-                className={SELECT}
-              >
-                {ORDINI.map((o) => <option key={o} value={o}>{ETICHETTA_ORDINE[o]}</option>)}
-              </select>
-            ), f.sort === 'turns' && f.turns == null && (
-              <p className="mt-1 text-[11px] text-tenue">Clears that don’t report turns are listed last.</p>
-            ))}
+          <div className="ml-auto">
+            <CampoFiltro
+              idBase={idBase} id="sort" etichetta="Sort" voci={OPZIONI_ORDINE} valore={f.sort}
+              onCambia={(v) => vai({ ...f, sort: (ORDINI as readonly string[]).includes(v) ? (v as Ordine) : 'top' })}
+              nota={f.sort === 'turns' && f.turns == null && (
+                <p className="mt-1 text-[11px] text-tenue">Clears that don’t report turns are listed last.</p>
+              )}
+            />
           </div>
         </div>
-        {/* Senza JavaScript: il pannello sempre aperto e un bottone per applicare */}
+        {/* Senza JavaScript: il pannello sempre aperto e un bottone per
+            applicare. I menu mostrano il loro <select> vero con noscript:
+            (@media (scripting: none)); la seconda regola fa lo stesso nei
+            browser che quella media query non la conoscono (Safari prima
+            della 17), dove senza resterebbe trasparente. */}
         <noscript>
-          <style>{`@media (max-width: 767px){[id="${idPannello}"]{display:flex}}`}</style>
+          <style>{`@media (max-width: 767px){[id="${idPannello}"]{display:flex}}` +
+            '[data-scelta-nativa]>select{position:static;opacity:1;padding-top:.375rem;padding-bottom:.375rem}' +
+            '[data-scelta-nativa]>[data-scelta-valore]{display:none}'}</style>
           <button type="submit" className="mt-2 px-3 py-1.5 text-[13px] font-medium rounded-[var(--raggio)] bg-inchiostro text-sfondo">
             Apply
           </button>

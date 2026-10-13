@@ -2,6 +2,7 @@
 
 import { RicopiaPartenza } from '@/components/builder/ricopia-partenza'
 import { Slot } from '@/components/builder/slot'
+import { CAMPO_DITO } from '@/components/scelta/stile'
 import { LIMITS, SHAPE } from '@/lib/clears/validate'
 import type { Azione, SquadraStato } from '@/lib/clears/builder-stato'
 
@@ -11,7 +12,8 @@ const GRUPPI = [
   { rot: 3, nome: 'Floaters' },
 ] as const
 
-const campo = 'mt-1 block w-full px-3 py-1.5 text-[13px] rounded-[var(--raggio)] bg-superficie border border-campo text-inchiostro'
+// col dito alti quanto i campi e i menu del resto del builder (CAMPO_DITO)
+const campo = `mt-1 block w-full px-3 py-1.5 text-[13px] rounded-[var(--raggio)] bg-superficie border border-campo text-inchiostro ${CAMPO_DITO}`
 
 type Props = {
   squadra: SquadraStato

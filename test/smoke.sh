@@ -266,6 +266,16 @@ grep -q 'Disallow: /events/browse' "$TMP/html" && pass "robots.txt esclude /even
 grep -q 'Disallow: /admin' "$TMP/html" && pass "robots.txt esclude /admin" || fail "robots.txt senza /admin"
 grep -qx 'Disallow: /events/\*/clears' "$TMP/html" && pass "robots.txt esclude /events/*/clears" || fail "robots.txt senza /events/*/clears"
 grep -qx 'Disallow: /notifications' "$TMP/html" && pass "robots.txt esclude /notifications" || fail "robots.txt senza /notifications"
+# security.txt (RFC 9116): Expires al massimo un anno avanti, quindi va
+# rinnovato a mano. Le date ISO in UTC si confrontano come stringhe.
+prendi /.well-known/security.txt
+if [ "$codice" != 200 ] || ! grep -q '^Contact: mailto:' "$TMP/html"; then
+  fail "security.txt: risposto $codice o senza Contact"
+else
+  scade=$(sed -n 's/^Expires: //p' "$TMP/html")
+  [[ "$scade" > "$(date -u +%Y-%m-%dT%H:%M:%S)" ]] && pass "security.txt scade il ${scade%%T*}" \
+    || fail "security.txt scaduto ($scade): rinnova Expires in public/.well-known/security.txt"
+fi
 prendi /sitemap.xml
 grep -q '/cards/1032310</loc>' "$TMP/html" && pass "la sitemap ha le carte" || fail "la sitemap non ha /cards/1032310"
 grep -q '/events/japan</loc>' "$TMP/html" && pass "la sitemap ha /events/japan" || fail "la sitemap non ha /events/japan"
@@ -351,6 +361,58 @@ fi
 verifica_404 "profilo: handle che non c'e'" /users/nessuno_xyz_404
 verifica_404 "profilo: handle malformato" /users/a-b
 verifica_404 "profilo: nome riservato" /users/users
+
+# I menu a scelta (components/scelta): nell'HTML del server c'e' il
+# <select> nativo, uguale per tutti, e niente di Headless UI (il combobox
+# arriva dopo l'idratazione, in un chunk suo). Il footer ha il selettore del
+# tema con gli 11 temi; la barra dei filtri di un tier ha i suoi <select>
+# con i name del form GET. La pagina del tier la si cerca fra quelle con la
+# barra (almeno due clear), o la fissa SMOKE_FILTRI (un percorso).
+echo "i menu a scelta (l'HTML del server)"
+senza_script () { perl -0pe 's/<script\b.*?<\/script>//gs' "$TMP/html"; }
+prendi /events
+senza_script > "$TMP/menu"
+mancano=''
+for t in System Light Dark 'TEQ Jade' 'PHY Sand' 'AGL Night' 'INT Nebula' 'STR Ember' 'LR Gold' 'OLED Black' 'High contrast'; do
+  grep -qF ">$t</option>" "$TMP/menu" || mancano="$mancano $t"
+done
+grep -qE '<select[^>]*>' "$TMP/menu" && [ -z "$mancano" ] \
+  && pass "/events: il selettore del tema e' un <select> nativo con gli 11 temi" || fail "/events: il <select> del tema senza:${mancano:- il <select>}"
+grep -qE 'role="combobox"|headlessui-' "$TMP/menu" && fail "/events: l'HTML del server ha gia' il combobox (role=combobox o headlessui-)" \
+  || pass "/events: niente combobox nell'HTML del server"
+FILTRI=${SMOKE_FILTRI:-}
+if [ -z "$FILTRI" ]; then
+  candidati=()
+  [ -n "${UTENTE:-}" ] && { prendi "/users/$UTENTE"; while read -r p; do candidati+=("$p"); done < <(grep -oE 'href="/events/[0-9]+(/japan)?/t/[0-9]+' "$TMP/html" | sed 's/^href="//' | sort -u | head -8); }
+  [ -n "${EZA:-}" ] && candidati+=("/events/$EZA" ${TIER:+"/events/$EZA/t/$TIER"})
+  [ -n "${STAGE:-}" ] && candidati+=("/events/$STAGE")
+  for p in ${candidati[@]+"${candidati[@]}"}; do
+    prendi "$p"
+    if grep -q 'aria-label="Filter clears"' "$TMP/html"; then FILTRI=$p; break; fi
+  done
+fi
+if [ -z "$FILTRI" ]; then
+  fail "nessuna pagina di un tier con la barra dei filtri: indica SMOKE_FILTRI (un tier con almeno due clear)"
+else
+  prendi "$FILTRI"
+  senza_script | perl -0ne 'print $1 if /(<form[^>]*aria-label="Filter clears".*?<\/form>)/s' > "$TMP/barra"
+  nomi=$(grep -oE '<select[^>]*name="[a-z]+"' "$TMP/barra" | grep -oE 'name="[a-z]+"' | sed 's/name="//; s/"//' | tr '\n' ' ')
+  case " $nomi" in
+    *" turns "*" sort "*) pass "$FILTRI: la barra ha i <select> con i name del form (${nomi% })" ;;
+    *) fail "$FILTRI: nella barra i <select> con name sono: ${nomi:-nessuno} (servono almeno turns e sort)" ;;
+  esac
+  grep -qE 'role="combobox"|headlessui-' "$TMP/barra" && fail "$FILTRI: la barra del server ha gia' il combobox" \
+    || pass "$FILTRI: la barra del server senza combobox"
+  # La pagina in cache e' la stessa per chiunque: due richieste con cookie e
+  # browser diversi (niente sessione, niente dts_version) danno gli stessi byte.
+  if [ "${SMOKE_EXPECT_CACHE:-}" = 1 ]; then
+    curl -s -o /dev/null --max-time 120 "$BASE$FILTRI"
+    curl -s -o "$TMP/uno" --max-time 120 -A 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Safari/604.1' -H 'Cookie: prova=1; tema=oled' "$BASE$FILTRI"
+    curl -s -o "$TMP/due" --max-time 120 -A 'Mozilla/5.0 (Macintosh; Intel Mac OS X 15_0) Chrome/141.0 Safari/537.36' -H 'Cookie: altro=2' "$BASE$FILTRI"
+    cmp -s "$TMP/uno" "$TMP/due" && pass "$FILTRI: lo stesso HTML per due visitatori diversi" \
+      || fail "$FILTRI: l'HTML cambia con il cookie o il browser"
+  fi
+fi
 
 # La PWA (fase 1): manifest, icone con la misura vera (dall'IHDR), il
 # service worker senza cache lunga e la pagina offline. L'invito a

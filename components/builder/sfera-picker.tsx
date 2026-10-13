@@ -3,7 +3,10 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { MagnifyingGlass } from '@phosphor-icons/react/dist/ssr'
 import { GRADI } from '@/lib/clears/build'
+import { OPZIONI_GRADO } from '@/lib/clears/builder-opzioni'
 import { useSfere, type SferaTrovata } from '@/components/builder/use-sfere'
+import { Scelta } from '@/components/scelta/scelta'
+import { CAMPO_DITO } from '@/components/scelta/stile'
 
 type Props = {
   /** "Skill Orb slot 2": il nome accessibile della ricerca */
@@ -14,7 +17,8 @@ type Props = {
   onAnnulla: () => void
 }
 
-const campo = 'w-full py-1.5 text-[13px] rounded-[var(--raggio)] bg-superficie border border-campo text-inchiostro'
+// col dito alti quanto i menu (CAMPO_DITO)
+const campo = `w-full py-1.5 text-[13px] rounded-[var(--raggio)] bg-superficie border border-campo text-inchiostro ${CAMPO_DITO}`
 
 /**
  * La ricerca di una Skill Orb dentro l'editor della build. Le esclusive
@@ -75,17 +79,15 @@ export function SferaPicker({ dove, carta, onScegli, onAnnulla }: Props) {
         </div>
         <div>
           <label htmlFor={`${id}-t`} className="block text-[11px] text-tenue">Grade</label>
-          <select
+          {/* Esc a elenco aperto chiude solo l'elenco; a elenco chiuso il dialog, come prima */}
+          <Scelta
             id={`${id}-t`}
-            value={tier}
-            onChange={(e) => { setTier(e.target.value); setAttiva(0) }}
-            className={`${campo} mt-1 px-2`}
-          >
-            <option value="">Any</option>
-            <option value="3">Gold</option>
-            <option value="2">Silver</option>
-            <option value="1">Bronze</option>
-          </select>
+            etichetta="Grade"
+            opzioni={OPZIONI_GRADO}
+            valore={tier}
+            onCambia={(v) => { setTier(v); setAttiva(0) }}
+            className="mt-1 w-28"
+          />
         </div>
       </div>
       <p id={`${id}-aiuto`} className="text-[11px] text-tenue">
