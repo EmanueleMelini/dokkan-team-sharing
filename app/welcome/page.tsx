@@ -4,6 +4,8 @@ import { OnboardingForm } from '@/components/auth/onboarding-form'
 import { suggestHandle } from '@/lib/auth/handle'
 import { safeNext } from '@/lib/auth/safe-next'
 import { requireUser } from '@/lib/dal'
+import { versioneRichiesta } from '@/lib/versione/server'
+import { seguiVersione } from '@/lib/versione/versione'
 
 export const metadata: Metadata = { title: 'Welcome', robots: { index: false } }
 
@@ -20,8 +22,11 @@ export default async function WelcomePage({ searchParams }: PageProps<'/welcome'
   const next = safeNext(one(sp.next), '/events')
   // Senza sessione a /login con lo stesso next: l'accesso riporta qui.
   const user = await requireUser(next)
-  // Chi ha gia' scelto passa e basta: ogni accesso arriva da qui.
-  if (user.onboarded) redirect(next)
+  const versione = await versioneRichiesta()
+  // Chi ha gia' scelto passa e basta: ogni accesso arriva da qui. Questo
+  // redirect lo segue il browser (passa dal routing), quindi next potrebbe
+  // restare com'e'; risolto qui, si risparmia un 307.
+  if (user.onboarded) redirect(seguiVersione(next, versione))
 
   return (
     <div className="mx-auto max-w-6xl px-5 py-12">
@@ -30,7 +35,10 @@ export default async function WelcomePage({ searchParams }: PageProps<'/welcome'
         <p className="mt-1.5 text-[13px] leading-relaxed text-testo">
           Pick the handle other players will see and the version of the game you play.
         </p>
-        <OnboardingForm next={next} suggestion={suggestHandle(user.displayName)} reg={user.reg} />
+        {/* La versione proposta e' quella gia' scelta su questo dispositivo
+            (il cookie dts_version esiste solo per Japan), altrimenti quella
+            dell'account: Global per un account nuovo. */}
+        <OnboardingForm next={next} suggestion={suggestHandle(user.displayName)} reg={versione === 'japan' ? 'japan' : user.reg} />
       </div>
     </div>
   )

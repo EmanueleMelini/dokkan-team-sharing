@@ -4,7 +4,7 @@
 // che il sito costruisce devono rileggersi uguali.
 //
 // Funzioni pure, niente database.
-import { browseHref, eventHref, parseEventView, type EventView } from '@/lib/urls'
+import { browseHref, clearAnchor, eventHref, homeHref, parseEventView, submitHref, type EventView } from '@/lib/urls'
 
 let fails = 0
 let passes = 0
@@ -29,6 +29,14 @@ vale('un tier', eventHref({ id: '12', tier: '345' }), '/events/12/t/345')
 vale('un tier, Japan, pagina 3', eventHref({ id: '12', reg: 'japan', tier: '345', page: 3 }), '/events/12/japan/t/345/p/3')
 vale('la pagina 1 non si scrive', eventHref({ id: '12', tier: '345', page: 1 }), '/events/12/t/345')
 vale('la pagina senza tier non si scrive', eventHref({ id: '12', page: 4 }), '/events/12')
+
+console.log('eventHref esplicito (la versione vince su quella scelta nel sito)')
+vale('Global: ?region=global', eventHref({ id: '1', tier: '5', explicit: true }), '/events/1/t/5?region=global')
+vale('Global, pagina 2', eventHref({ id: '1', tier: '5', page: 2, explicit: true }), '/events/1/t/5/p/2?region=global')
+vale('Global, apertura', eventHref({ id: '1', explicit: true }), '/events/1?region=global')
+vale('Japan: il percorso basta, niente query', eventHref({ id: '1', reg: 'japan', tier: '5', explicit: true }), '/events/1/japan/t/5')
+vale('l\'ancora dopo la query', eventHref({ id: '1', tier: '5', explicit: true }) + clearAnchor('c9'), '/events/1/t/5?region=global#clear-c9')
+vale('senza explicit come prima', eventHref({ id: '1', tier: '5', explicit: false }), '/events/1/t/5')
 
 console.log('andata e ritorno')
 let giri = 0
@@ -77,11 +85,21 @@ console.log('browseHref: come la vecchia query della lista')
 vale('nessun filtro: la pagina statica', browseHref({}), '/events')
 vale('region=global non si scrive', browseHref({ reg: 'global' }), '/events')
 vale('page=1 non si scrive', browseHref({ page: 1 }), '/events')
-vale('Japan', browseHref({ reg: 'japan' }), '/events/browse?region=japan')
+vale('Japan senza altri filtri: la sua pagina statica', browseHref({ reg: 'japan' }), '/events/japan')
+vale('Japan, page=1 non si scrive', browseHref({ reg: 'japan', page: 1 }), '/events/japan')
+vale('Japan con un filtro: browse, region prima', browseHref({ reg: 'japan', kind: 'story' }), '/events/browse?region=japan&type=story')
+vale('Japan, pagina 2', browseHref({ reg: 'japan', page: 2 }), '/events/browse?region=japan&page=2')
 vale('pagina 2', browseHref({ page: 2 }), '/events/browse?page=2')
 vale('tutti, nello stesso ordine di prima',
   browseHref({ reg: 'japan', kind: 'zbattle', status: 'active', search: 'goku & co', page: 3 }),
   '/events/browse?region=japan&type=zbattle&status=active&q=goku+%26+co&page=3')
+
+console.log('homeHref e submitHref')
+vale('la home Global', homeHref('global'), '/events')
+vale('la home Japan', homeHref('japan'), '/events/japan')
+vale('la home per difetto e\' Global', homeHref(), '/events')
+vale('submit Global: la regione c\'e\' sempre', submitHref('1', 'global', '5'), '/events/1/submit?region=global&tier=5')
+vale('submit Japan', submitHref('1', 'japan', '5'), '/events/1/submit?region=japan&tier=5')
 
 console.log(fails ? `\n  ${passes} verdi, ${fails} rosse\n` : `\n  ${passes} verifiche, TUTTO VERDE\n`)
 process.exit(fails ? 1 : 0)

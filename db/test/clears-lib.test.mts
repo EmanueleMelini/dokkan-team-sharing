@@ -273,10 +273,53 @@ async function carte() {
         j.filter((c) => c.id !== nuda.id).every((c) => c.bare === false), JSON.stringify(nella))
     })
   }
-  for (const qs of ['type=XXX', 'class=Mega', 'rarity=SSSR', 'category=abc', 'offset=-1', 'offset=99999', `q=${'x'.repeat(61)}`]) {
+  for (const qs of ['type=XXX', 'class=Mega', 'rarity=SSSR', 'category=abc', 'offset=-1', 'offset=99999', `q=${'x'.repeat(61)}`,
+    'reg=eu', 'reg=Japan']) {
     const b = await chiama(qs)
     check(`400 per ${qs.slice(0, 20)}`, b.status === 400 && typeof b.body.error === 'string' && /no-store/.test(b.cache))
   }
+
+  // Il picker di un clear giapponese (lib/versione): le carte uscite su
+  // Japan, anche quelle che su Global non ci sono ancora. Global per difetto.
+  console.log('\n  -- il picker per la versione del clear (reg)')
+  const jpUscita = await one<{ id: string; name: string }>(
+    `select c.id::text, ct.name from card c join card_text ct on ct.card_id = c.id and ct.locale = 'en'
+      where exists (select 1 from card_release r where r.card_id = c.id and r.reg = 'japan' and r.released_at <= current_date)
+        and not exists (select 1 from card_release r where r.card_id = c.id and r.reg = 'global')
+      order by c.id limit 1`)
+  if (check('c\'e\' una carta uscita solo su Japan', !!jpUscita)) {
+    const trova = async (reg: 'global' | 'japan' | undefined) => {
+      for (let offset = 0; offset <= 400; offset += 40) {
+        const hits = await searchCards({ q: jpUscita.name, reg, offset, limit: 40 })
+        if (hits.some((c) => c.id === jpUscita.id)) return true
+        if (hits.length < 40) return false
+      }
+      return false
+    }
+    check('searchCards Japan: la trova', await trova('japan'))
+    check('searchCards Global (e per difetto): no', !(await trova('global')) && !(await trova(undefined)))
+    const qs = new URLSearchParams({ q: jpUscita.name.slice(0, 60) })
+    const nellaRotta = async (extra: string) => {
+      for (let offset = 0; offset <= 400; offset += 40) {
+        const b = await chiama(`${qs}${extra}&offset=${offset}`)
+        if (b.status !== 200) return `status ${b.status}`
+        if ((b.body.cards as { id: string }[]).some((c) => c.id === jpUscita.id)) return 'si'
+        if (b.body.next === null) return 'no'
+      }
+      return 'no'
+    }
+    check('/api/cards?reg=japan: la carta solo giapponese c\'e\'', await nellaRotta('&reg=japan') === 'si')
+    check('/api/cards senza reg o con reg=global: no, come prima', await nellaRotta('') === 'no' && await nellaRotta('&reg=global') === 'no')
+    const conJp = await chiama(`${qs}&reg=japan`)
+    check('stessa cache pubblica con reg=japan', conJp.cache === r.cache && conJp.cdn === r.cdn, `${conJp.cache} | ${conJp.cdn}`)
+  }
+  const tutteJp = await chiama('reg=japan')
+  check('Japan: una pagina da 40, carte tutte uscite su Japan', tutteJp.body.cards.length === 40 && await num(
+    `select count(distinct card_id) from card_release where reg = 'japan' and released_at <= current_date
+       and card_id = any ($1::bigint[])`, [tutteJp.body.cards.map((c: { id: string }) => c.id)]) === 40)
+  const builder = readFileSync(new URL('../../components/builder/use-carte.ts', import.meta.url), 'utf8')
+  check('il builder manda reg solo per Japan (le chiavi della CDN di Global restano quelle)',
+    /if \(reg === 'japan'\) qs\.set\('reg', reg\)/.test(builder))
 }
 
 try {

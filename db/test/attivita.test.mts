@@ -239,8 +239,9 @@ async function azione<T>(nome: string, fare: () => Promise<T>, atteso: (r: T) =>
   return fatto
 }
 
+// il clear con la sua versione nell'URL (lib/versione); la tip senza
 const sulClear = (clear: string) => (r: NotificationRow) =>
-  `${eventHref({ id: m.eventId, reg: r.reg ?? 'global', tier: m.d.tier })}${clearAnchor(clear)}`
+  `${eventHref({ id: m.eventId, reg: r.reg ?? 'global', tier: m.d.tier, explicit: true })}${clearAnchor(clear)}`
 const sullaTip = (tip: string, tier: string | null) => () => `${eventHref({ id: m.eventId, tier })}#tip-${tip}`
 
 async function azioni() {

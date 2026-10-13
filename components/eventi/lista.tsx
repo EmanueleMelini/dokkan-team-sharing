@@ -14,11 +14,16 @@ import { ConteggioClear } from '@/components/conteggio-clear'
 import { Paginazione } from '@/components/paginazione'
 import { AvvisoAccountCancellato } from '@/components/eventi/avviso-cancellato'
 import { CorniceCarta, SegnapostoEvento } from '@/components/segnaposto'
+import { AvvisoVersione } from '@/components/versione/avviso-versione'
 import { segnapostoEvento } from '@/lib/segnaposto'
+import { altraVersione } from '@/lib/versione/versione'
 
-// La lista degli eventi, comune a /events (statica: Global, nessun filtro,
-// pagina 1) e a /events/browse (ogni vista filtrata, dinamica e noindex).
-// Legge solo dati in cache e mai la sessione.
+// La lista degli eventi, comune a /events e /events/japan (statiche: una
+// versione, nessun filtro, pagina 1) e a /events/browse (ogni vista
+// filtrata, dinamica e noindex). Legge solo dati in cache e mai la
+// sessione. La versione non e' piu' un filtro della lista: la sceglie
+// l'interruttore del sito (lib/versione), e chi guarda l'altra lo legge
+// nell'avviso.
 
 const TIPI: { valore: EventKind; etichetta: string }[] = [
   { valore: 'zbattle', etichetta: 'Extreme Z-Battle' },
@@ -129,10 +134,13 @@ export async function EventList({ filtri }: { filtri: FiltriLista }) {
 
   return (
     <div className="mx-auto max-w-6xl px-5 py-10">
+      {reg === 'japan' && <p className="mb-1 text-[12px] text-tenue">Japan version</p>}
       <h1 className="text-2xl font-semibold tracking-tight text-inchiostro">Events</h1>
       <p className="mt-1.5 text-sm text-testo max-w-[65ch]">
         Pick an event to see its stages and the teams that cleared them.
       </p>
+      {/* Per chi ha scelto l'altra versione, solo col CSS: la stessa vista di la' */}
+      <AvvisoVersione reg={reg} altra={query({ region: altraVersione(reg) })} className="mt-4" />
       {/* Dopo la cancellazione dell'account (Settings): un'isola client,
           perche' la pagina e' statica e non legge ne' la query ne' la sessione. */}
       <Suspense fallback={null}>
@@ -140,11 +148,6 @@ export async function EventList({ filtri }: { filtri: FiltriLista }) {
       </Suspense>
 
       <div className="mt-7 space-y-3">
-        <RigaFiltri id="filtro-versione" etichetta="Version">
-          <Filtro attivo={reg === 'global'} href={query({ region: null })}>Global</Filtro>
-          <Filtro attivo={reg === 'japan'} href={query({ region: 'japan' })}>Japan</Filtro>
-        </RigaFiltri>
-
         <RigaFiltri id="filtro-tipo" etichetta="Type">
           <Filtro attivo={!kind} href={query({ type: null })}>All</Filtro>
           {TIPI.map((t) => (

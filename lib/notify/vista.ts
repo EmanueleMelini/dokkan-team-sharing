@@ -27,7 +27,9 @@ export const notificationLink = (id: string) => `${NOTIFICATIONS_PATH}/${id}`
  *   clear     la sua ancora nella pagina del tier, o la modifica se non e'
  *             pubblicato (solo l'autore la apre: la moderazione lo riguarda);
  *   comment   l'ancora del suo clear (un commento non ha una pagina sua);
- *   tip       la pagina del tier (o dell'evento) sulla tip;
+ *             tutti e due con la versione del clear scritta nell'URL;
+ *   tip       la pagina del tier (o dell'evento) sulla tip, senza versione:
+ *             le tip non hanno regione, e l'ancora vale nelle due;
  *   account   /settings, dove ci sono il banner e i contenuti nascosti;
  *   reports   /admin.
  * Senza i pezzi che servono si torna alla lista, mai a un URL inventato.
@@ -50,7 +52,10 @@ export function notificationHref(v: NotificationRow): string {
       // ritrova nella modifica. Un commento nascosto invece non e' suo
       // clear, quindi si va comunque alla pagina (il clear di un altro).
       if (v.target === 'clear' && v.content_visible === false) return editClearHref(v.event_id, v.clear_id)
-      return `${eventHref({ id: v.event_id, reg: v.reg ?? 'global', tier: v.tier_id })}${clearAnchor(v.clear_id)}`
+      // explicit: la versione del clear vince su quella scelta nel sito
+      // (lib/versione); l'ancora attraverserebbe il redirect e finirebbe su
+      // un tier dell'altra versione, dove il clear non c'e'
+      return `${eventHref({ id: v.event_id, reg: v.reg ?? 'global', tier: v.tier_id, explicit: true })}${clearAnchor(v.clear_id)}`
     }
     // solo del feed degli admin, che ha gia' risposto sopra
     case 'profile':

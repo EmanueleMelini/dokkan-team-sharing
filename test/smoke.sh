@@ -164,7 +164,7 @@ else verifica "una sfida ($STAGE) parla di stage" "/events/$STAGE" 200 '[0-9]+ s
     else pass "le tip nella pagina evento, versione anonima"; fi
   else fail "/events/$STAGE senza il blocco delle tip (id=\"tips\", Sign in to share a tip)"
   fi
-  verifica "la versione giapponese nel percorso" "/events/$STAGE/japan" 200 'Japanese version' "$ERRORE"
+  verifica "la versione giapponese nel percorso" "/events/$STAGE/japan" 200 'Japan version' "$ERRORE"
 fi
 
 echo "gli URL delle viste (lib/urls.ts)"
@@ -198,6 +198,69 @@ if [ -n "$EZA" ]; then
 fi
 read -r codice dove < <(curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' --max-time 60 "$BASE/")
 [ "$codice" = 307 ] && [ "$dove" = "$BASE/events" ] && pass "/ porta a /events (307)" || fail "/: $codice $dove"
+
+# La versione del sito (lib/versione): con il cookie dts_version=japan gli
+# URL senza versione portano alla pagina giapponese con un 307 del routing
+# (next.config.ts), la query passa (anche _rsc); un URL che dice la
+# versione (/japan, ?region=) resta. Senza cookie nessun redirect.
+echo "la versione del sito (dts_version)"
+jp () { # nome percorso codice-atteso destinazione [header]
+  local c d
+  read -r c d < <(curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' --max-time 120 -H 'Cookie: dts_version=japan' \
+    ${5:+-H "$5"} "$BASE$2") || c=000
+  if [ "$c" = "$3" ] && { [ -z "$4" ] && [ -z "$d" ] || [ -n "$4" ] && [[ "$d" == *"$4" ]]; }; then pass "$1 ($c)"
+  else fail "$1: $2 col cookie Japan ha risposto $c $d, atteso $3 ${4:-senza redirect}"; fi
+}
+jp "Japan: / va dritto a /events/japan" / 307 /events/japan
+jp "Japan: /events porta a /events/japan" /events 307 /events/japan
+jp "Japan: la query passa" '/events?account=deleted' 307 '/events/japan?account=deleted'
+jp "Japan: /events/japan resta" /events/japan 200 ''
+jp "Japan: le viste filtrate prendono region=japan" '/events/browse?type=story' 307 '/events/browse?type=story&region=japan'
+if [ -n "${STAGE:-}" ]; then
+  jp "Japan: un evento porta alla sua pagina giapponese" "/events/$STAGE" 307 "/events/$STAGE/japan"
+  # prima delle regole il router toglie le barre con un 308 suo: seguiVersione fa lo stesso
+  jp "Japan: la barra in fondo, prima il 308 del router" "/events/$STAGE/" 308 "/events/$STAGE"
+  jp "Japan: le barre doppie, prima il 308 del router" "/events//$STAGE" 308 "/events/$STAGE"
+  jp "Japan: una navigazione del client tiene _rsc" "/events/$STAGE?_rsc=x1" 307 "/events/$STAGE/japan?_rsc=x1" 'RSC: 1'
+  jp "Japan: un link esplicito (?region=global) resta" "/events/$STAGE?region=global" 200 ''
+  jp "Japan: una Server Action non si tocca" "/events/$STAGE" 200 '' 'Next-Action: 0123456789abcdef'
+  verifica "senza cookie: la pagina giapponese si apre" "/events/$STAGE/japan" 200 '' "$ERRORE"
+  read -r codice dove < <(curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' --max-time 60 "$BASE/events/$STAGE")
+  [ "$codice" = 200 ] && [ -z "$dove" ] && pass "senza cookie: nessun redirect (200)" || fail "senza cookie /events/$STAGE: $codice $dove"
+fi
+if [ -n "${EZA:-}" ] && [ -n "${TIER:-}" ]; then
+  jp "Japan: la pagina /p/<n> si perde (nell'altra versione puo' non esserci)" "/events/$EZA/t/$TIER/p/2" 307 "/events/$EZA/japan/t/$TIER"
+fi
+read -r codice dove < <(curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' --max-time 60 -H 'Cookie: dts_version=japan2' "$BASE/events")
+[ "$codice" = 200 ] && pass "dts_version=japan2 non vale: nessun redirect" || fail "dts_version=japan2 su /events: $codice $dove"
+verifica "la home giapponese, statica" /events/japan 200 ' of [0-9]+ events' "$ERRORE"
+grep -q '<link rel="canonical" href="[^"]*/events/japan"' "$TMP/html" && pass "/events/japan con il suo canonical" \
+  || fail "/events/japan senza canonical"
+grep -q 'data-avviso-versione="japan" class="japan:hidden ' "$TMP/html" && grep -q '>Japan version</p>' "$TMP/html" \
+  && pass "/events/japan: l'occhiello e l'avviso per chi e' su Global (solo CSS)" \
+  || fail "/events/japan senza l'occhiello o l'avviso japan:hidden"
+prendi /events
+grep -qF 'dts_version=([^;]*)' "$TMP/html" && pass "/events con lo script della versione nel <head>" \
+  || fail "/events senza lo script della versione"
+grep -q 'data-reg=' "$TMP/html" && fail "l'HTML del server dice gia' la versione (data-reg)" \
+  || pass "l'HTML del server non dice la versione: la mette lo script"
+# L'interfaccia (components/versione): l'interruttore nell'header per tutti,
+# senza dire quale opzione e' scelta (lo dice il CSS), l'avviso per chi e'
+# su Japan nascosto agli altri dal CSS, e i chip Version tolti.
+grep -q 'role="group" aria-label="Game version"' "$TMP/html" \
+  && pass "/events: l'interruttore della versione nell'header, anche senza account" \
+  || fail "/events senza l'interruttore della versione"
+# accanto a Events e prima della parte di destra (che cambia larghezza con /api/me): non si sposta
+html=$(cat "$TMP/html"); prima=${html%%role=\"group\" aria-label=\"Game version\"*}; destra=${html%%class=\"ml-auto shrink-0\"*}
+[ "${#prima}" -lt "${#destra}" ] && [ "${#destra}" -lt "${#html}" ] \
+  && pass "/events: l'interruttore sta prima della parte di destra dell'header" \
+  || fail "/events: l'interruttore non sta prima della parte di destra dell'header"
+grep -q 'aria-pressed=' "$TMP/html" && fail "l'HTML del server dice quale versione e' scelta (aria-pressed)" \
+  || pass "l'HTML del server non dice quale versione e' scelta: la dice il CSS"
+grep -q 'data-avviso-versione="global" class="hidden japan:block ' "$TMP/html" \
+  && pass "/events: l'avviso per chi e' su Japan, nascosto dal CSS a tutti gli altri" \
+  || fail "/events senza l'avviso hidden japan:block"
+grep -q 'filtro-versione' "$TMP/html" && fail "/events ha ancora i chip Version" || pass "/events senza i chip Version"
 prendi /robots.txt
 grep -q 'Disallow: /events/browse' "$TMP/html" && pass "robots.txt esclude /events/browse" || fail "robots.txt senza /events/browse"
 grep -q 'Disallow: /admin' "$TMP/html" && pass "robots.txt esclude /admin" || fail "robots.txt senza /admin"
@@ -205,6 +268,7 @@ grep -qx 'Disallow: /events/\*/clears' "$TMP/html" && pass "robots.txt esclude /
 grep -qx 'Disallow: /notifications' "$TMP/html" && pass "robots.txt esclude /notifications" || fail "robots.txt senza /notifications"
 prendi /sitemap.xml
 grep -q '/cards/1032310</loc>' "$TMP/html" && pass "la sitemap ha le carte" || fail "la sitemap non ha /cards/1032310"
+grep -q '/events/japan</loc>' "$TMP/html" && pass "la sitemap ha /events/japan" || fail "la sitemap non ha /events/japan"
 rimanda "Settings senza sessione porta a /login" /settings 307 '/login?next=%2Fsettings'
 # Le notifiche (0028) sono per utente: la lista e la rotta di un link.
 # La rotta e' un Route Handler, quindi il 307 e' vero anche con next start.
@@ -336,7 +400,8 @@ grep -qE 'Install Dokkan Team Sharing|Add to Home Screen' "$TMP/testo" && fail "
 # STALE o PRERENDER vengono tutti dalla cache).
 if [ "${SMOKE_EXPECT_CACHE:-}" = 1 ]; then
   echo "la cache (next start o Vercel)"
-  for p in /events ${EZA:+/events/$EZA} /cards/1032310 ${UTENTE:+/users/$UTENTE}; do
+  # /events/<id>?region=global (i link espliciti) e' la stessa pagina in cache
+  for p in /events /events/japan ${EZA:+/events/$EZA} ${EZA:+/events/$EZA?region=global} /cards/1032310 ${UTENTE:+/users/$UTENTE}; do
     curl -s -o /dev/null "$BASE$p"
     stato=$(curl -s -D - -o /dev/null "$BASE$p" | tr -d '\r' | grep -iE '^x-(nextjs|vercel)-cache:' | awk '{print $2}' | head -1)
     case "$stato" in

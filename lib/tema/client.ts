@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react'
-import { TEMA_KEY, TEMI, isTemaId, type TemaId } from '@/lib/tema/temi'
+import { TEMA_KEY, TEMI, coloreBarra, isTemaId, type TemaId } from '@/lib/tema/temi'
 
 // Il tema nel browser: lo stato vero e' l'attributo data-theme di <html>
 // (lo mette lo script del <head> prima del primo paint), localStorage lo
@@ -38,7 +38,7 @@ export function applicaTema(id: TemaId) {
   if (sfondo) {
     const m = document.createElement('meta')
     m.name = 'theme-color'
-    m.content = sfondo
+    m.content = coloreBarra(sfondo)
     m.setAttribute('data-tema', '')
     document.head.insertBefore(m, document.head.firstChild)
   }

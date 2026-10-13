@@ -1,6 +1,15 @@
 @import "tailwindcss";
 
 /*
+ * La versione del sito (lib/versione): lo script del <head> mette
+ * data-reg="japan" su <html> per chi ha scelto Japan, prima del primo
+ * paint. Global e' la base (nessun attributo), japan: la sovrascrive:
+ * l'interruttore, gli avvisi, il tag JP e i blocchi della pagina della
+ * carta seguono chi guarda col solo CSS, e l'HTML resta uguale per tutti.
+ */
+@custom-variant japan (&:where([data-reg="japan"] *));
+
+/*
  * I cinque tipi di Dokkan sono la dimensione con cui si scorre il gioco:
  * qui il colore è funzionale, non decorativo. Il resto della tavolozza
  * resta neutro e volutamente spento, così i tipi restano l'unica cosa
@@ -370,6 +379,31 @@ body {
 :focus-visible {
   outline: 2px solid var(--oro);
   outline-offset: 2px;
+}
+
+/*
+ * Lo stesso anello nei controlli a segmenti (l'interruttore della
+ * versione, components/versione/scelta-versione.tsx), ma attaccato al
+ * segmento: sta nei 2px fra i segmenti e il bordo del binario, dove con
+ * l'offset di sempre coprirebbe il segmento accanto.
+ */
+.segmento:focus-visible {
+  outline-offset: 0;
+}
+
+/*
+ * Con i colori forzati l'opzione scelta ha il pieno di sistema Highlight
+ * (scelta-versione.tsx). L'anello che il browser da' alle altre e' dello
+ * stesso colore, e attaccato al pieno ci si confonderebbe: su quella
+ * scelta va dentro, nel colore del suo testo (HighlightText), la coppia
+ * che il sistema garantisce. aria-pressed: il focus da tastiera arriva
+ * dopo l'idratazione.
+ */
+@media (forced-colors: active) {
+  .segmento[aria-pressed="true"]:focus-visible {
+    outline-color: HighlightText;
+    outline-offset: -4px;
+  }
 }
 
 /*

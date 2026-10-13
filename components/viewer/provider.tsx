@@ -1,15 +1,18 @@
 'use client'
 
 import {
-  createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore,
-  type ReactNode,
+  createContext, startTransition, useCallback, useContext, useEffect, useMemo, useRef, useState,
+  useSyncExternalStore, type ReactNode,
 } from 'react'
 import { usePathname } from 'next/navigation'
 import { HINT_COOKIE, hasHint } from '@/lib/viewer/hint'
 import { modeOf, type MeResponse, type ViewerMode, type ViewerTierData, type ViewerUser } from '@/lib/viewer/types'
-import { setThemeAction } from '@/lib/auth/actions'
+import { setThemeAction, setVersionAction } from '@/lib/auth/actions'
 import { applicaTema, temaAttuale, temaLocale } from '@/lib/tema/client'
 import { riconciliaTema, temaDaAccount, type TemaId } from '@/lib/tema/temi'
+import { applicaVersione, riallineamentoFatto, segnaRiallineamento, versioneAttuale } from '@/lib/versione/client'
+import { ERRORE_VERSIONE, eRedirect, quiPerCambio, versioneDaRiconciliare } from '@/lib/versione/interruttore'
+import type { Versione } from '@/lib/versione/versione'
 
 // Chi guarda, lato client. Le pagine pubbliche arrivano dalla CDN uguali
 // per tutti, nella versione anonima; dopo l'idratazione, se c'e'
@@ -37,6 +40,11 @@ type Interno = Root & {
   endTema: () => void
   /** il pallino delle notifiche, aggiornato da /notifications senza chiedere /api/me */
   setUnread: (unread: boolean) => void
+  /** un cambio di versione parte o finisce: intanto /api/me puo' dire ancora quella vecchia */
+  beginVersione: () => void
+  endVersione: () => void
+  /** l'account ha cambiato versione: la copia di /api/me qui la segue, e il riallineamento non la rimette */
+  segnaReg: (reg: Versione) => void
 }
 
 const RootContext = createContext<Interno | null>(null)
@@ -120,6 +128,31 @@ export function ViewerProvider({ children }: { children: ReactNode }) {
     } else if (passo) applicaTema(passo.applica)
   }, [temaAccount, completo])
 
+  // La versione dell'account (app_user.reg, 0035) vince su quella di
+  // questo dispositivo, come il tema: se /api/me ne porta una diversa la si
+  // rimette con setVersionAction, che scrive il cookie (lo fa solo il
+  // server) e porta al gemello se la pagina era arrivata da un link senza
+  // versione. Una volta per scheda, mai durante un cambio, e /api/me non
+  // scrive mai il cookie: una risposta vecchia non disfa un cambio appena
+  // fatto. Chi non ha finito l'onboarding tiene la scelta del dispositivo.
+  const salvataggiVersione = useRef(0)
+  const beginVersione = useCallback(() => { salvataggiVersione.current++ }, [])
+  const endVersione = useCallback(() => { salvataggiVersione.current-- }, [])
+  const segnaReg = useCallback((reg: Versione) => {
+    setUser((u) => (u && u.reg !== reg ? { ...u, reg } : u))
+  }, [])
+  const regAccount = hint && completo ? user?.reg : undefined
+  useEffect(() => {
+    const v = versioneDaRiconciliare({
+      account: regAccount, attuale: versioneAttuale(), inCorso: salvataggiVersione.current > 0, fatta: riallineamentoFatto(),
+    })
+    if (!v) return
+    segnaRiallineamento()
+    startTransition(async () => {
+      await cambiaVersioneQui(v, true, { beginVersione, endVersione, segnaReg })
+    })
+  }, [regAccount, beginVersione, endVersione, segnaReg])
+
   const reload = useCallback(() => { avvisa(); setGiro((n) => n + 1) }, [])
   // La lista ha appena segnato lette le notifiche mostrate: l'header e' nel
   // layout e non si rimonta con la navigazione, quindi il pallino si spegne
@@ -137,9 +170,9 @@ export function ViewerProvider({ children }: { children: ReactNode }) {
     const mode: ViewerMode = hint === null ? 'unknown' : !hint ? 'anon' : user === undefined ? 'unknown' : modeOf(user)
     return {
       mode, user: hint ? (user ?? null) : null, reload, reset, hint, beginScoped, endScoped, receive: setUser,
-      beginTema, endTema, setUnread,
+      beginTema, endTema, setUnread, beginVersione, endVersione, segnaReg,
     }
-  }, [hint, user, reload, reset, beginScoped, endScoped, beginTema, endTema, setUnread])
+  }, [hint, user, reload, reset, beginScoped, endScoped, beginTema, endTema, setUnread, beginVersione, endVersione, segnaReg])
 
   return <RootContext.Provider value={value}>{children}</RootContext.Provider>
 }
@@ -166,6 +199,69 @@ export function useCambiaTema(): (id: TemaId) => void {
     beginTema()
     setThemeAction(id).catch(() => {}).finally(endTema)
   }, [pronto, beginTema, endTema])
+}
+
+export type EsitoCambioVersione =
+  | { saved: 'account' | 'device' }
+  | { navigato: true }
+  | { error: string }
+
+type PassiVersione = Pick<Interno, 'beginVersione' | 'endVersione' | 'segnaReg'>
+
+/**
+ * Il cambio di versione da questa pagina: setVersionAction scrive il
+ * cookie (e l'account) e, se la pagina e' dell'altra versione, porta al
+ * gemello (quiPerCambio). Senza navigazione l'attributo data-reg si mette
+ * qui, quando l'azione ha risposto e non prima: la pagina di adesso non
+ * mostra per un attimo l'avviso dell'altra versione. Con la navigazione lo
+ * rimette SeguiVersione al cambio di URL, nello stesso commit della
+ * pagina nuova.
+ *
+ * prima: subito prima di mettere l'attributo, solo se l'azione e' riuscita
+ * e si resta qui ("Use ... everywhere" sposta il focus fuori dall'avviso,
+ * che l'attributo nasconde).
+ */
+async function cambiaVersioneQui(
+  v: Versione, riconcilia: boolean, passi: PassiVersione, prima?: () => void,
+): Promise<EsitoCambioVersione> {
+  const qui = `${location.pathname}${location.search}`
+  passi.beginVersione()
+  try {
+    const r = await setVersionAction(v, quiPerCambio(qui, v, riconcilia))
+    if (r.error) return { error: r.error }
+    prima?.()
+    applicaVersione(v)
+    if (r.saved === 'account') passi.segnaReg(v)
+    return { saved: r.saved ?? 'device' }
+  } catch (e) {
+    // Il redirect al gemello arriva come rifiuto, gia' gestito dal router:
+    // rilanciato, il router navigherebbe una seconda volta.
+    if (!eRedirect(e)) return { error: ERRORE_VERSIONE }
+    passi.segnaReg(v)
+    return { navigato: true }
+  } finally {
+    passi.endVersione()
+  }
+}
+
+const nessunPasso: PassiVersione = { beginVersione: () => {}, endVersione: () => {}, segnaReg: () => {} }
+
+/**
+ * Cambia la versione del sito (l'interruttore del menu, dell'header e di
+ * Settings, e "Use ... everywhere" degli avvisi). Una scelta fatta qui
+ * vale come riallineamento: da li' in poi il provider non rimette quella
+ * dell'account in questa scheda. prima: come in cambiaVersioneQui.
+ */
+export function useCambiaVersione(): (v: Versione, prima?: () => void) => Promise<EsitoCambioVersione> {
+  const ctx = useContext(RootContext)
+  const beginVersione = ctx?.beginVersione
+  const endVersione = ctx?.endVersione
+  const segnaReg = ctx?.segnaReg
+  return useCallback((v: Versione, prima?: () => void) => {
+    segnaRiallineamento()
+    const passi = beginVersione && endVersione && segnaReg ? { beginVersione, endVersione, segnaReg } : nessunPasso
+    return cambiaVersioneQui(v, false, passi, prima)
+  }, [beginVersione, endVersione, segnaReg])
 }
 
 /** Accende o spegne il pallino delle notifiche nell'header (solo in questa scheda). */

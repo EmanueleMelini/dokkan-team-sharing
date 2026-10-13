@@ -18,6 +18,9 @@
 #   -> moderazione (0024: segnalazioni, nascosti, sospensioni, registro,
 #   letture di /admin, il lato di chi usa il sito) -> tip (0025)
 #   -> profili pubblici e cambio di handle (0026) -> temi (0027) ->
+#   versione del sito, Global o Japan (0035: i redirect di next.config.ts,
+#   lo specchio per le Server Action, l'interruttore, il cookie) e la sua
+#   interfaccia (l'interruttore, gli avvisi, i colori nei temi) ->
 #   segnaposto delle immagini (lib/segnaposto.ts, i contrasti nei temi)
 #   -> notifiche nel sito (0028) e il loro lato app (lib/notify)
 #   -> digest email (0029: budget, selezione, disiscrizione) e il suo lato
@@ -197,6 +200,25 @@ passo "profili pubblici" verifica node_ts db/test/profiles.test.mts
 # script del <head> su un document finto, e set_theme. Crea solo utenti
 # themetest+ e li toglie.
 passo "temi" verifica node_ts db/test/temi.test.mts
+# La versione del sito, Global o Japan (lib/versione, 0035): i redirect di
+# next.config.ts nel valutatore di Next (chi va dove col cookie
+# dts_version=japan, cosa non si tocca mai, _rsc che passa, nessun giro),
+# seguiVersione che dice le stesse cose (per i redirect delle Server
+# Action; anche con le maiuscole, coi matcher del router vero), il gemello
+# dell'interruttore, il cookie e lo script del <head> su un document
+# finto, set_region e cambiaVersione col database, e le guardie sui file:
+# ogni redirect delle azioni letto col parser di TypeScript, con la sua
+# controprova. Crea solo utenti versiontest+ e li toglie.
+passo "versione del sito" verifica node_ts db/test/versione.test.mts
+# L'interfaccia della versione (lib/versione/interruttore.ts,
+# components/versione): quale versione mostra un URL e quando il cambio
+# porta al gemello, il riallineamento con l'account una volta per scheda,
+# il redirect di un'azione come lo riconosce Next, i testi degli avvisi e
+# i blocchi della carta, i contrasti nei temi, e le guardie sui file (la
+# variante japan:, il controllo a segmenti, il burger, l'header accanto a
+# Events, il tag JP, Settings, gli avvisi statici, i chip Version tolti,
+# "Japan version"). Funzioni pure e file, niente database.
+passo "versione del sito (interfaccia)" verifica node_ts db/test/versione-ui.test.mts
 # I segnaposto delle immagini (lib/segnaposto.ts, components/segnaposto.tsx):
 # la scelta, l'iniziale, i colori del marchio con i contrasti in tutti i
 # temi, e niente icone del wiki; le miniature che non si deformano (ogni

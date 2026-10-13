@@ -1,5 +1,6 @@
 import 'server-only'
 import { sql } from '@/lib/db'
+import type { Region } from '@/lib/queries'
 
 // La ricerca delle carte per il picker del builder dei clear.
 
@@ -18,6 +19,8 @@ export type CardSearch = {
   class?: CardClass | null
   rarity?: CardRarity | null
   category?: number | null
+  /** la versione del clear: le carte uscite li' (Global per difetto) */
+  reg?: Region
   limit?: number
   offset?: number
   /** I nomi delle link skill: costano un'aggregazione, solo se servono. */
@@ -35,14 +38,16 @@ export type CardHit = {
   thumb_key: string | null
   /** la miniatura e' il solo personaggio (asset_bare, 0034) */
   thumb_bare: boolean
-  // il giorno di uscita su Global, 'YYYY-MM-DD': una data, non un istante
+  // il giorno di uscita nella versione cercata, 'YYYY-MM-DD': una data, non un istante
   released_at: string | null
   links?: string[]
   total: number
 }
 
 /**
- * Le carte uscite su Global, filtrate e cercate per nome o epiteto.
+ * Le carte uscite nella versione del clear (Global per difetto; Japan per
+ * un clear di una run giapponese, che puo' usare le carte non ancora uscite
+ * su Global), filtrate e cercate per nome o epiteto.
  *
  * Il filtro testo scrive la stessa espressione dell'indice trigram
  * card_text_search (0015, con il coalesce): con un'espressione diversa
@@ -68,7 +73,7 @@ export async function searchCards(opts: CardSearch = {}): Promise<CardHit[]> {
             count(*) over ()::int as total
      from card c
      join card_text ct on ct.card_id = c.id and ct.locale = 'en'
-     join card_release r on r.card_id = c.id and r.reg = 'global'
+     join card_release r on r.card_id = c.id and r.reg = $9::region
      where r.released_at <= current_date
        and ($1::text is null or (ct.name || ' ' || coalesce(ct.epithet, '')) ilike $1)
        and ($2::unit_type is null or c.type = $2::unit_type)
@@ -80,7 +85,7 @@ export async function searchCards(opts: CardSearch = {}): Promise<CardHit[]> {
               r.released_at desc nulls last, c.id desc
      limit $7 offset $8`,
     [like, opts.type ?? null, opts.class ?? null, opts.rarity ?? null, opts.category ?? null,
-      q ? `${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%` : null, limit, offset],
+      q ? `${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%` : null, limit, offset, opts.reg === 'japan' ? 'japan' : 'global'],
   )
 }
 

@@ -1,8 +1,8 @@
 // La pagina della carta, lato pagina: le letture vere di lib/card-page.ts
 // sul database di test (catena, link, categorie, i clear che usano la
-// carta e la pagina del loro tier), le funzioni pure delle skill per
-// livello, e lib/card-art.ts (quale artwork, la scelta per carta nel
-// localStorage).
+// carta e la pagina del loro tier, un blocco di clear per ogni versione
+// dove la carta e' uscita), le funzioni pure delle skill per livello, e
+// lib/card-art.ts (quale artwork, la scelta per carta nel localStorage).
 //
 // Gira dentro npm run db:test, dopo gli import. Crea solo gli utenti
 // cardpageui+...@example.invalid con i loro clear, e li toglie alla fine.
@@ -20,6 +20,7 @@ import {
   DOMINIO, SUBMIT, check, dati, guardia, num, one, payload, q, stato, utente,
 } from '@/db/test/builder-helpers'
 import { chiaveNuda, conMiniatureNude } from '@/db/test/miniature-nude'
+import { classeVersione, versioniCarta } from '@/lib/versione/interruttore'
 
 guardia()
 const P = 'cardpageui'
@@ -170,6 +171,26 @@ async function carte() {
     select c.id::text from card c where not exists (
       select 1 from card_release r where r.card_id = c.id and r.reg = 'global') limit 1`)
   if (jp) vale('una carta solo giapponese ha solo la data JP', (await getCard(jp.id))?.releases.map((r) => r.reg), ['japan'])
+
+  // I blocchi dei clear per versione (lib/versione): la pagina e' una sola,
+  // il CSS mostra quello di chi guarda; con un'uscita sola, sempre visibile.
+  console.log('\n  -- i clear per versione')
+  const uscite = async (dove: string) => (await one<{ id: string }>(`
+    select c.id::text from card c where ${dove} order by c.id limit 1`))?.id
+  const entrambe = await uscite(`exists (select 1 from card_release r where r.card_id = c.id and r.reg = 'global')
+      and exists (select 1 from card_release r where r.card_id = c.id and r.reg = 'japan')`)
+  const soloGl = await uscite(`exists (select 1 from card_release r where r.card_id = c.id and r.reg = 'global')
+      and not exists (select 1 from card_release r where r.card_id = c.id and r.reg = 'japan')`)
+  check('nei dati ci sono carte uscite in tutte e due, e solo su Global', !!entrambe && !!soloGl)
+  const blocchi = async (id: string | undefined) => {
+    const c = id ? await getCard(id) : null
+    const v = c ? versioniCarta(c.releases) : []
+    return v.map((r) => `${r}:${classeVersione(r, v.length) || 'sempre'}`)
+  }
+  if (entrambe) vale('uscita in tutte e due: due blocchi, ognuno solo nella sua versione', await blocchi(entrambe),
+    ['global:japan:hidden', 'japan:hidden japan:block'])
+  if (soloGl) vale('solo su Global: un blocco, sempre visibile', await blocchi(soloGl), ['global:sempre'])
+  if (jp) vale('solo su Japan: un blocco, sempre visibile (come prima)', await blocchi(jp.id), ['japan:sempre'])
 
   console.log('\n  -- build e sitemap')
   const statiche = await staticCardIds()

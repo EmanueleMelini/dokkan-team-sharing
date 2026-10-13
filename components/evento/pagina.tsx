@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import Image from 'next/image'
 import { notFound } from 'next/navigation'
-import { ArrowLeft, Trophy } from '@phosphor-icons/react/dist/ssr'
+import { ArrowLeft, ArrowRight, Trophy } from '@phosphor-icons/react/dist/ssr'
 import { assetUrl } from '@/lib/db'
 import { quando } from '@/lib/date'
 import {
@@ -11,7 +11,10 @@ import {
 import {
   getEventCached, getEzaLinksCached, getMissionsCached, getStagesCached, listClearsCached,
 } from '@/lib/cache/data'
-import { browseHref, clearListHref, eventHref, submitHref, type EventView } from '@/lib/urls'
+import { browseHref, clearListHref, eventHref, filteredClearsHref, submitHref, type EventView } from '@/lib/urls'
+import { AvvisoVersione } from '@/components/versione/avviso-versione'
+import { classeVersione, linkAltraVersione, senzaDate } from '@/lib/versione/interruttore'
+import { altraVersione, gemello } from '@/lib/versione/versione'
 import { AttesaLink } from '@/components/attesa-link'
 import { Clear } from '@/components/clear'
 import { InviaClear } from '@/components/clears/invia-cta'
@@ -71,11 +74,21 @@ const fasciaDi = (seq: number) => Math.floor((seq - 1) / LIVELLI_PER_FASCIA)
 // diventerebbe un errore 500 invece di un 404.
 export const idValido = (id: string) => /^\d{1,18}$/.test(id)
 
-/** Il titolo della pagina: la stessa lettura in cache della pagina (Next la deduplica). */
+/**
+ * Il titolo della pagina: la stessa lettura in cache della pagina (Next la
+ * deduplica). La versione giapponese lo dice nel titolo. Il canonical e'
+ * l'URL pulito della vista: i link espliciti (?region=global, lib/urls.ts)
+ * sono la stessa pagina, non un doppione.
+ */
 export async function metadataEvento(id: string, view: EventView | null): Promise<Metadata> {
   if (!view || !idValido(id)) return {}
   const e = await getEventCached(id, view.reg)
-  return e ? { title: e.name, description: e.description?.slice(0, 160) } : {}
+  if (!e) return {}
+  return {
+    title: view.reg === 'japan' ? `${e.name} (Japan)` : e.name,
+    description: e.description?.slice(0, 160),
+    alternates: { canonical: eventHref({ id, reg: view.reg, tier: view.tier, page: view.page }) },
+  }
 }
 
 /** La barra dei filtri sopra la lista, se il tier ha abbastanza clear; altrimenti solo la lista. */
@@ -158,7 +171,8 @@ export async function EventPage({ id, view, filtri }: { id: string; view: EventV
   // Le missioni ci sono solo per Global: il datamine è quello della versione Global.
   // Le tip non hanno regione (gli stage nemmeno): le stesse in Global e Japan.
   const offset = (pagina - 1) * CLEAR_PER_PAGINA
-  const [clears, totaleFiltrato, perFiltri, missioni, tips] = await Promise.all([
+  const altra = altraVersione(reg)
+  const [clears, totaleFiltrato, perFiltri, missioni, tips, diLa] = await Promise.all([
     !scelto ? Promise.resolve([])
       : filtri ? listClears(scelto.tier_id, reg, { offset, filtri })
         : listClearsCached(scelto.tier_id, reg, offset, e.id),
@@ -167,10 +181,29 @@ export async function EventPage({ id, view, filtri }: { id: string; view: EventV
     scelto ? datiFiltri({ eventId: e.id, tierId: scelto.tier_id, reg, totale: totaleClear, filtri: f }) : Promise.resolve(null),
     reg === 'global' ? getMissionsCached(e.id, e.run_id) : Promise.resolve([]),
     scelto ? listTipsCached(e.id, scelto.tier_id) : Promise.resolve(null),
+    // l'evento nell'altra versione, per i link verso di la' (sotto)
+    getEventCached(id, altra),
   ])
   const ultimaPagina = Math.max(1, Math.ceil(totaleFiltrato / CLEAR_PER_PAGINA))
   const extra = await extraClear(e.id, clears)
   const invia = scelto ? submitHref(e.id, reg, scelto.tier_id) : ''
+
+  // L'altra versione (lib/versione), letta in cache come questa. I link
+  // verso di la' ci sono solo se li' l'evento ha una run: il gemello di un
+  // evento di una versione sola e' una pagina senza date ("No ... dates"),
+  // e un link statico (l'avviso e' nell'HTML per tutti, lo nasconde solo
+  // il CSS) la darebbe ai motori. L'avviso per chi ha scelto
+  // l'altra versione porta alla stessa vista di la' (senza pagina: la' puo'
+  // non esserci); senza run in questa versione la pagina c'e' lo stesso
+  // (gli stage e le tip non hanno regione), lo diciamo, e il link e'
+  // esplicito.
+  const conRunDiLa = diLa?.status != null
+  const corrente = filtri && view.tier
+    ? filteredClearsHref({ id: e.id, reg, tier: view.tier, filtri: f })
+    : eventHref({ id: e.id, reg, tier: view.tier })
+  const gemellaAltra = conRunDiLa ? gemello(corrente, altra) : null
+  const versioneAltra = !e.status && conRunDiLa ? eventHref({ id: e.id, reg: altra, tier: view.tier, explicit: true }) : null
+  const senza = senzaDate(reg)
 
   const eza = stages.length > 0 && stages.every((s) => s.difficulty === 'eza_level')
   const conClear = stages.some((s) => s.clears > 0)
@@ -208,6 +241,9 @@ export async function EventPage({ id, view, filtri }: { id: string; view: EventV
         Events
       </Link>
 
+      {/* Per chi ha scelto l'altra versione, solo col CSS: la pagina resta uguale per tutti */}
+      <AvvisoVersione reg={reg} altra={gemellaAltra} className="mt-4" />
+
       <header className="mt-5 grid gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] md:items-end">
         <div className="relative aspect-[16/7] rounded-[var(--raggio)] overflow-hidden bg-superficie-2 border border-linea flex items-center justify-center">
           {banner ? (
@@ -228,12 +264,12 @@ export async function EventPage({ id, view, filtri }: { id: string; view: EventV
         <div>
           <p className="text-[12px] text-tenue">
             {segnapostoEvento(e.kind).etichetta}
-            {reg === 'japan' && <span className="ml-2">Japanese version</span>}
+            {reg === 'japan' && <span className="ml-2">Japan version</span>}
           </p>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight text-inchiostro leading-tight text-balance">
             {e.name}
           </h1>
-          <p className="mt-2 text-[13px] text-testo">
+          <p className="mt-2 text-[13px] text-testo text-pretty">
             {stato ? (
               <>
                 <span className={stato.inCorso ? 'text-oro font-medium' : ''}>{stato.etichetta}</span>
@@ -242,10 +278,30 @@ export async function EventPage({ id, view, filtri }: { id: string; view: EventV
             ) : (
               // Nessuna run in questa regione può voler dire che l'evento non
               // è uscito, ma anche solo che il wiki non ne ha la data: non
-              // sappiamo quale delle due, quindi non lo affermiamo.
-              <span className="text-tenue">We have no dates for this version of the game.</span>
+              // sappiamo quale delle due, quindi non lo affermiamo. La
+              // stessa forma dello stato: l'etichetta e il dettaglio.
+              <>
+                <span className="font-medium text-inchiostro">{senza.etichetta}</span>
+                <span className="ml-2 text-tenue">{senza.dettaglio}</span>
+              </>
             )}
           </p>
+          {/* Solo a chi non vede l'avviso (quello della versione della pagina):
+              per chi e' sull'altra versione l'avviso ha gia' il link di la',
+              e due link con lo stesso scopo a un dito l'uno dall'altro sono
+              rumore. Lo stesso meccanismo dell'avviso, rovesciato: l'HTML
+              resta uguale per tutti. */}
+          {versioneAltra && (
+            <p className={`mt-1.5 text-[13px] ${classeVersione(reg)}`}>
+              <Link
+                href={versioneAltra}
+                className="inline-flex items-center gap-1 text-testo underline decoration-oro-linea underline-offset-2 hover:text-inchiostro"
+              >
+                {linkAltraVersione(reg)}
+                <ArrowRight size={12} weight="bold" aria-hidden />
+              </Link>
+            </p>
+          )}
           {/* EZA e Super EZA sono due eventi: ciascuno porta all'altro */}
           {legami.normal && (
             <p className="mt-2 text-[13px] text-testo">

@@ -6,7 +6,7 @@
 // un'email @example.invalid e se ne va alla fine, anche se qualcosa fallisce.
 import { randomBytes } from 'node:crypto'
 import pg from 'pg'
-import { SESSION_DAYS, createAuth } from '@/lib/auth/config'
+import { ACCESSI, SESSION_DAYS, createAuth } from '@/lib/auth/config'
 import { readAuthEnv } from '@/lib/auth/env'
 import { FRESH_SESSION_SECONDS, isFreshSession } from '@/lib/auth/fresh'
 import { suggestHandle } from '@/lib/auth/handle'
@@ -14,6 +14,7 @@ import { INDEFINITA, fineSospensione, isSospeso } from '@/lib/moderation/sospens
 import { hasUnread } from '@/lib/notify/kinds'
 import { safeNext } from '@/lib/auth/safe-next'
 import { db } from '@/lib/db'
+import { VERSIONE_COOKIE, VERSIONE_MAX_AGE } from '@/lib/versione/versione'
 
 let fails = 0
 let passes = 0
@@ -252,6 +253,10 @@ try {
     attr.includes('samesite=lax') && attr.includes('path=/'), indizio ?? '')
   check('dura quanto la sessione', attr.includes(`max-age=${SESSION_DAYS * 24 * 60 * 60}`), indizio ?? '')
   check('Secure solo su https (qui http://localhost)', !attr.includes('secure'))
+  // La versione del sito (lib/versione): un account nuovo, senza handle, non
+  // la tocca. Resta quella del dispositivo, che /welcome propone.
+  check('un account nuovo non tocca dts_version', !impostati.some((c) => c.startsWith(`${VERSIONE_COOKIE}=`)),
+    impostati.filter((c) => c.startsWith(VERSIONE_COOKIE)).join(' | '))
   check('prefersAnimated nella sessione, falso per difetto', sess?.user.prefersAnimated === false,
     String(sess?.user.prefersAnimated))
   res = await auth.handler(new Request(`${BASE}/api/auth/update-user`, {
@@ -439,6 +444,78 @@ try {
     const tolto = res.headers.getSetCookie().find((x) => x.startsWith('dts_signed_in='))?.toLowerCase() ?? ''
     check('/sign-out scade dts_signed_in', res.status === 200 && tolto.startsWith('dts_signed_in=;') && tolto.includes('max-age=0'),
       `${res.status} ${tolto || 'assente'}`)
+  }
+
+  // ------------------------------------- la versione del sito all'accesso
+  // (lib/versione, 0035): con la sessione nuova di un account completo vince
+  // l'account, come il tema; l'uscita lascia quella del dispositivo.
+  console.log('\n  -- better-auth: la versione del sito (dts_version) all\'accesso')
+  {
+    const ev = email('version')
+    const entra = async (cookieDispositivo: string) => {
+      await q('delete from auth_email_send where email = $1', [ev])
+      const r = await chiedi(ev, { callbackURL: '/events' })
+      const l = inviati.at(-1)
+      if (r.status !== 200 || l?.email !== ev) throw new Error(`il link per ${ev} non e' partito (${r.status})`)
+      return auth.handler(new Request(l.url, { headers: { cookie: cookieDispositivo, 'x-forwarded-for': `10.9.5.${ip++}` } }))
+    }
+    const versione = (r: Response) => r.headers.getSetCookie().find((c) => c.startsWith(`${VERSIONE_COOKIE}=`)) ?? ''
+    let r = await entra(`${VERSIONE_COOKIE}=japan`)
+    check('il primo accesso (account nuovo): la scelta del dispositivo resta', r.status === 302 && versione(r) === '', versione(r))
+    const id = (await one<{ id: string }>('select id from app_user where email = $1', [ev])).id
+    await q("select complete_onboarding($1::uuid, 'authtest_ver', 'japan')", [id])
+    r = await entra('')
+    const jp = versione(r).toLowerCase()
+    check('un account Japan: dts_version=japan', jp.startsWith(`${VERSIONE_COOKIE}=japan;`), jp || 'assente')
+    check('  leggibile dal browser (non HttpOnly), SameSite=Lax, Path=/, 400 giorni',
+      !jp.includes('httponly') && jp.includes('samesite=lax') && jp.includes('path=/') &&
+      jp.includes(`max-age=${VERSIONE_MAX_AGE}`) && !jp.includes('secure'), jp)
+    await q("select set_region($1::uuid, 'global')", [id])
+    r = await entra(`${VERSIONE_COOKIE}=japan`)
+    const gl = versione(r).toLowerCase()
+    check('un account Global vince sul dispositivo Japan: dts_version scade',
+      gl.startsWith(`${VERSIONE_COOKIE}=;`) && gl.includes('max-age=0') && gl.includes('path=/'), gl || 'assente')
+    const sessione = (r.headers.getSetCookie().find((c) => c.startsWith('dts.session_token=')) ?? '').split(';')[0]
+
+    // Il rinnovo quotidiano della sessione (updateAge) da' anche lui una
+    // newSession: /get-session, e auth.api.getSession che /api/me e le
+    // azioni chiamano. Non e' un accesso, e il cookie non si tocca: una
+    // risposta partita prima di un cambio lo disfarebbe.
+    const invecchia = () => q(
+      `update auth_session set expires_at = now() + interval '28 days', updated_at = now() - interval '2 days' where user_id = $1`, [id])
+    const rinnovata = (c: string[]) => c.some((x) => x.startsWith('dts.session_token='))
+    const versioneIn = (c: string[]) => c.find((x) => x.startsWith(`${VERSIONE_COOKIE}=`)) ?? ''
+    await invecchia()
+    r = await auth.handler(new Request(`${BASE}/api/auth/get-session`, {
+      headers: { cookie: `${sessione}; ${VERSIONE_COOKIE}=japan`, 'x-forwarded-for': `10.9.5.${ip++}` },
+    }))
+    check('/get-session di una sessione da rinnovare: rinnovata, dts_version non toccato',
+      r.status === 200 && rinnovata(r.headers.getSetCookie()) && versioneIn(r.headers.getSetCookie()) === '',
+      `${r.status} rinnovata=${rinnovata(r.headers.getSetCookie())} ${versioneIn(r.headers.getSetCookie()) || 'non toccato'}`)
+    await invecchia()
+    const api = await auth.api.getSession({
+      headers: new Headers({ cookie: `${sessione}; ${VERSIONE_COOKIE}=japan` }), returnHeaders: true,
+    })
+    const daApi = api.headers.getSetCookie()
+    check('...e lo stesso da auth.api.getSession (/api/me, le azioni)',
+      api.response?.user.id === id && rinnovata(daApi) && versioneIn(daApi) === '',
+      `rinnovata=${rinnovata(daApi)} ${versioneIn(daApi) || 'non toccato'}`)
+    // le rotte degli accessi sono quelle di better-auth: un nome sbagliato non scriverebbe mai il cookie
+    const rotte = new Set(Object.values(auth.api).map((f) => (f as { path?: string }).path))
+    check('ACCESSI: rotte vere di better-auth', ACCESSI.size === 3 && [...ACCESSI].every((p) => rotte.has(p)),
+      [...ACCESSI].filter((p) => !rotte.has(p)).join(', '))
+
+    r = await auth.handler(new Request(`${BASE}/api/auth/sign-out`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json', origin: BASE, cookie: `${sessione}; ${VERSIONE_COOKIE}=japan`,
+        'x-forwarded-for': `10.9.5.${ip++}`,
+      },
+      body: '{}',
+    }))
+    check('/sign-out non tocca dts_version (resta del dispositivo)', r.status === 200 && versione(r) === '',
+      `${r.status} ${versione(r) || 'non toccato'}`)
+    await q('delete from app_user where email = $1', [ev])
   }
 } catch (e) {
   check('nessuna eccezione inattesa', false, e instanceof Error ? e.stack ?? e.message : String(e))

@@ -31,7 +31,8 @@ export default async function InviaClear(props: PageProps<'/events/[id]/submit'>
 
   const dati = await datiBuilder(id, reg, tier)
   if (!dati) notFound()
-  const indietro = `${eventHref({ id, reg, tier })}#clear`
+  // explicit: si torna alla versione del builder, non a quella scelta nel sito
+  const indietro = `${eventHref({ id, reg, tier, explicit: true })}#clear`
 
   return (
     <div className="mx-auto max-w-4xl px-4 sm:px-5 py-8">
@@ -44,6 +45,7 @@ export default async function InviaClear(props: PageProps<'/events/[id]/submit'>
           modo="submit"
           eventId={id}
           tierId={tier}
+          reg={reg}
           runs={dati.runs}
           categorie={dati.categorie}
           abilita={dati.abilita}
@@ -52,7 +54,7 @@ export default async function InviaClear(props: PageProps<'/events/[id]/submit'>
         />
       ) : (
         <p className="mt-8 border border-dashed border-linea-forte rounded-[var(--raggio)] px-6 py-10 text-center text-[13px] text-testo">
-          This event has not started yet in the {reg === 'japan' ? 'Japanese' : 'Global'} version, so it cannot have clears.
+          This event has not started yet in the {reg === 'japan' ? 'Japan' : 'Global'} version, so it cannot have clears.
         </p>
       )}
     </div>

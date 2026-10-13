@@ -14,6 +14,13 @@ export type ViewerUser = {
    * lo ignora, e ViewerProvider lo applica solo se c'e'.
    */
   theme?: string | null
+  /**
+   * la versione del sito salvata sull'account (app_user.reg, 0035). Il
+   * provider la confronta con quella del dispositivo (il cookie dts_version)
+   * e, se diverse, rimette quella dell'account con setVersionAction.
+   * Opzionale: un client vecchio la ignora. /api/me non scrive mai il cookie.
+   */
+  reg?: 'global' | 'japan'
   /** il link 'Moderation' nell'header (role = 'admin'); /admin ricontrolla da se' */
   isAdmin?: boolean
   /** solo se la sospensione e' in corso: una data ISO o 'infinity' (lib/moderation/sospensione.ts) */

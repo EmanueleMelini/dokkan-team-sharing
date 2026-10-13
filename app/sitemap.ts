@@ -23,6 +23,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const [eventi, carte] = await Promise.all([sitemapEventsCached(), sitemapCardsCached()])
   return [
     { url: `${base}/events`, changeFrequency: 'daily' },
+    // la home della versione giapponese; le pagine evento /japan no, per ora
+    { url: `${base}/events/japan`, changeFrequency: 'daily' },
     ...eventi.map((e) => ({ url: `${base}${eventHref({ id: e.id })}`, ...(e.ultima ? { lastModified: e.ultima } : {}) })),
     ...carte.map((c) => ({ url: `${base}${cardHref(c.id)}` })),
   ]

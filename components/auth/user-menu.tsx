@@ -17,12 +17,17 @@ const piccolo = 'text-sm text-tenue hover:text-inchiostro transition-colors whit
  * di ogni pagina in cache, quindi non legge la sessione: l'utente arriva
  * da /api/me (useViewer). Dai 1024px in su le voci stanno in riga; sotto
  * vanno nel burger (MenuMobile) e fuori resta solo la campanella.
+ *
+ * La versione del sito (Global o Japan, lib/versione) non sta qui: e' per
+ * tutti, e questa parte cambia larghezza quando /api/me risponde. Dai
+ * 1024px sta nel layout accanto a Events, dove non si sposta; sotto e' la
+ * prima riga del burger, con un tag JP sul bottone per chi e' su Japan.
  */
 export function UserMenu() {
   const { mode, user } = useViewer()
   return (
     <>
-      <div className="max-lg:hidden">
+      <div className="max-lg:hidden flex items-center">
         <Riga />
       </div>
       <div className="lg:hidden flex items-center gap-1">

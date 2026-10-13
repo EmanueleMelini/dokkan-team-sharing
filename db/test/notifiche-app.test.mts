@@ -111,15 +111,21 @@ const finta = (x: Partial<NotificationRow>): NotificationRow => ({
 function hrefFinti() {
   console.log('\n  -- href e testi su righe finte')
   check('il link della lista e\' /notifications/<id>', notificationLink('15') === '/notifications/15')
-  check('clear pubblicato: la sua ancora nella pagina del tier',
-    notificationHref(finta({})) === `${eventHref({ id: '42', tier: '7' })}${clearAnchor('c1')}`, notificationHref(finta({})))
-  check('clear di Japan: il percorso /japan', notificationHref(finta({ reg: 'japan' })).startsWith('/events/42/japan/t/7#clear-c1'))
+  // La versione del clear nell'URL (lib/versione): ?region=global prima
+  // dell'ancora, cosi' chi ha scelto Japan non finisce sul tier giapponese.
+  check('clear pubblicato: la sua ancora nella pagina del tier, con la versione',
+    notificationHref(finta({})) === `/events/42/t/7?region=global${clearAnchor('c1')}` &&
+    notificationHref(finta({})) === `${eventHref({ id: '42', tier: '7', explicit: true })}${clearAnchor('c1')}`, notificationHref(finta({})))
+  check('clear di Japan: il percorso /japan, niente query', notificationHref(finta({ reg: 'japan' })) === '/events/42/japan/t/7#clear-c1',
+    notificationHref(finta({ reg: 'japan' })))
+  check('clear senza regione nella riga: Global esplicito', notificationHref(finta({ reg: null })) === '/events/42/t/7?region=global#clear-c1')
   check('clear nascosto: la sua modifica', notificationHref(finta({ kind: 'content_hidden', content_visible: false })) ===
     editClearHref('42', 'c1'))
   check('commento nascosto: comunque la pagina del clear (non e\' suo)',
     notificationHref(finta({ kind: 'content_hidden', target: 'comment', comment_id: 'm1', content_visible: false })) ===
-    `/events/42/t/7${clearAnchor('c1')}`)
-  check('tip pubblicata: la sua ancora; nascosta: la sezione tips',
+    `/events/42/t/7?region=global${clearAnchor('c1')}`)
+  // le tip non hanno regione: il link segue la versione di chi guarda
+  check('tip pubblicata: la sua ancora; nascosta: la sezione tips (senza versione)',
     notificationHref(finta({ target: 'tip', tip_id: 't1', clear_id: null, reg: null })) === '/events/42/t/7#tip-t1' &&
     notificationHref(finta({ target: 'tip', tip_id: 't1', clear_id: null, content_visible: false })) === '/events/42/t/7#tips')
   check('account: /settings; segnalazioni: /admin',
@@ -177,8 +183,9 @@ function feedFinto() {
     t.title !== 'Notification' && senzaTrattini(t.title + (t.detail ?? ''))), JSON.stringify(testi))
 
   const tier = eventHref({ id: '42', tier: '7' })
-  vale('link: il clear pubblicato, la sua ancora', notificationHref(attivita('clear_upvoted')), `${tier}${clearAnchor('c1')}`)
-  vale('link: la tip pubblicata, la sua ancora', notificationHref(attivita('tip_helpful')), `${tier}#tip-t1`)
+  vale('link: il clear pubblicato, la sua ancora (con la versione)', notificationHref(attivita('clear_upvoted')),
+    `${eventHref({ id: '42', tier: '7', explicit: true })}${clearAnchor('c1')}`)
+  vale('link: la tip pubblicata, la sua ancora (senza versione)', notificationHref(attivita('tip_helpful')), `${tier}#tip-t1`)
   vale('link: contenuto nascosto ora, /admin/hidden (la scheda Tips per una tip)', [
     notificationHref(attivita('comment_posted', { content_visible: false })),
     ...['tip_posted', 'tip_edited', 'tip_helpful', 'tip_unhelpful'].map((a) => notificationHref(attivita(a, { content_visible: false })))],
@@ -231,8 +238,8 @@ async function righeVere() {
     testo.title === '3 new comments on your clear' && !!testo.detail?.includes('latest from na_altro'), JSON.stringify(testo))
   check('id e numeri come stringhe per lib/urls.ts', typeof r.id === 'string' && typeof r.event_id === 'string' &&
     typeof r.tier_id === 'string' && typeof r.n === 'number')
-  check('href: l\'ancora del clear nella pagina del tier', notificationHref(r) ===
-    `${eventHref({ id: evento, reg: r.reg ?? 'global', tier: d.tier })}${clearAnchor(clear)}`, notificationHref(r))
+  check('href: l\'ancora del clear nella pagina del tier, con la versione', notificationHref(r) ===
+    `${eventHref({ id: evento, reg: r.reg ?? 'global', tier: d.tier, explicit: true })}${clearAnchor(clear)}`, notificationHref(r))
   check('render: la stessa riga a chi la possiede, nessuna a un altro',
     (await renderNotification(autore, r.id))?.id === r.id && (await renderNotification(altro, r.id)) === null)
   check('mai il testo del commento nelle colonne', !JSON.stringify(lista).includes(SEGRETO))

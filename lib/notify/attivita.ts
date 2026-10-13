@@ -174,5 +174,6 @@ export function activityHref(v: NotificationRow): string {
   }
   if (!v.event_id || !v.clear_id) return NOTIFICATIONS_PATH
   if (v.content_visible === false) return '/admin/hidden'
-  return `${eventHref({ id: v.event_id, reg: v.reg ?? 'global', tier: v.tier_id })}${clearAnchor(v.clear_id)}`
+  // la versione del clear nell'URL, come in notificationHref
+  return `${eventHref({ id: v.event_id, reg: v.reg ?? 'global', tier: v.tier_id, explicit: true })}${clearAnchor(v.clear_id)}`
 }

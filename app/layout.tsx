@@ -1,13 +1,18 @@
 import type { Metadata, Viewport } from 'next'
 import Link from 'next/link'
+import { Suspense } from 'react'
 import { Geist, Geist_Mono } from 'next/font/google'
 import { UserMenu } from '@/components/auth/user-menu'
+import { LinkEventi } from '@/components/versione/link-eventi'
+import { SceltaVersione } from '@/components/versione/scelta-versione'
+import { SeguiVersione } from '@/components/versione/segui-versione'
 import { ViewerProvider } from '@/components/viewer/provider'
 import { SceltaTemaFooter } from '@/components/tema/scelta-tema-footer'
 import { Marchio } from '@/components/brand/marchio'
 import { InvitoInstalla } from '@/components/pwa/invito-installa'
 import { readAuthEnv } from '@/lib/auth/env'
 import { BARRA_SISTEMA, scriptTema } from '@/lib/tema/temi'
+import { scriptVersione } from '@/lib/versione/versione'
 import './globals.css'
 
 const geistSans = Geist({ variable: '--font-geist-sans', subsets: ['latin'] })
@@ -36,13 +41,16 @@ export const viewport: Viewport = {
 }
 
 // Calcolato una volta: e' lo stesso testo per tutti, quindi l'HTML resta
-// uguale e in cache.
-const SCRIPT_TEMA = scriptTema()
+// uguale e in cache. Il tema (localStorage) e la versione del sito (il
+// cookie dts_version, lib/versione): due attributi di <html>, data-theme e
+// data-reg, prima del primo paint.
+const SCRIPT_TESTA = `${scriptTema()};${scriptVersione()}`
 
 export default function RootLayout({ children }: LayoutProps<'/'>) {
   return (
-    // suppressHydrationWarning: lo script qui sotto aggiunge data-theme a
-    // <html> prima che React idrati, e l'attributo non e' nell'HTML del server.
+    // suppressHydrationWarning: lo script qui sotto aggiunge data-theme e
+    // data-reg a <html> prima che React idrati, e gli attributi non sono
+    // nell'HTML del server.
     <html
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full`}
@@ -50,8 +58,8 @@ export default function RootLayout({ children }: LayoutProps<'/'>) {
     >
       <head>
         {/* Sincrono, prima del primo paint (non next/script, che e' asincrono):
-            il tema salvato si applica senza lampi. */}
-        <script dangerouslySetInnerHTML={{ __html: SCRIPT_TEMA }} />
+            il tema salvato e la versione si applicano senza lampi. */}
+        <script dangerouslySetInnerHTML={{ __html: SCRIPT_TESTA }} />
       </head>
       <body className="font-sans min-h-full flex flex-col">
         {/* Chi guarda lo sa solo il browser (/api/me): il layout e le pagine
@@ -61,16 +69,25 @@ export default function RootLayout({ children }: LayoutProps<'/'>) {
         <header className="relative border-b border-linea bg-superficie">
           <div className="mx-auto max-w-6xl px-5 h-14 flex items-center gap-3 lg:gap-6">
             {/* Il nome intero anche sul telefono: le voci li' vanno nel burger.
-                truncate solo come rete sotto i 320px. */}
-            <Link href="/events" className="flex min-w-0 items-center gap-2 font-semibold tracking-tight text-inchiostro whitespace-nowrap">
+                truncate solo come rete sotto i 320px. I due link agli eventi
+                portano alla home della versione scelta (lib/versione), dopo
+                l'idratazione: nell'HTML sono /events per tutti. */}
+            <LinkEventi className="flex min-w-0 items-center gap-2 font-semibold tracking-tight text-inchiostro whitespace-nowrap">
               <Marchio className="size-6 shrink-0" />
               <span className="truncate">Dokkan Team Sharing</span>
-            </Link>
+            </LinkEventi>
             <nav className="text-sm max-lg:hidden">
-              <Link href="/events" className="text-tenue hover:text-inchiostro transition-colors">
+              <LinkEventi className="text-tenue hover:text-inchiostro transition-colors">
                 Events
-              </Link>
+              </LinkEventi>
             </nav>
+            {/* La versione del sito (lib/versione), dai 1024px e per tutti:
+                accanto a Events, i cui link la seguono. Qui a sinistra niente
+                prima di lei cambia larghezza (le voci di destra arrivano da
+                /api/me), quindi non si sposta mai. Sotto i 1024px e' nel burger. */}
+            <div className="max-lg:hidden">
+              <SceltaVersione variante="riga" />
+            </div>
             <div className="ml-auto shrink-0">
               <UserMenu />
             </div>
@@ -112,6 +129,11 @@ export default function RootLayout({ children }: LayoutProps<'/'>) {
         </footer>
         {/* Un'isola: solo su telefoni e tablet, mai nell'HTML del server. */}
         <InvitoInstalla />
+        {/* La versione del sito dopo ogni navigazione, e la sua regione live:
+            legge la query, quindi sta in un <Suspense> (nell'HTML in cache non c'e'). */}
+        <Suspense fallback={null}>
+          <SeguiVersione />
+        </Suspense>
         </ViewerProvider>
       </body>
     </html>

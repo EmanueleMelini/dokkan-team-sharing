@@ -57,7 +57,9 @@ function nomeTier(p: PostoRiga): string {
  */
 async function posto(p: PostoRiga, clearId: string | null, visibile: boolean, esatto = true): Promise<Posto | null> {
   if (!p.event_id || !p.tier_id || !p.reg) return null
-  const base = { id: p.event_id, reg: p.reg, tier: p.tier_id }
+  // explicit: il posto e' di una versione sola, qualunque sia quella scelta
+  // nel sito da chi modera (lib/versione)
+  const base = { id: p.event_id, reg: p.reg, tier: p.tier_id, explicit: true }
   let href = eventHref(base)
   // senza la pagina esatta l'ancora porterebbe a pagina 1, forse sbagliata
   if (clearId && visibile && esatto) {

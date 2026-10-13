@@ -72,9 +72,11 @@ async function flusso() {
     gc.details[0].handle === 'modadm_r2' && gc.details[0].details === 'Fake screenshot' && gc.details[0].at instanceof Date)
   check('autore e nota del clear', gc?.author?.handle === 'modadm_author' && gc.author.suspended === false &&
     gc.clear?.note === 'My run notes' && gc.clear.status === 'published', JSON.stringify(gc?.clear))
-  check('il link porta alla pagina del clear, con l\'ancora',
+  // con la versione del clear nell'URL (lib/versione): ?region=global, o il percorso /japan
+  check('il link porta alla pagina del clear, con la versione e l\'ancora',
     !!gc?.posto && gc.posto.href.startsWith(`/events/${evento}`) && gc.posto.href.endsWith(`#clear-${clear}`) &&
-    !gc.posto.href.includes('?'), gc?.posto?.href)
+    (gc.posto.reg === 'japan' ? !gc.posto.href.includes('?') : gc.posto.href.includes(`?region=global#clear-${clear}`)),
+    gc?.posto?.href)
   check('il commento: testo, versione attuale, link al suo clear', gm?.comment?.body === 'Rude words here.' &&
     gm.comment.onCurrent && gm.posto?.href.endsWith(`#clear-${clear}`) === true)
   check('la piu\' vecchia per prima', gruppi.indexOf(gc!) < gruppi.indexOf(gm!))

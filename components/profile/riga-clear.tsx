@@ -23,7 +23,8 @@ const chip = 'inline-flex items-center gap-1 text-[11px] text-testo px-1.5 py-0.
  * Senza prefetch: venti righe per pagina.
  */
 export function RigaClear({ c }: { c: ProfileClear }) {
-  const href = eventHref({ id: c.event_id, reg: c.reg, tier: c.tier_id, page: c.page }) + clearAnchor(c.id)
+  // explicit: la versione del clear, qualunque sia quella scelta nel sito (lib/versione)
+  const href = eventHref({ id: c.event_id, reg: c.reg, tier: c.tier_id, page: c.page, explicit: true }) + clearAnchor(c.id)
   return (
     <li className="py-3">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">

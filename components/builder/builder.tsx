@@ -12,11 +12,14 @@ import { SquadraEditor } from '@/components/builder/squadra-editor'
 import { reviseClear, submitClear, type ClearActionState } from '@/lib/clears/actions'
 import { comeLaPartenza, payloadDa, reducer, type BuilderStato } from '@/lib/clears/builder-stato'
 import { LIMITS, parseChangeNote, parsePayloadField } from '@/lib/clears/validate'
+import type { Region } from '@/lib/queries'
 
 type Props = {
   modo: 'submit' | 'edit'
   eventId: string
   tierId: string
+  /** la versione delle run (e quindi delle carte che il picker propone) */
+  reg: Region
   /** solo in modifica */
   clearId?: string
   runs: RunScelta[]
@@ -38,7 +41,7 @@ type Aperto = { l: number; i: number; dove: string } | null
  * il database, che resta l'autorità. Qui si controlla prima solo per
  * rispondere subito, senza un giro sul server.
  */
-export function Builder({ modo, eventId, tierId, clearId, runs, categorie, abilita, iniziale, annulla, onInvio }: Props) {
+export function Builder({ modo, eventId, tierId, reg, clearId, runs, categorie, abilita, iniziale, annulla, onInvio }: Props) {
   const [stato, dispatch] = useReducer(reducer, iniziale)
   const [aperto, setAperto] = useState<Aperto>(null)
   const [build, setBuild] = useState<BuildAperta | null>(null)
@@ -170,6 +173,7 @@ export function Builder({ modo, eventId, tierId, clearId, runs, categorie, abili
       <Picker
         titolo={aperto?.dove ?? null}
         categorie={categorie}
+        reg={reg}
         onChiudi={() => setAperto(null)}
         onScegli={(c) => {
           if (aperto) dispatch({ t: 'carta', l: aperto.l, i: aperto.i, carta: c })

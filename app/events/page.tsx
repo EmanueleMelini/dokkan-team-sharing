@@ -1,9 +1,12 @@
 import type { Metadata } from 'next'
 import { EventList, FILTRI_BASE } from '@/components/eventi/lista'
 
+// Il canonical: /events?account=deleted (dopo la cancellazione
+// dell'account) e' la stessa pagina.
 export const metadata: Metadata = {
   title: 'Events',
   description: 'Dokkan Battle events, with the teams that cleared them.',
+  alternates: { canonical: '/events' },
 }
 
 // Statica: Global, nessun filtro, pagina 1. Niente searchParams ne'

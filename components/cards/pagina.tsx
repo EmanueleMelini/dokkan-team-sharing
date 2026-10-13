@@ -12,10 +12,13 @@ import { TierTabs } from '@/components/cards/tier-tabs'
 import { NOME_LIVELLO, SchedaSkill } from '@/components/cards/scheda-skill'
 import { Catena } from '@/components/cards/catena'
 import { ClearConCarta } from '@/components/cards/clear-con-carta'
+import { classeVersione } from '@/lib/versione/interruttore'
 
 // Il corpo della pagina di una carta. Solo dati in cache, mai la sessione:
 // e' la stessa pagina per tutti. Il default dell'artwork di chi guarda
-// arriva dopo, nell'isola ArtToggle, da /api/me.
+// arriva dopo, nell'isola ArtToggle, da /api/me. La versione di chi
+// guarda (lib/versione) sceglie col solo CSS quale blocco di clear e quale
+// nota sulle uscite si vedono.
 
 const REGIONE: Record<Region, string> = { global: 'Global', japan: 'Japan' }
 
@@ -33,9 +36,12 @@ function Segno({ children }: { children: React.ReactNode }) {
   )
 }
 
-export function CardPage({ card, clears }: { card: CardDetail; clears: { rows: CardClear[]; total: number; reg: Region } }) {
+export type BloccoClear = { rows: CardClear[]; total: number; reg: Region }
+
+export function CardPage({ card, clears }: { card: CardDetail; clears: BloccoClear[] }) {
   const nome = card.name ?? `Card ${card.id}`
   const globale = card.releases.some((r) => r.reg === 'global')
+  const giapponese = card.releases.some((r) => r.reg === 'japan')
   const livelli = skillTiers(card.skills)
   // is_seza viene da un campo del wiki che alcune pagine con i testi
   // della Super EZA non hanno: i testi bastano a dirlo
@@ -63,7 +69,11 @@ export function CardPage({ card, clears }: { card: CardDetail; clears: { rows: C
               <span key={r.reg}>{REGIONE[r.reg]}: {soloGiorno(new Date(`${r.date}T00:00:00Z`))}</span>
             ))}
           </p>
-          {!globale && <p className="mt-2 text-[13px] font-medium text-oro">Not released on Global yet.</p>}
+          {/* solo a chi e' su Global, e lo specchio solo a chi e' su Japan */}
+          {!globale && <p className="mt-2 text-[13px] font-medium text-oro japan:hidden">Not released on Global yet.</p>}
+          {globale && !giapponese && (
+            <p className="mt-2 hidden text-[13px] font-medium text-oro japan:block">No Japan release date on the wiki yet.</p>
+          )}
           {(card.has_eza || superEza) && (
             <div className="mt-3 flex flex-wrap gap-1.5">
               {card.has_eza && <Segno>Extreme Z-Awakened</Segno>}
@@ -171,7 +181,18 @@ export function CardPage({ card, clears }: { card: CardDetail; clears: { rows: C
 
           <section aria-labelledby="clears">
             <Titolo id="clears">Clears with this card</Titolo>
-            <div className="mt-2"><ClearConCarta clears={clears.rows} totale={clears.total} reg={clears.reg} /></div>
+            {clears.map((b) => {
+              // l'altra versione, se ha dei clear: il blocco vuoto di questa lo dice
+              const altro = clears.find((o) => o.reg !== b.reg && o.rows.length > 0)
+              return (
+                <div key={b.reg} className={`mt-2 ${classeVersione(b.reg, clears.length)}`}>
+                  <ClearConCarta
+                    clears={b.rows} totale={b.total} reg={b.reg} perVersione={clears.length > 1}
+                    altra={altro ? { reg: altro.reg, totale: altro.total, primo: altro.rows[0] } : null}
+                  />
+                </div>
+              )
+            })}
           </section>
 
           <p className="border-t border-linea pt-3 text-[11px] leading-relaxed text-tenue">

@@ -12,6 +12,7 @@ import { ProviderLogo } from '@/components/auth/provider-logo'
 import { SignOutButton } from '@/components/auth/sign-out-button'
 import { AvvisoIOS } from '@/components/pwa/avviso-ios'
 import { SceltaTema } from '@/components/tema/scelta-tema'
+import { SceltaVersione } from '@/components/versione/scelta-versione'
 import { UnlinkProvider } from '@/components/auth/unlink-provider'
 import { canUnlink } from '@/lib/auth/account'
 import { PROVIDERS } from '@/lib/auth/env'
@@ -98,7 +99,22 @@ export default async function SettingsPage({ searchParams }: PageProps<'/setting
         <h2 id="display" className="text-[13px] font-semibold text-inchiostro">
           Display
         </h2>
-        <h3 className="mt-3 text-[12px] font-medium text-inchiostro">Artwork</h3>
+        {/* Lo stesso interruttore del menu (lib/versione): prima di tutto,
+            perche' cambia tutto il resto. Qui, sotto, arrivera' la lingua. */}
+        <h3 id="versione" className="mt-3 text-[12px] font-medium text-inchiostro">Game version</h3>
+        <p className="mt-0.5 text-[12px] leading-relaxed text-tenue">
+          The events, dates and clears the whole site shows. Also on your public profile, as the version you play.
+        </p>
+        <div className="mt-3 border border-linea rounded-[var(--raggio)] bg-superficie px-4 py-3">
+          {/* il controllo, con l'esito accanto dai 640px e sotto, in una riga riservata, sul
+              telefono ("Japan version on. Saved to your account.") */}
+          <SceltaVersione variante="settings" etichetta="versione" />
+          <p className="mt-3 text-[12px] leading-relaxed text-tenue">
+            Applies right away and is saved to your account, so it follows you to other devices. A link to
+            the other version still opens it, with a note.
+          </p>
+        </div>
+        <h3 className="mt-5 text-[12px] font-medium text-inchiostro">Artwork</h3>
         <p className="mt-0.5 text-[12px] leading-relaxed text-tenue">What card pages show first.</p>
         <div className="mt-3 border border-linea rounded-[var(--raggio)] bg-superficie px-4 py-3">
           <ArtPreference animated={user.prefersAnimated} />

@@ -5,6 +5,7 @@ import { getCardCached, getCardClearsCached, staticCardIdsCached } from '@/lib/c
 import { baseOfZAwakened, parseCardId, type CardDetail } from '@/lib/card-page'
 import { assetUrl } from '@/lib/db'
 import { cardHref } from '@/lib/urls'
+import { versioniCarta } from '@/lib/versione/interruttore'
 
 // /cards/<id>: pubblica e in cache, uguale per tutti; non legge mai la
 // sessione. Al build si prerenderizzano al massimo 100 carte (le piu'
@@ -61,8 +62,12 @@ export default async function Carta({ params }: Props) {
     if (base && (await getCardCached(base))) permanentRedirect(cardHref(base))
     notFound()
   }
-  // Le carte solo giapponesi mostrano i clear della versione giapponese
-  const reg = card.releases.some((r) => r.reg === 'global') ? 'global' : 'japan'
-  const clears = await getCardClearsCached(card.id, reg)
-  return <CardPage card={card} clears={{ ...clears, reg }} />
+  // I clear di ogni versione dove la carta e' uscita: la pagina e' una
+  // sola, uguale per tutti, e il CSS mostra il blocco della versione di chi
+  // guarda (lib/versione). Una carta uscita in una versione sola ha un
+  // blocco solo, sempre visibile.
+  const blocchi = await Promise.all(versioniCarta(card.releases).map(async (reg) => ({
+    ...(await getCardClearsCached(card.id, reg)), reg,
+  })))
+  return <CardPage card={card} clears={blocchi} />
 }

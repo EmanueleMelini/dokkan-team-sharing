@@ -16,16 +16,47 @@ function dove(c: CardClear): string {
 
 const REGIONE: Record<Region, string> = { global: 'Global', japan: 'Japan' }
 
+const LINK = 'text-testo underline decoration-oro-linea underline-offset-2 hover:text-inchiostro'
+
+// explicit: la versione del blocco, qualunque sia quella scelta nel sito (lib/versione)
+const hrefClear = (c: CardClear, reg: Region) =>
+  eventHref({ id: c.event_id, reg, tier: c.tier_id, page: c.page, explicit: true }) + clearAnchor(c.id)
+
+/** Il blocco dell'altra versione, quando ha dei clear: il suo totale e il migliore. */
+export type AltraVersioneCarta = { reg: Region; totale: number; primo: CardClear }
+
 /**
  * I migliori clear che usano la carta, ciascuno col link al punto della
  * lista del suo tier dove si vede. La lista e' densa: niente prefetch.
+ *
+ * perVersione: la pagina ha un blocco per versione e chi guarda ne vede
+ * uno solo (components/cards/pagina.tsx). Allora il blocco vuoto dice di
+ * quale versione parla, e se l'altra ha dei clear (altra) lo dice col
+ * link al migliore: "nessun clear" della sola versione scelta non e'
+ * vero per la carta.
  */
-export function ClearConCarta({ clears, totale, reg }: { clears: CardClear[]; totale: number; reg: Region }) {
+export function ClearConCarta({ clears, totale, reg, perVersione = false, altra = null }: {
+  clears: CardClear[]
+  totale: number
+  reg: Region
+  perVersione?: boolean
+  altra?: AltraVersioneCarta | null
+}) {
   if (!clears.length) {
     return (
       <p className="text-[13px] text-tenue">
-        No clears use this card yet. Teams are posted on each event&apos;s stages.{' '}
-        <Link href={browseHref({ reg })} prefetch={false} className="text-testo underline decoration-oro-linea underline-offset-2 hover:text-inchiostro">
+        No {perVersione && `${REGIONE[reg]} `}clears use this card yet.{' '}
+        {altra && (
+          <>
+            On {REGIONE[altra.reg]} it&apos;s in <span className="numeri">{altra.totale}</span>{' '}
+            {altra.totale === 1 ? 'clear' : 'clears'}, the top one in{' '}
+            <Link href={hrefClear(altra.primo, altra.reg)} prefetch={false} className={LINK}>
+              {altra.primo.event_name}
+            </Link>.{' '}
+          </>
+        )}
+        Teams are posted on each event&apos;s stages.{' '}
+        <Link href={browseHref({ reg })} prefetch={false} className={LINK}>
           Browse events
         </Link>
       </p>
@@ -39,7 +70,7 @@ export function ClearConCarta({ clears, totale, reg }: { clears: CardClear[]; to
       </p>
       <ul className="mt-2 divide-y divide-linea border-y border-linea">
         {clears.map((c) => {
-          const href = eventHref({ id: c.event_id, reg, tier: c.tier_id, page: c.page }) + clearAnchor(c.id)
+          const href = hrefClear(c, reg)
           const ruolo = RUOLO[c.role_rank]
           return (
             <li key={c.id} className="py-2.5 min-w-0">

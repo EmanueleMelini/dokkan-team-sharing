@@ -51,8 +51,11 @@ function utenteApi() {
   const membro = viewerUserOf(base)
   check('member: isAdmin falso, non sospeso', membro.isAdmin === false && membro.suspended === false &&
     membro.suspendedUntil === null && !('suspensionReason' in membro), JSON.stringify(membro))
-  check('niente id, email, immagine, nome del provider o ruolo', ['id', 'image', 'displayName', 'role', 'email', 'reg']
+  check('niente id, email, immagine, nome del provider o ruolo', ['id', 'image', 'displayName', 'role', 'email']
     .every((k) => !(k in membro)), Object.keys(membro).join())
+  // la versione del sito dell'account (0035): il provider la rimette sul
+  // dispositivo; e' gia' pubblica ("Plays Global" sul profilo)
+  check('la versione dell\'account passa (reg)', membro.reg === 'global' && viewerUserOf({ ...base, reg: 'japan' }).reg === 'japan')
   check('il tema dell\'account passa (null = System)', membro.theme === null &&
     viewerUserOf({ ...base, theme: 'oled' }).theme === 'oled')
   check('admin: isAdmin vero', viewerUserOf({ ...base, role: 'admin' }).isAdmin === true)

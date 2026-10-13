@@ -16,7 +16,8 @@ degli eventi (con le missioni e i filtri della lista dei clear), gli
 account, il builder con cui si inviano i clear, la moderazione
 (segnalazioni e `/admin`), le tip dei giocatori nella pagina evento, la
 pagina di ogni carta (`/cards/<id>`), il profilo pubblico di ogni
-giocatore (`/users/<handle>`), il marchio con le icone e undici temi.
+giocatore (`/users/<handle>`), il marchio con le icone, undici temi e la
+versione del sito, Global o Japan, scelta una volta per tutte le pagine.
 Manca solo quello che va fatto a mano (sezione "Cosa manca, in ordine").
 I numeri sono quelli di `dokkan_dev` al 9 ottobre 2026; schema e verifiche anche di `dokkan_test`.
 
@@ -87,6 +88,10 @@ Tre regole recenti da sapere:
    decide quali *dati* vedi; `locale` decide in che *testo* li leggi. Le
    lingue disponibili per regione stanno in `region_locale`, e un testo
    dichiara se è ufficiale del gioco o una traduzione della community.
+   Nel sito la regione è una scelta sola per tutte le pagine, la versione
+   (un interruttore Global/Japan, sezione "Versione Global/Japan"). La
+   lingua arriverà dopo: nell'interfaccia seguirà la versione, nei dati
+   resta un asse a parte.
 
 ## Come si parte
 
@@ -294,7 +299,7 @@ database che finisce per `_test`.
 
 ```
 app/                          Next.js 16, App Router
-  events/                     /events (statica), browse/ (viste filtrate, dinamiche)
+  events/                     /events e japan/ (/events/japan): le home statiche di Global e Japan; browse/ (viste filtrate, dinamiche)
     [id]/                     la pagina evento; [...view]/ per /japan, /t/<tier>, /p/<n>
       clears/                 la lista filtrata dei clear di un tier (dinamica, noindex)
       clears/[clearId]/edit/  la modifica di un proprio clear
@@ -311,6 +316,7 @@ app/                          Next.js 16, App Router
   icon.svg, favicon.ico, apple-icon.png, opengraph-image.png, twitter-image.png
                               le icone e l'anteprima dei link, file statici generati da scripts/brand/
 proxy.ts                      solo per /admin: senza cookie di sessione un 404 vero, senza database
+next.config.ts                i redirect della versione del sito (col cookie dts_version, 307, sulla CDN), / -> /events, gli header
 instrumentation.ts            all'avvio: controlla la configurazione dell'accesso, pulizia delle sessioni
 components/
   evento/, eventi/            la pagina evento e la lista, uguali per tutti (stanno in cache)
@@ -324,6 +330,7 @@ components/
   viewer/                     ViewerProvider e useViewer(): le isole client che leggono /api/me
   brand/marchio.tsx           il marchio dell'header: SVG con colori fissi, chiaro o scuro solo dal CSS di app/globals.css (anche per i segnaposto)
   tema/                       il selettore del tema: nel footer e in Settings
+  versione/                   la versione del sito: l'interruttore Global/Japan (burger, header, Settings), i link alla home della versione, gli avvisi
   missioni.tsx                le missioni di un evento, con i premi
   segnaposto.tsx              al posto delle immagini che mancano: la carta (tipo, iniziale, rarita') e l'evento (icona del tipo)
 lib/
@@ -337,6 +344,7 @@ lib/
   cache/                      'use cache' sopra le query pure, i tag, l'invalidazione, /api/revalidate
   viewer/                     chi guarda: il tipo di /api/me e il cookie dts_signed_in
   tema/                       i temi: id e nomi, lo script del <head> (temi.ts, puro), applicarli nel browser (client.ts)
+  versione/                   la versione Global/Japan: cookie, specchio dei redirect, gemello e script del <head> (versione.ts, puro), il browser (client.ts), le decisioni dell'interfaccia (interruttore.ts, puro), il cambio (cambio.ts), il cookie della richiesta (server.ts)
   auth/                       better-auth: configurazione, mittente del link, Server Action, regole di Settings e dell'handle
   dal.ts                      chi e' l'utente: requireUser / requireOnboardedUser / requireFreshUser (mai nelle pagine pubbliche)
   moderation/                 motivi, frasi d'errore, Report, requireAdmin, letture e azioni di /admin
@@ -345,7 +353,7 @@ lib/
   db.ts, db-config.ts         la pool (una per processo) e le sue impostazioni: dimensioni, TLS
   cron.ts                     l'autenticazione delle rotte di Vercel Cron
 db/
-  migrations/                 NNNN_*.sql, applicate in ordine, mai modificate (0001-0034, elenco sotto)
+  migrations/                 NNNN_*.sql, applicate in ordine, mai modificate (0001-0035, elenco sotto)
   migrate.mjs                 runner: applica le pendenti, una transazione ciascuna (--check per sapere se e' indietro)
   reset.mjs                   ricostruisce un database da zero (--fixture per i test)
   env.mjs                     la sorgente unica di DATABASE_URL per gli script
@@ -420,6 +428,7 @@ Le migrazioni che contano per il sito, oltre allo schema dei dati (0001-0013, 00
 | `0032_site_activity.sql` | l'attività del sito per gli admin: il feed, una push per azione, mai per email |
 | `0033_asset_source.sql` | `asset.source` e `source_url`: da dove viene ogni immagine |
 | `0034_thumb_frame.sql` | `asset.frame` e `asset_bare()`: le miniature senza cornice (le LR del wiki), che il sito incornicia |
+| `0035_set_region.sql` | `set_region`: la versione del sito (`app_user.reg`) salvata sull'account dall'interruttore |
 
 ### Sulle migrazioni
 
@@ -435,7 +444,8 @@ controllano i test, che girano solo su un nome che finisce per `_test`.
 **In produzione l'ordine con il codice non è sempre lo stesso**, e la CI non
 migra mai (`npm run prod:migrate -- --yes` è un gesto a mano). Una colonna
 che il codice nuovo legge va online **prima** del codice: senza, il codice
-nuovo si rompe (0027, 0028, 0034). Un vincolo che il codice di prima non
+nuovo si rompe (0027, 0028, 0034; allo stesso modo la 0035, una funzione
+che il codice nuovo chiama). Un vincolo che il codice di prima non
 rispetta va online **subito dopo** il codice: prima, il codice di prima
 fallirebbe a ogni scrittura (la 0033, `asset.source` not null senza
 default). Ma conta solo dove il codice di prima scrive davvero: la 0033
@@ -1343,6 +1353,15 @@ Livello 30 | Damage reduction -70%; Immune to: Stun, Seal Super Attack,
              Lower ATK, Lower DEF, Disable Action
 ```
 
+**Due versioni, una pagina ciascuna.** Ogni evento ha la pagina Global
+(`/events/<id>`) e quella Japan (`/events/<id>/japan`), con stato, date e
+clear della sua versione e le stesse tip; le due home sono `/events` e
+`/events/japan`, statiche. Quale si apre lo decide la versione scelta da
+chi guarda (sezione "Versione Global/Japan"). Un evento con la run in una
+versione sola si apre anche nell'altra, senza 404 né pagine vuote: lo dice
+("No Japan dates", al posto dello stato) e porta alla versione dove
+c'è.
+
 ### Tre assenze, e sono importanti
 
 **Le missioni non ci sono.** Solo 3 pagine su 608 hanno una sezione
@@ -1885,7 +1904,7 @@ aggiornamenti si leggono gli avvisi di sicurezza prima di cambiare numero.
 - `app/api/auth/[...all]/route.ts`: le rotte di better-auth (callback OAuth,
   verifica del link, sessione, uscita).
 - Le pagine: `/login`, `/welcome` (prima entrata: handle e regione),
-  `/settings` (handle, artwork, metodi di accesso collegati, scollegare,
+  `/settings` (handle, versione del sito, artwork, metodi di accesso collegati, scollegare,
   clear nascosti, cancellare l'account). Nell'header, dentro un
   `<Suspense>`, "Sign in" oppure l'utente; sotto i 1024 px le voci vanno nel
   burger (`components/auth/menu-mobile.tsx`) e fuori resta la campanella,
@@ -1913,6 +1932,14 @@ aggiornamenti si leggono gli avvisi di sicurezza prima di cambiare numero.
   `complete_onboarding`. Dopo si cambia da Settings, una volta ogni 30
   giorni (sezione "I profili pubblici"). Chi nasce da SQL (fixture, seed,
   test) ha `onboarded_at` già pieno.
+- La regione di `/welcome` è la versione del sito (sezione "Versione
+  Global/Japan"): `/welcome` propone quella già scelta sul dispositivo
+  (altrimenti quella dell'account), e il form la scrive anche nel cookie
+  `dts_version`. Dopo si cambia dall'interruttore del menu o da Settings >
+  Display > Game version (`set_region`, 0035), e vale anche per "Plays
+  Global/Japan" del profilo pubblico. All'accesso di un account completo
+  vince l'account, come per il tema; l'uscita e la cancellazione lasciano
+  la scelta al dispositivo.
 - Un provider compare solo se ha **entrambe** le sue variabili.
 - All'avvio (`instrumentation.ts`) la configurazione si controlla e parte la
   pulizia delle righe scadute, ripetuta ogni giorno.
@@ -2079,12 +2106,19 @@ Le verifiche sono `db/test/submit.test.mts` (gli ingressi SQL) e
   L'handle di ogni clear e commento porta al profilo dell'autore; da 2
   clear in su, sopra la lista c'è la barra dei filtri (sezioni "I filtri
   dei clear" e "I profili pubblici").
-- **`/events/[id]/submit?tier=`** e **`/events/[id]/clears/[clearId]/edit`**:
+- **`/events/[id]/submit?region=&tier=`** e **`/events/[id]/clears/[clearId]/edit`**:
   lo stesso builder (`components/builder/`). Lo stato è un `useReducer`
   puro in `lib/clears/builder-stato.ts` e parte come un solo campo JSON;
   prima dell'invio passa `parseBuilderPayload`, lo stesso controllo
   dell'azione. Il picker è un `<dialog>` modale (a schermo pieno sotto i
-  640px) su `/api/cards`, con frecce, Enter ed Escape. In modifica la
+  640px) su `/api/cards`, con frecce, Enter ed Escape. Propone le carte
+  uscite nella versione del clear (`reg` di `/api/cards`, Global per
+  difetto, 400 per un valore sconosciuto): le carte solo giapponesi si
+  usano nei clear Japan. Il builder manda `reg` solo per Japan, così le
+  ricerche di Global restano gli stessi URL, e le stesse voci della CDN.
+  La regione la dice sempre l'URL (`submitHref` la mette anche per
+  Global), non la versione scelta nel sito: si apre il builder delle run
+  della pagina da cui si parte. In modifica la
   ricorrenza non si cambia: `revise_clear_from_builder` non la prende.
   La modifica di un clear altrui risponde 404.
 - **I cambi di squadra sono copie.** "Add a rotation change" copia la
@@ -2309,7 +2343,9 @@ Verbi SQL: `post_tip`, `edit_tip`, `delete_tip`, `vote_tip`; i rifiuti hanno un 
 
 ## La pagina della carta
 
-`/cards/<id>` è pubblica e in cache come le pagine evento: non legge mai la sessione. Le letture stanno in `lib/card-page.ts` (pure, provate da `db/test/card-page-ui.test.mts`), la cache in `lib/cache/cards.ts`: la carta con il tag `card:<id>` e `catalog`, i clear che la usano con `card:<id>` e `community`, che le scritture sui clear invalidano già. Al build si prerenderizzano al massimo 100 carte (le più usate nei clear); le altre nascono alla prima visita e poi restano in cache. L'id della forma Z (quello della base più uno) porta alla base con un 308; un id che non è una carta è un 404 vero. Le carte uscite solo in Giappone si aprono lo stesso, con "Not released on Global yet." e i clear della versione giapponese.
+`/cards/<id>` è pubblica e in cache come le pagine evento: non legge mai la sessione. Le letture stanno in `lib/card-page.ts` (pure, provate da `db/test/card-page-ui.test.mts`), la cache in `lib/cache/cards.ts`: la carta con il tag `card:<id>` e `catalog`, i clear che la usano con `card:<id>` e `community`, che le scritture sui clear invalidano già. Al build si prerenderizzano al massimo 100 carte (le più usate nei clear); le altre nascono alla prima visita e poi restano in cache. L'id della forma Z (quello della base più uno) porta alla base con un 308; un id che non è una carta è un 404 vero.
+
+La pagina è una sola per le due versioni (sezione "Versione Global/Japan"). Una carta uscita in tutte e due ha due blocchi di clear, quelli di Global e quelli di Japan: la pagina li legge entrambi, e il CSS mostra quello della versione di chi guarda (`japan:hidden` e `hidden japan:block`). Una carta uscita in una versione sola ha un blocco solo, sempre visibile. Con due blocchi, quello vuoto dice di quale versione parla ("No Japan clears use this card yet.") e, se l'altra ha dei clear, lo dice col link al migliore ("On Global it's in 4 clears, the top one in …"): chi guarda ne vede uno solo, e "nessun clear" della sua versione non è vero per la carta. Le carte uscite solo in Giappone si aprono lo stesso, con "Not released on Global yet." (a chi è su Global) e i clear della versione giapponese; a chi è su Japan, una carta uscita solo su Global dice "No Japan release date on the wiki yet.". I link ai clear dei blocchi dicono la versione (`?region=global`, o il percorso `/japan`), i link agli eventi EZA no: seguono la versione di chi guarda.
 
 La pagina mostra le skill per livello (Base, EZA, Super EZA) e si apre sul livello più alto che la carta ha. Una sezione che il wiki non riscrive per l'EZA prende il testo del livello sotto, segnato "Unchanged from EZA". Seguono link skill con l'effetto, categorie, la catena del Dokkan Awakening, i 10 clear migliori che usano la carta (prova, voti, i più recenti) con "Used in N clears". Ogni clear porta alla pagina del suo tier dove si vede davvero: la pagina si calcola con lo stesso `ORDINE_CLEAR` della lista. In fondo c'è il link alla pagina del wiki da cui vengono i testi (CC BY-SA).
 
@@ -2345,7 +2381,7 @@ Le prove: `npm run test:filtri` (parametri e URL, niente database), i passi "fil
 
 ## I profili pubblici (migrazione 0026)
 
-`/users/<handle>` (e `/users/<handle>/p/<n>` dalla pagina 2) è pubblica e in cache come eventi e carte: non legge mai la sessione. Mostra l'handle, la versione del gioco, il mese d'iscrizione, i conteggi (clear pubblicati, voti +1 ricevuti su tutte le versioni dei clear pubblicati, commenti pubblicati su clear pubblicati) e la lista dei clear, 20 per pagina, dal più recente. Niente avatar (la privacy promette che l'immagine del provider non si mostra), niente ruolo, niente email, niente commenti. Ogni riga porta alla pagina del tier dove il clear si vede davvero, calcolata con lo stesso `ORDINE_CLEAR` della lista dell'evento. Il proprietario vede in più "Edit profile" (un'isola che legge `/api/me`). I profili senza clear sono noindex, e i profili non sono nella sitemap.
+`/users/<handle>` (e `/users/<handle>/p/<n>` dalla pagina 2) è pubblica e in cache come eventi e carte: non legge mai la sessione. Mostra l'handle, la versione del gioco ("Plays Global" o "Plays Japan": è `app_user.reg`, la stessa scelta dell'interruttore della versione del sito, quindi cambiarla cambia anche il profilo, che si invalida), il mese d'iscrizione, i conteggi (clear pubblicati, voti +1 ricevuti su tutte le versioni dei clear pubblicati, commenti pubblicati su clear pubblicati) e la lista dei clear, 20 per pagina, dal più recente. Niente avatar (la privacy promette che l'immagine del provider non si mostra), niente ruolo, niente email, niente commenti. Ogni riga porta alla pagina del tier dove il clear si vede davvero, calcolata con lo stesso `ORDINE_CLEAR` della lista dell'evento, nella versione del clear (il link la dice: `?region=global` o `/japan`). Il proprietario vede in più "Edit profile" (un'isola che legge `/api/me`). I profili senza clear sono noindex, e i profili non sono nella sitemap.
 
 Ogni handle del sito (clear, commenti, tip, Settings, header) passa da `components/handle-link.tsx`, che costruisce l'URL con `profileHref` di `lib/urls.ts`, senza prefetch. Nell'header l'handle porta al profilo e Settings ha un link suo (sul telefono sono due voci del burger).
 
@@ -2381,11 +2417,77 @@ Il sito ha undici temi: **System** (per difetto: segue il chiaro o lo scuro del 
 Come funziona:
 
 - **Solo nel browser.** Il tema è l'attributo `data-theme` su `<html>`. Lo mette uno script sincrono nel `<head>` di `app/layout.tsx` prima del primo paint, leggendo `localStorage['dts:tema']`, quindi la pagina non lampeggia. L'HTML del server resta identico per tutti, e le pagine pubbliche restano in cache. Senza attributo vale System.
+- **La barra del browser.** Lo script mette anche un `<meta name="theme-color">` suo in testa al `<head>`, con lo sfondo del tema: vince sui due per media query del layout, che valgono per System (`BARRA_SISTEMA`). Il colore è scritto in maiuscolo (`coloreBarra`, lo stesso per `applicaTema`): React prende come suoi i `<meta>` già nel documento confrontando `content` e `name`, non `media`, e con Light o Dark, che hanno gli stessi colori dei due del layout, prendeva il nostro. Al primo giro del layout dal server (un'azione che scrive un cookie, come l'interruttore della versione su una carta o in Settings) lo toglieva, e la barra perdeva il tema; dopo un cambio di tema, con il nostro già tolto, il commit si rompeva su `removeChild` e l'interruttore restava occupato. `db/test/temi.test.mts` controlla che nessun tema scriva un colore uguale, come testo, a uno dei due del layout. La pagina offline (`public/offline.html`) usa lo stesso script, quindi dopo un cambio qui va rigenerata.
 - **I colori** stanno in `app/globals.css`: un blocco `[data-theme="..."]` per tema, ognuno con gli stessi 17 token e `color-scheme`. Gli id e i nomi stanno in `lib/tema/temi.ts`.
 - **Sull'account.** Chi ha un account salva il tema anche in `app_user.theme` (migrazione 0027, `set_theme`; null = System). `/api/me` lo restituisce, e se è diverso da quello del dispositivo `ViewerProvider` lo applica e lo ricorda. Il tema dell'account vince su quello del dispositivo.
 - **Accessibilità.** Testo, oro e tipi stanno ad almeno 4.5:1 su sfondo, superficie e superficie-2, e il bordo dei campi ad almeno 3:1. Il colore non è mai l'unico segnale: le etichette AGL/TEQ/INT/STR/PHY restano scritte. High contrast non si attiva mai da solo con `prefers-contrast`, perché è un tema chiaro.
 - **Test.** `db/test/temi.test.mts` (il passo "temi" di `npm run db:test`) legge `app/globals.css` e controlla tutti i contrasti. Un tema nuovo va aggiunto in tre posti: `lib/tema/temi.ts`, `app/globals.css` e il vincolo `app_user_theme`, con una migrazione (più la regola scura del marchio in `app/globals.css`, se è scuro). Il test fallisce se le tre liste non coincidono.
 - **In produzione** la migrazione 0027 deve arrivare prima del codice: la sessione di better-auth legge `app_user.theme`, e senza la colonna l'accesso si rompe.
+
+## Versione Global/Japan (migrazione 0035)
+
+Il sito mostra una versione del gioco alla volta, scelta da chi guarda: **Global** (per difetto, anche per chi non è entrato e per i motori) o **Japan**. Cambia eventi, date, clear, i blocchi della pagina della carta e le carte del picker del builder. L'origine resta una (niente host o domini per versione); le pagine evento giapponesi tengono il loro segmento `/japan`, così ogni versione è una pagina in cache, condivisibile e indicizzabile. Carte, profili, Settings e notifiche hanno un URL solo per tutte e due.
+
+**Dove si sceglie.** Un interruttore Global | Japan (`components/versione/scelta-versione.tsx`):
+
+- sotto i 1024 px è la **prima riga del burger**, sopra Events, perché cambia tutto quello che c'è sotto;
+- dai 1024 px (niente burger) è un **controllo compatto a sinistra nell'header, subito dopo "Events"**, per tutti, anche senza account. Sta lì perché lì niente prima di lui cambia larghezza: la parte di destra arriva da `/api/me` ("Sign in", o handle, campanella e Settings) e cambia con chi guarda, e nella parte di destra il controllo si spostava a ogni caricamento. Così resta fermo dal primo paint, in ogni stato;
+- in **Settings > Display** è la prima riga, "Game version" (sotto arriverà la lingua).
+
+Sul telefono, in Japan, sull'angolo del bottone del burger c'è un tag "JP" (solo CSS, decorativo, fuori dal flusso come il pallino della campanella: a 320 px, con la campanella, il nome intero del sito ci sta solo così; sta sopra le righe dell'icona, con un bordo del colore dell'header che lo stacca; con il focus da tastiera sul bottone si toglie, `group-focus-visible:invisible`, perché sull'angolo starebbe sopra l'anello del focus, che va visto intero), e il bottone si chiama "Menu, Japan version". I link "Events" dell'header e del burger e il marchio portano alla home della versione (`components/versione/link-eventi.tsx`: `/events` nell'HTML, `/events/japan` dopo l'idratazione per chi è su Japan). I chip "Version: Global | Japan" della lista degli eventi non ci sono più.
+
+**Lo stato.** Il cookie `dts_version`: `japan`, oppure nessun cookie (Global, che non si scrive mai come `global`). Non è un segreto e non è httpOnly (lo legge lo script del `<head>`), SameSite Lax, Path /, 400 giorni (il tetto di Chrome), Secure solo su https (`opzioniVersione`, come l'indizio `dts_signed_in`). Lo scrive **solo il server**: l'azione dell'interruttore (`setVersionAction`), l'hook di better-auth dopo l'accesso e `/welcome`. Mai `document.cookie`: Safari tiene al massimo 7 giorni un cookie scritto dal browser, e un test lo vieta. Per chi ha un account completo la scelta sta anche in `app_user.reg` (`set_region`, 0035): la stessa colonna di "Plays Global/Japan" del profilo pubblico (scelta accettata dal proprietario).
+
+**Gli URL, e chi vince.** Un URL che dice la versione è *marcato* e vince sempre: un percorso `/japan` o un `?region=` (`global` o `japan`). Gli altri seguono la scelta di chi guarda: con `dts_version=japan` li spostano i redirect di `next.config.ts` (`redirects()`, `permanent: false` cioè 307 e mai 308, con `has` sul cookie e `missing` su `region` e sull'header `next-action`), che girano nel routing, prima delle pagine e del proxy. Su Vercel diventano regole della CDN: nessuna funzione, nessuna CPU. `proxy.ts` resta solo per `/admin`.
+
+| con `dts_version=japan` | porta a |
+|---|---|
+| `/`, `/events` | `/events/japan` (la query passa, anche `?account=deleted`) |
+| `/events/<id>`, `/events/<id>/t/<tier>` | `/events/<id>/japan`, `/events/<id>/japan/t/<tier>` |
+| `/events/<id>/t/<tier>/p/<n>` | `/events/<id>/japan/t/<tier>`: la pagina si perde, di là può non esserci (sarebbe un 404) |
+| `/events/browse`, `/events/<id>/clears` | lo stesso con `region=japan`; una pagina oltre l'ultima mostra il riquadro, non un 404 |
+| `/events/<id>/submit` | lo stesso con `region=japan` (solo i link vecchi: `submitHref` la mette sempre) |
+
+Non si spostano mai: i percorsi `/japan` e `/events/japan`, ogni URL con `region=`, le POST delle Server Action (header `next-action`), la modifica di un clear, `/cards`, `/users`, `/notifications`, `/settings`, `/welcome`, `/login`, `/admin`, `/api`, `/events/abc` (resta un 404), e chi non ha `dts_version=japan` esatto (nessun cookie, `global`, `japan2`). La query passa alla destinazione, compreso il `_rsc` delle navigazioni del client; nessuna destinazione viene spostata di nuovo. Chi non ha scelto Japan e i motori vedono esattamente le pagine di prima, con gli stessi canonical; la sitemap ha in più `/events/japan` (non le pagine evento Japan: per ora no). Le maiuscole nel percorso non contano, come nel router di Next (`experimental.caseSensitiveRoutes` resta spento): col cookie `/Events/5` e `/events/5/T/4` vanno a `/events/5/japan` e `/events/5/japan/t/4`, e `seguiVersione` fa lo stesso; la chiave della query invece conta com'è (`?REGION=global` non marca niente). Lo stesso per le barre: prima delle regole il router fa due 308 suoi, uno per le barre ripetute e le `\` (`resolve-routes`) e uno per la barra in fondo (la regola interna di `trailingSlash: false`), quindi col cookie `/events/5/` e `/events//5` arrivano a `/events/5/japan` dopo un 308 e un 307; `seguiVersione` pulisce il percorso allo stesso modo prima di leggere le regole.
+
+| link aperto | chi è su Global (o senza cookie) | chi è su Japan |
+|---|---|---|
+| `/events/1/t/5` (senza versione) | la pagina Global | 307 a `/events/1/japan/t/5` |
+| `/events/1/japan/t/5` | la pagina Japan, con l'avviso | la pagina Japan |
+| `/events/1/t/5/p/2?region=global#clear-9` (ogni link a un clear) | la pagina Global, al clear | la pagina Global, al clear, con l'avviso |
+| `/events/1/t/5/p/2#clear-9` (un link vecchio) | la pagina Global, al clear | 307 al tier Japan, senza il clear (accettato, solo per i link vecchi) |
+| `/events/browse?type=story` | Global | 307 con `region=japan` |
+| `/cards/1`, `/users/x`, `/notifications/<id>` | lo stesso URL | lo stesso URL; la carta mostra il blocco Japan |
+
+Guardare l'altra versione da un link marcato vale una pagina: il primo link senza versione torna alla propria. Per restarci c'è "Use … everywhere" nell'avviso.
+
+- **I link espliciti.** `eventHref({..., explicit: true})` aggiunge `?region=global` (prima di `#clear-N`; per Japan basta il percorso). Lo usano tutti i link a un clear preciso (le notifiche di clear e commenti, il profilo, la pagina della carta, il feed degli admin, la moderazione, i redirect delle azioni dei clear, i link "indietro" del builder) e quelli che cambiano versione apposta. Il motivo: il browser porta l'ancora attraverso un 307, e `#clear-N` finirebbe su un tier dell'altra versione, dove quel clear non c'è. La pagina non legge la query: `?region=global` è la stessa voce in cache, e il canonical resta quello pulito. I link alle tip restano senza versione: le tip non hanno regione, e `#tip-N` vale in tutte e due.
+- **Le Server Action non portano mai a un URL di eventi senza versione.** Il redirect di un'azione prende la pagina nuova passando dal routing (con i cookie della risposta), ma il browser tiene l'URL scritto nell'azione (`x-action-redirect`): un redirect a `/events` mostrerebbe la lista giapponese sotto l'URL di Global. Le azioni passano da `seguiVersione(href, versione)` (lo specchio in TypeScript delle regole, `lib/versione/versione.ts`, che come il router non distingue le maiuscole nel percorso e toglie le barre doppie o in fondo) con la versione della richiesta, `await versioneRichiesta()` o la variabile che la tiene (`reg` in `/welcome`), da `homeHref(await versioneRichiesta())` o da un `eventHref({..., explicit: true})`. Un test legge col parser di TypeScript ogni file `'use server'` e ogni modulo di `lib/` che importa `redirect` o `permanentRedirect` (un redirect lanciato da un modulo che l'azione chiama, come `requireUser` di `lib/dal.ts`, è un redirect dell'azione), e giudica il primo argomento di ogni `redirect` e `permanentRedirect` (anche con un altro nome, o attraverso una funzione dello stesso file): passano quelle tre forme, un URL scritto che non è degli eventi né la radice (`/login?next=…` e `/welcome?next=…` di `lib/dal.ts`), e i due rami buoni di un ternario. Non passano un'altra funzione di `lib/urls.ts` (`eventHref` senza `explicit`, `browseHref`, `homeHref()`), una variabile, e `seguiVersione` con una versione scritta (`'global'` restituisce l'URL com'è, senza versione) o senza versione, a meno del segno `// redirect-versione: <perché>` sulla riga o su quella prima (oggi solo il gemello di `setVersionAction`, già della versione nuova). La controprova sono una trentina di redirect sbagliati di prova che il test deve prendere (anche uno nascosto in un modulo di `lib/` senza `'use server'`), e una quindicina di giusti che deve lasciare. Le pagine e i loro componenti non contano: i loro redirect li segue il browser. I redirect delle pagine e delle rotte (`/notifications/<id>`, `/welcome`) li segue il browser, quindi passano dalle regole e possono restare senza versione.
+- **Lo script del `<head>`**, accanto a quello del tema e uguale per tutti: con il cookie mette `data-reg="japan"` su `<html>` prima del primo paint. Legge e basta: non scrive il cookie e non naviga. La variante `japan:` di `app/globals.css` (`@custom-variant japan (&:where([data-reg="japan"] *))`) fa il resto: Global è la base, `japan:` la sovrascrive. L'interruttore, gli avvisi, il tag JP e i blocchi della carta seguono chi guarda col solo CSS, giusti già prima dell'idratazione. L'HTML delle pagine in cache non dice mai la versione (niente `data-reg` né `aria-pressed` dal server). Le pagine pubbliche non leggono mai il cookie: `versioneRichiesta()` (`lib/versione/server.ts`) è solo per le Server Action, le rotte e `/welcome`, e eslint lo vieta a `components/`, `lib/cache/`, al layout e alle pagine pubbliche.
+- **Il cambio.** `setVersionAction(v, qui)` (`lib/auth/actions.ts`, il cuore in `lib/versione/cambio.ts`): salva sull'account se l'onboarding è finito (anche da sospesi, è una preferenza; il profilo si invalida solo se la versione cambia davvero), poi scrive o toglie il cookie e, se la pagina è dell'altra versione, porta al gemello con un `replace`. Prima l'account: Next mette il `Set-Cookie` nella risposta appena lo si scrive, e lo tiene anche nel 500 di un'azione che lancia, quindi con un errore del database il dispositivo cambierebbe lo stesso dietro "Couldn't change the version". Il gemello (`gemello()`) è la stessa vista di là: `/events` e `/events/japan`, lo stesso tier senza `/p/<n>`, `?region=` e `#clear-N` (restano `#tips` e `#tip-N`), la stessa lista filtrata a pagina 1. Una pagina senza gemello (carte, profili, Settings, notifiche, il builder e la modifica: un team non salvato non si perde) resta, e cambia solo quello che segue `data-reg`. Chi guarda già la versione che sceglie (un link marcato, "Use … everywhere") resta dov'è, con il suo clear (`quiPerCambio` in `lib/versione/interruttore.ts`). Senza navigazione `data-reg` si mette quando l'azione ha risposto, non prima: la pagina di adesso non mostra per un attimo l'avviso. Con la navigazione lo rimette `SeguiVersione` (`components/versione/segui-versione.tsx`, nel layout) a ogni cambio di URL, prima del paint della pagina nuova: lo script del `<head>` non gira sulle navigazioni del client. Il redirect dell'azione arriva al client come un rifiuto già gestito dal router: si prende e non si rilancia, altrimenti il router navigherebbe due volte.
+- **L'aspetto.** Un controllo a segmenti, lo stesso nei tre posti con tre misure: un binario (lo sfondo della pagina, bordo `linea`) con due segmenti larghi uguali, alti 24 px nell'header (il bersaglio minimo di WCAG 2.5.8), 44 px nel burger, 32 px in Settings. Quello scelto ha il pieno di inchiostro, come i chip dei tier e dei filtri; l'altro è `tenue` nell'header (come "Events" accanto) e `testo` nel burger e in Settings. Le due opzioni hanno lo stesso peso, quindi scegliere non cambia la larghezza. All'hover e alla pressione cambia solo l'opzione non scelta (`superficie-2`, poi `linea`); mentre il cambio gira, quella scelta ha il velo dei link che caricano (come `AttesaLink`), sempre presente, che cambia solo opacità. L'anello del focus è quello del sito, attaccato al segmento (`.segmento`, offset 0 in `app/globals.css`): sta nei 2 px fra i segmenti invece di coprire quello accanto. Un errore ha l'icona, e non sposta niente neanche quando arriva tardi (la rete risponde dopo secondi, fuori dalla finestra in cui il browser conta lo spostamento come risposta al tocco): nell'header un riquadro sotto il controllo, che se ne va cambiando pagina, con Esc o con un tocco fuori (l'header sta nel layout e non si smonta: senza, l'errore di una pagina seguirebbe chi guarda su tutte le altre); nel burger prende la cella dell'etichetta, che si nasconde finché c'è (`invisible`: il gruppo si chiama ancora "Game version"), alta quanto il controllo, così Events e le altre voci restano dove il dito le cerca (a 320 px la cella è larga 120 px e il testo va su tre righe bilanciate, 45 px su 50); in Settings al posto dell'esito, nella stessa riga riservata. Il testo è breve apposta ("Couldn't change the version. Try again.", `ERRORE_VERSIONE` in `lib/versione/interruttore.ts`): in Settings a 320 px ci sta in una riga. **Con i colori forzati** (il contrasto elevato di Windows) il browser toglie i colori dei temi, e con lo stesso peso le due opzioni sarebbero uguali: quella scelta prende il pieno di sistema delle selezioni (`Highlight` e `HighlightText`, i colori che chi guarda ha scelto) con `forced-color-adjust: none`, perché altrimenti Chrome mette dietro al testo il suo riquadro del colore della pagina e su `Highlight` il testo sparisce; anche questo col CSS e la sua `japan:`, giusto prima dell'idratazione. L'anello che il browser dà alle opzioni è dello stesso colore: su quella scelta va dentro il segmento, in `HighlightText` (`app/globals.css`).
+- **Accessibilità.** Un `role="group"` col nome "Game version" (un'etichetta visibile nel burger e in Settings, solo per i lettori di schermo nell'header) e due bottoni, quello scelto `aria-pressed`. Non un radio group: un radio vuole `aria-checked`, che l'HTML in cache (uguale per tutti) non può dire, mentre `aria-pressed` si lascia fuori finché la versione non si sa (dopo l'idratazione). Tutte e due le opzioni sono nel giro del Tab; si sceglie con Spazio, Invio o il click, e l'opzione già scelta non fa niente. Mentre l'azione gira, e finché la pagina del gemello non è arrivata, il gruppo è `aria-busy` e le opzioni `aria-disabled` (non `disabled`: il focus resta). Un cambio senza navigazione dall'header, dal burger o da "Use … everywhere" lo dice una regione live sola, nel layout ("Japan version on"), che resta anche quando il burger si chiude o l'avviso sparisce; Settings invece lo dice nella sua riga `role="status"`, visibile ("Japan version on. Saved to your account.", o "Saved on this device."): accanto al controllo dai 640 px; sul telefono lì non ci sta e va sotto, in una riga che resta riservata anche vuota (`min-h-[1lh]`), perché scegliere svuota l'esito e poi lo riempie e la pagina sotto non deve saltare; la navigazione la annuncia Next; un errore è un `role="alert"`, e finché c'è descrive il gruppo (`aria-describedby`). Nel burger un tocco sulla riga non chiude il pannello; quando porta al gemello si chiude e il focus torna al bottone. Il focus è quello del sito (`:focus-visible`), attaccato al segmento. Solo token dei temi: il pieno dell'opzione scelta è quello dei chip dei tier e dei filtri (`bg-inchiostro text-sfondo`), mentre il controllo, a segmenti su un binario, è suo (l'opzione non scelta non ha un bordo). Valgono in tutti gli 11 temi, High contrast compreso, e il test prova i contrasti di ogni coppia (4.5:1 per i testi, 3:1 per il pieno sul binario e per l'anello).
+- **Gli avvisi** (`components/versione/avviso-versione.tsx`, componenti del server, statici): su una pagina Japan, a chi è su Global, "This is the Japan version. Your site is set to Global." con il link alla stessa pagina in Global e "Use Japan everywhere" (`usa-versione.tsx`, un'isola); su una pagina Global, a chi è su Japan, lo specchio. Hanno la forma del banner della sospensione: l'icona (un globo, in oro), la prima frase in inchiostro, e sotto le due strade, il link con la freccia (porta altrove) e "Use … everywhere" con l'aspetto di un piccolo bottone (cambia la scelta del sito), col velo mentre gira. Se il cambio non riesce lo dice il bottone stesso, nel suo posto: l'icona e "Try again" (`RIPROVA_VERSIONE`), in `str`, al posto di "Use … everywhere". Le due etichette stanno nella stessa cella e quella nascosta tiene la larghezza, quindi l'avviso non cresce e la pagina sotto non scende (una riga in più per l'errore, arrivato tardi, la spingeva giù di 27-47 px); il testo intero è un `role="alert"` per i lettori di schermo, che descrive il bottone finché c'è. Stanno sulle liste degli eventi e sulle pagine evento. Il link di una pagina Japan è l'URL Global senza marca: lo vede solo chi è su Global, che non viene rimandato. Su una pagina evento il link c'è solo se di là l'evento ha una run: l'avviso è nell'HTML per tutti (lo nasconde il CSS), e un link al gemello di un evento di una versione sola darebbe ai motori una pagina senza date. "Use … everywhere" nasconde l'avviso in cui sta: prima, se il focus è lì, lo porta al titolo della pagina (`tabindex="-1"`), che altrimenti finirebbe in cima al documento (WCAG 2.4.3). L'occhiello "Japan version" sta sulla lista Japan e sulla pagina evento (prima "Japanese version"), e il titolo di una pagina evento Japan finisce con "(Japan)".
+- **Un evento in una versione sola** non è mai un 404 né una pagina vuota: getEvent lo trova anche senza run, gli stage e le tip non hanno regione, e `/p/<n>` si perde nei redirect. Senza run in questa versione la pagina lo dice al posto dello stato, con la sua forma (l'etichetta, poi il dettaglio in `tenue`): "**No Japan dates** It may not be out in this version yet, or the wiki doesn't list it.", e solo se di là l'evento ha una run aggiunge sotto, con la freccia, il link esplicito "Global version of this event" (l'altra versione si legge in cache, con le altre letture della pagina; la stessa condizione vale per il link dell'avviso). Quel link lo vede solo chi non vede l'avviso, col meccanismo dell'avviso rovesciato (`classeVersione(reg)`, solo CSS): chi è sull'altra versione ha già nell'avviso il link di là, e due link con lo stesso scopo a pochi pixel sarebbero rumore. Le liste filtrano per versione, quindi non portano mai a queste pagine.
+- **Accesso, uscita, due dispositivi.** All'accesso di un account completo vince l'account, come per il tema: l'hook `after` di better-auth (`lib/auth/config.ts`) scrive `dts_version` da `app_user.reg`, o lo toglie per Global. Solo agli accessi veri (`ACCESSI`: il magic link, il ritorno OAuth, `/sign-in/social`): better-auth dà una sessione nuova anche quando la rinnova (una volta al giorno, `updateAge`, da `/get-session` e quindi da `/api/me` e dalle azioni) e in `/update-user`, e lì una risposta partita prima di un cambio lo disfarebbe. Un account nuovo o senza handle tiene la scelta del dispositivo, che `/welcome` propone; il form la scrive nel cookie e torna al `next` già risolto per quella versione. L'uscita e la cancellazione dell'account la lasciano: è del dispositivo. Su un secondo dispositivo con una sessione già aperta, `ViewerProvider` confronta `user.reg` di `/api/me` con `data-reg` e, se diversi, rimette quella dell'account con `setVersionAction`: una volta per scheda (un flag e `sessionStorage`, dentro try/catch), mai mentre un cambio è in corso, e spostando la pagina solo se era arrivata da un link senza versione (un link marcato vince anche qui). Una scelta fatta nella scheda vale come riallineamento. `/api/me` non scrive mai il cookie: una risposta vecchia non disfa un cambio appena fatto, e dopo un cambio il provider aggiorna la sua copia dell'utente. Le altre schede rileggono il cookie quando tornano visibili (`visibilitychange`, `pageshow`): se è cambiato, `SeguiVersione` chiama `router.refresh()`, che butta la cache del router (i prefetch della versione di prima, che un link senza versione mostrerebbe senza chiedere niente al server, per 60 s su una pagina evento e 300 s su `/events`), e una pagina arrivata da un link senza versione va al gemello già risolto, come col riallineamento; una pagina marcata resta, e l'avviso la spiega. Una pagina con un testo scritto e non inviato (un commento o una tip a metà, una ricerca) resta com'è, senza refresh (che col 307 la porterebbe di là): l'avviso la spiega, e la bozza non si perde.
+- **Senza JavaScript** la modalità Japan funziona (cookie e redirect), l'interruttore no, come il selettore del tema.
+
+**I costi.** Global, chi non è entrato e i motori: zero, nessun redirect. In Japan una richiesta in più alla CDN per ogni redirect (Hobby ne include un milione al mese) e nessuna funzione; i link dell'header portano già a `/events/japan` e quelli dentro le pagine Japan hanno già la versione, quindi i redirect sono rari. Un cambio è una Server Action. `/events/japan` è statica: prima la home di chi gioca Japan era `/events/browse?region=japan`, dinamica, circa 11 ms di CPU per vista. Le pagine evento Japan nascono alla prima visita (ISR), come prima; prerenderizzarle al build per gli eventi Japan recenti non è stato fatto. La pagina della carta fa una lettura in cache in più quando si rigenera, e `/api/cards` ha qualche chiave di CDN in più.
+
+**La lingua, dopo.** Oggi l'inglese per tutte e due (`localeDi`, `lib/versione/versione.ts`). Quando ci saranno testi giapponesi: la versione Japan li userà sui percorsi `/japan`, che già la separano nella cache; `setVersionAction` diventerà `set_version(utente, regione, lingua)` e scriverà anche `app_user.locale`; le pagine con un URL solo (carte, profili) prenderanno un segmento della lingua con lo stesso meccanismo dei redirect (per esempio `/cards/<id>` → `/ja/cards/<id>` con lo stesso cookie); `<html lang>` vorrà un layout per versione o lo script del `<head>`. Mai testi diversi sotto lo stesso URL scelti dal cookie: le pagine in cache diventerebbero diverse per chi guarda. Un cookie della lingua a parte servirà solo se la lingua diventerà indipendente dalla versione.
+
+**I file.** `lib/versione/versione.ts` (puro: il cookie, `seguiVersione`, `gemello`, lo script del `<head>`, `localeDi`), `client.ts` (`data-reg` nel browser, `useVersione`, la regione live, il riallineamento una volta per scheda), `server.ts` (`versioneRichiesta`), `cambio.ts` (il cambio, senza Next), `interruttore.ts` (puro: quale versione mostra un URL, quando il cambio porta al gemello, i testi degli avvisi, i blocchi della carta); `components/versione/` (l'interruttore, `LinkEventi`, `SeguiVersione`, gli avvisi); le regole in `next.config.ts`; `set_region` nella 0035.
+
+**Le prove.** Il passo "versione del sito" (`db/test/versione.test.mts`): le regole di `next.config.ts` nel valutatore di Next 16 (`unstable_getResponseFromNextConfig`: chi va dove, cosa non si tocca mai, `_rsc` che passa, nessun giro), `seguiVersione` uguale alle regole, anche con le maiuscole nel percorso (che il router vero non distingue e il valutatore di prova sì: per queste righe il test usa i matcher del router di Next, `buildCustomRoute` di `router-utils/filesystem` con la `caseSensitiveRoutes` della config, e prima controlla che sulle righe di sempre diano lo stesso del valutatore) e con le barre doppie o in fondo (i 308 del router seguiti come li segue il browser: `normalizeRepeatedSlashes` di Next e la sua prima regola, che il test controlla sia ancora quella della barra in fondo; ogni riga di sempre anche con una barra in più in fondo e con le barre doppie), `gemello` nei due sensi, il cookie e lo script del `<head>` su un document finto, `set_region` e il cambio con il database vero, e le guardie sui file (ogni redirect delle azioni e dei moduli di `lib/` che importano `redirect`, letto col parser di TypeScript, con la sua controprova; nessuno scrive il cookie dal browser). Il passo "versione del sito (interfaccia)" (`db/test/versione-ui.test.mts`, senza database): quale versione mostra un URL e se è marcato, quando il cambio porta al gemello (sempre a un URL diverso, già risolto), il riallineamento, il redirect di un'azione riconosciuto come lo riconosce Next, i testi (anche l'errore di un cambio, breve quanto basta per stare in una riga a 320 px), i blocchi della carta, i contrasti in tutti i temi, e le guardie su interruttore (`aria-pressed`, niente radio, lo stesso peso per le due opzioni, il pieno di sistema con i colori forzati, hover e pressione solo su quella non scelta, le misure dei bersagli, il focus attaccato, il velo mentre gira), burger (l'errore nella cella dell'etichetta), header (accanto a Events, fuori dalla parte che cambia con `/api/me`; l'errore che se ne va cambiando pagina), tag JP sul burger (tolto col focus da tastiera), Settings (l'esito in una riga riservata, con l'errore nello stesso posto), avvisi (il link solo verso una run, il focus di "Use … everywhere", l'errore nel bottone), la cache del router dopo un cambio in un'altra scheda, liste, pagina evento (il link esplicito solo a chi non vede l'avviso) e carta. In più i passi "account" (il cookie all'accesso e all'uscita, e mai al rinnovo della sessione), il cambio che con un errore del database non scrive il cookie, "URL degli eventi", "notifiche (app)", "attivita' del sito", la pagina della carta (i blocchi su carte vere), il builder (`/api/cards` con `reg`), "script di produzione" (`set_region` dopo harden), e `test:smoke` contro `next start` (i 307 veri col cookie, `_rsc` che passa, le pagine marcate che restano, nessun redirect senza cookie, l'HTML del server uguale per tutti con l'interruttore e gli avvisi, `/events/japan` e `?region=global` serviti dalla cache).
+
+**In produzione: prima la 0035, poi il codice.** `npm run prod:migrate -- --yes` (migrazioni e permessi: `harden` toglie `set_region` ai ruoli della Data API come le altre funzioni), e solo dopo il deploy. Senza la 0035 `setVersionAction` fallisce per chi è entrato con un account completo (con "Couldn't change the version. Try again.", e il dispositivo resta com'era: il cookie si scrive solo dopo l'account); i redirect, lo script del `<head>` e i link funzionano anche senza, e il codice di prima sulla 0035 va (nessuno la chiama). Dopo il primo deploy:
+
+1. che Vercel abbia compilato i redirect con `has`/`missing` in regole della CDN (`.vercel/output/config.json` di un build, o le route del deploy): le anteprime sono spente (`ignoreCommand`), quindi si guarda in produzione;
+2. `curl -sI -H 'Cookie: dts_version=japan' https://<dominio>/events` risponde 307 verso `/events/japan`, senza log di funzione e senza invocazioni nuove in Observability; senza cookie 200;
+3. `/events/<id>?region=global` è un `x-vercel-cache: HIT` (la stessa voce di `/events/<id>`; se non lo è, ogni pagina guardata così ha una voce ISR in più, poche, e i canonical tengono pulita l'indicizzazione);
+4. a mano: in DevTools, in Japan, un clic su un link senza versione è un 307 più un 200 RSC, senza un terzo giro; a 375 px l'interruttore del burger su un tier porta al tier Japan e chiude il menu; a 1024 px l'header non trabocca con un handle di 24 caratteri; Tab, Spazio e Invio sull'interruttore; due schede, il cambio in una e un link senza versione nell'altra; gli 11 temi; nessun lampo ricaricando una pagina in Japan.
+
+In sviluppo: `npm run db:up` porta la 0035 su `dokkan_dev` (finché manca, l'interruttore funziona per chi non è entrato e fallisce per un account completo, senza cambiare il dispositivo). `next dev` si riavvia da solo quando cambia `next.config.ts`; se non lo fa, a mano. Poi `curl -sI -H 'Cookie: dts_version=japan' http://localhost:3000/events` deve rispondere 307 verso `/events/japan`, e lo stesso senza cookie 200.
 
 ## Segnaposto delle immagini
 
@@ -2405,7 +2507,7 @@ Una carta senza miniatura e un evento senza immagine non mostrano più un riquad
 
 Il sito si installa come app (Android, iPhone e iPad, desktop Chromium). Fase 1 del piano PWA e notifiche; le push del browser (fase 4) hanno una sezione loro, sotto.
 
-- **Manifest**: `app/manifest.ts`, servito statico a `/manifest.webmanifest`. `start_url` è `/events` (non `/`, che è un 307), `name` e `short_name` sono entrambi `Dokkan Team Sharing` (sotto l'icona il launcher lo accorcia se non ci sta), colori `#0f111d` (il fondo del marchio: contano solo per lo splash di Android, poi vince il `theme-color` del tema scelto). Le icone PNG stanno in `public/pwa/` e le genera `npm run brand`; non in `app/`, dove Next aggiungerebbe un `<link rel=icon>` per ognuna, e non in `public/assets`, che va su Cloudflare.
+- **Manifest**: `app/manifest.ts`, servito statico a `/manifest.webmanifest`. `start_url` è `/events` (non `/`, che è un 307; chi ha scelto Japan arriva a `/events/japan` col redirect della versione, sulla CDN), `name` e `short_name` sono entrambi `Dokkan Team Sharing` (sotto l'icona il launcher lo accorcia se non ci sta), colori `#0f111d` (il fondo del marchio: contano solo per lo splash di Android, poi vince il `theme-color` del tema scelto). Le icone PNG stanno in `public/pwa/` e le genera `npm run brand`; non in `app/`, dove Next aggiungerebbe un `<link rel=icon>` per ognuna, e non in `public/assets`, che va su Cloudflare.
 - **iOS**: `metadata.appleWebApp` in `app/layout.tsx` (titolo `Dokkan Team Sharing`, barra di stato `default`); l'icona è `app/apple-icon.png`. Nell'app installata il link dell'email si apre in Safari, non nell'app: `/login` e `/settings` lo dicono (solo lì, `components/pwa/avviso-ios.tsx`) e suggeriscono Discord, Google o Twitch.
 - **Service worker**: `public/sw.js`, scritto a mano, URL fisso `/sw.js`, scope `/`. Fa due cose: se una navigazione GET dello stesso sito non raggiunge la rete, mostra `public/offline.html`, e mostra le push del browser (fase 4, sotto). Non intercetta `/api/` (callback OAuth e magic link comprese), `/admin`, le richieste non GET, le fetch del router (RSC), i chunk e le immagini. **Non mette in cache nient'altro**: né pagine, né chunk, né API, né immagini. Le pagine per utente non finiscono mai su un dispositivo, e dopo un deploy non resta niente di vecchio. Niente navigation preload: per una navigazione non intercettata (una callback OAuth) il browser potrebbe fare la richiesta due volte.
 - **Registrazione**: `instrumentation-client.ts`, solo nei build di produzione, dopo il `load` e quando il browser è libero (`lib/pwa/registra.ts`). In `next dev` non si registra, e se trova il nostro worker (per esempio lasciato da un `next start` di prova su localhost:3000) lo toglie con le sue cache `dts-*`.
@@ -2439,7 +2541,7 @@ Come funziona:
 - **Nessun testo dei post** nelle notifiche: né commenti, né il motivo della sospensione, né la nota del moderatore. `notification_render(p_user, p_id)` e `notification_list(p_user, p_limit)` ricalcolano tutto adesso dalle tabelle vere (conteggio, handle attuale, evento, se il contenuto è ancora pubblicato). L'handle di chi segnala non esce mai; quello del moderatore non arriva mai a chi è moderato, e solo agli altri admin col feed acceso (0032), che lo vedono già nel registro di `/admin/log`.
 - **Il pallino**: `app_user.notif_last_at > notif_seen_at`. Le due colonne sono negli `additionalFields` di better-auth (`notifLastAt`, `notifSeenAt`, `input: false`), quindi la sessione le legge già e `/api/me` risponde `user.unread` (un sì o un no, mai un numero) senza query in più. Lo mostra `components/notifiche/campanella.tsx` dentro `user-menu.tsx`, solo dopo `/api/me`: nell'HTML in cache non c'è mai.
 - **`/notifications`** (per utente come `/settings`: `instant = false`, noindex, esclusa da `robots.txt`): le ultime 50, divise in New ed Earlier. Dalla 0032 il limite vale per famiglia: 50 personali e, per un admin col feed acceso, 50 del feed in una terza sezione, Site activity, così il feed non spinge mai fuori i commenti sui suoi clear. Aprirla segna lette quelle mostrate e, dalla 0032, anche le non lette oltre le 50 di ogni famiglia, che la lista non mostrerebbe mai (`mark_list_read`, che poi chiama `mark_notifications_read`). Per il feed non succede in silenzio: `mark_list_read` torna anche quante azioni ha segnato lette senza mostrarle (`unseen_actions`), e la pagina lo scrive sotto Site activity ("12 older actions did not fit in this list and were marked as read."); il pallino si spegne quando non resta nessuna non letta, e una notifica arrivata mentre la pagina si apre resta non letta per la visita dopo; `components/notifiche/segna-viste.tsx` lo spegne anche nell'header, che è nel layout e non rilegge `/api/me` a ogni navigazione. Il link della campanella ha `prefetch={false}`: un prefetch segnerebbe lette le notifiche senza che l'utente le abbia viste.
-- **`/notifications/<id>`** (`app/notifications/[id]/route.ts`) è l'unico link di una notifica, anche per push ed email: segna letta quella sola e fa un 307 all'href calcolato in quel momento (`lib/notify/vista.ts`, con `eventHref` + `clearAnchor`, `editClearHref` per un clear nascosto, `/settings`, `/admin`). Un id sconosciuto o di un altro torna alla lista; senza sessione si passa da `/login?next=`. Le righe della lista sono `<a>` semplici, non `<Link>`, perché la rotta scrive.
+- **`/notifications/<id>`** (`app/notifications/[id]/route.ts`) è l'unico link di una notifica, anche per push ed email: segna letta quella sola e fa un 307 all'href calcolato in quel momento (`lib/notify/vista.ts`, con `eventHref` + `clearAnchor`, `editClearHref` per un clear nascosto, `/settings`, `/admin`). I link a un clear e a un commento dicono la versione del clear (`?region=global` prima di `#clear-N`, o il percorso `/japan`), quelli a una tip no: la tip non ha regione e segue la versione di chi guarda (sezione "Versione Global/Japan"). Il 307 della rotta lo segue il browser, quindi passa dai redirect della versione; push ed email portano solo a `/notifications/<id>` e non cambiano. Un id sconosciuto o di un altro torna alla lista; senza sessione si passa da `/login?next=`. Le righe della lista sono `<a>` semplici, non `<Link>`, perché la rotta scrive.
 - **I tipi** stanno in `lib/notify/kinds.ts` e devono coincidere con `notification_kinds()` e con i check delle tabelle `notification` e `notification_pref`: un tipo nuovo va aggiunto con una migrazione e nei testi di `lib/notify/vista.ts`.
 - **Preferenze**: `notification_pref(user_id, kind, channel)` e `set_notification_pref` ci sono già, per i canali per tipo. Il digest email (fase 3, sotto) ha una casella sola e non le usa; la disiscrizione dal link toglie comunque le righe con canale `email`. Le push del browser le usano: un interruttore per gruppo in Settings accende o spegne le righe con canale `push` (sezione "Push del browser").
 - **Conservazione**: il cron giornaliero (`/api/cron/purge`) chiama `purge_notifications()`: le lette dopo 30 giorni dalla lettura, le non lette dopo 90 senza novità. Gli stessi giorni sono in `lib/legale.ts` per la privacy. Cancellare l'account porta via le sue notifiche e preferenze; cancellare un clear, un commento o una tip porta via le notifiche che li riguardano.
@@ -2580,12 +2682,12 @@ online sono nella sezione seguente. Le prove: `npm run db:test` (passi
 
 Vercel Hobby dà 4 ore di CPU attiva al mese, senza extra. Per questo le pagine pubbliche (`/events`, `/events/<id>/…`, `/cards/<id>`, `/users/<handle>`) non leggono mai né la sessione né la query string: sono prerender (ISR) che la CDN serve senza invocare funzioni. Chi è dentro costa una sola richiesta a `/api/me` per pagina; chi non è dentro, niente.
 
-- **URL**: `/events` (statica) · `/events/browse?region=&type=&status=&q=&page=` (viste filtrate, dinamiche, noindex, escluse da `robots.txt`) · `/events/<id>` · `/events/<id>/japan` · `/events/<id>[/japan]/t/<tier>` · `…/t/<tier>/p/<n>` (n ≥ 2) · `/events/<id>/clears?tier=&…` (la lista filtrata dei clear, dinamica, noindex, esclusa da `robots.txt`) · `/cards/<id>` · `/users/<handle>[/p/<n>]`. Si costruiscono solo con `lib/urls.ts` (`eventHref`, `browseHref`, `clearListHref`, `cardHref`, `profileHref`). Un tier che non è dell'evento, `p/1` o una pagina oltre l'ultima sono 404. Su `next start` e su Vercel la prima visita a un URL non prerenderizzato riceve lo shell con 200 e il 404 nello stream (noindex); dalla seconda visita è un 404 vero, dalla cache. `/` porta a `/events` con un 307 (`next.config.ts`). Restano con la query string le pagine per utente: `/events/<id>/submit?tier=` (e `region=japan`) e `/events?account=deleted` dopo la cancellazione dell'account (l'avviso lo legge un'isola client).
+- **URL**: `/events` e `/events/japan` (statiche, le home di Global e Japan) · `/events/browse?region=&type=&status=&q=&page=` (viste filtrate, dinamiche, noindex, escluse da `robots.txt`) · `/events/<id>` · `/events/<id>/japan` · `/events/<id>[/japan]/t/<tier>` · `…/t/<tier>/p/<n>` (n ≥ 2) · `/events/<id>/clears?tier=&…` (la lista filtrata dei clear, dinamica, noindex, esclusa da `robots.txt`) · `/cards/<id>` · `/users/<handle>[/p/<n>]`. Si costruiscono solo con `lib/urls.ts` (`eventHref`, `browseHref`, `clearListHref`, `cardHref`, `profileHref`). Un tier che non è dell'evento, `p/1` o una pagina oltre l'ultima sono 404. Su `next start` e su Vercel la prima visita a un URL non prerenderizzato riceve lo shell con 200 e il 404 nello stream (noindex); dalla seconda visita è un 404 vero, dalla cache. `/` porta a `/events` con un 307 (`next.config.ts`). Restano con la query string le pagine per utente: `/events/<id>/submit?region=&tier=` (la regione c'è sempre, anche global) e `/events?account=deleted` dopo la cancellazione dell'account (l'avviso lo legge un'isola client). Un `?region=global` su una pagina evento la marca per chi ha scelto Japan (sezione "Versione Global/Japan"): la pagina non lo legge, è la stessa voce in cache. `/events`, `/events/japan` e ogni pagina evento hanno il loro `canonical`, quindi `?region=global` e `?account=deleted` non sono doppioni.
 - **Dati**: `lib/cache/*.ts` (`'use cache'` con `cacheLife` e `cacheTag`: `data.ts`, `cards.ts`, `tips.ts`, `filters.ts`, `profiles.ts`) avvolge i moduli di query (`lib/queries.ts`, `lib/clears.ts`, `lib/card-page.ts`, `lib/tips.ts`, `lib/profiles.ts`), che restano senza cache perché i test li importano fuori da Next (lo controlla una guardia in `cache-tags.test.mts`). eslint vieta a `lib/cache/*` di importare `lib/dal`, `lib/auth` e `next/headers`. Tag: `catalog`, `events-list`, `community`, `event:<id>`, `card:<id>`, `profile:<handle>`. Lo stato degli eventi (Ongoing/Ended) scade al prossimo inizio o fine di una run (minimo 5 minuti).
 - **Invalidazione** (`lib/cache/invalidate.ts`): invio, revisione, cancellazione e commento rigenerano subito l'evento (`updateTag`), e invio, revisione e cancellazione anche le carte del clear e il profilo dell'autore; il voto lo segna vecchio senza rigenerare (`revalidateTag` `'max'`): gli altri vedono il voto dopo una visita, chi vota lo vede subito da `/api/me`. Cambio di handle, cancellazione dell'account e sospensione passano da `afterUserChanged`, che raccoglie dal database eventi, carte e handle toccati (sopra 300 id invalida tutto `community`). Mai `revalidatePath('/', 'layout')`.
-- **Chi guarda**: il cookie `dts_signed_in=1` (non segreto, non httpOnly) lo mette better-auth a ogni accesso e lo toglie l'uscita; solo con lui il browser chiama `/api/me` (private, no-store). Header, voto, Edit/Delete, commenti e invio sono isole client (`components/viewer`).
+- **Chi guarda**: il cookie `dts_signed_in=1` (non segreto, non httpOnly) lo mette better-auth a ogni accesso e lo toglie l'uscita; solo con lui il browser chiama `/api/me` (private, no-store). Header, voto, Edit/Delete, commenti e invio sono isole client (`components/viewer`). La versione del sito è il cookie `dts_version` (non segreto, non httpOnly): lo legge lo script del `<head>`, mai una pagina pubblica, e i suoi redirect stanno in `next.config.ts`, cioè sulla CDN. Nessuna pagina cambia col cookie: con il cookie Japan un URL senza versione è un 307 (che non va in cache), e un URL marcato è lo stesso per tutti, quindi niente `Vary`. Chi non ha il cookie non paga niente, chi è su Japan una richiesta in più alla CDN per redirect, mai una funzione.
 - **Import**: in produzione `db/prod/update.mjs` chiama `POST /api/revalidate` (Bearer `CRON_SECRET`, la stessa variabile del cron; serve anche `PROD_SITE_URL`, da mettere nell'ambiente degli script di produzione per la routine a mano). In locale `db:import`, `db:refresh` e `db:demo` finiscono con `npm run cache:clear`; dopo una modifica a mano con psql lancialo tu, altrimenti `next dev` mostra i dati vecchi fino al riavvio. In `next dev` senza `CRON_SECRET` la rotta è aperta.
-- **Build**: legge il database (solo SELECT): fino a 100 eventi Global in corso o in arrivo, fino a 100 carte (le più usate nei clear), i 20 profili con più clear, `/events` e la sitemap (tutti gli eventi e le carte uscite su Global). Sulla macchina di sviluppo dura pochi secondi (6-9 s con la cache di Turbopack, 167 pagine generate). Se Supabase Free è in pausa, il build fallisce. Ogni deploy riparte con la cache vuota.
+- **Build**: legge il database (solo SELECT): fino a 100 eventi Global in corso o in arrivo, fino a 100 carte (le più usate nei clear), i 20 profili con più clear, `/events`, `/events/japan` e la sitemap (tutti gli eventi, `/events/japan` e le carte uscite su Global). Sulla macchina di sviluppo dura pochi secondi (6-9 s con la cache di Turbopack, 167 pagine generate). Se Supabase Free è in pausa, il build fallisce. Ogni deploy riparte con la cache vuota.
 - **Misure** (`test/cpu.sh` su `next start` locale, 200 richieste per classe, ms di CPU per richiesta). "Prima" è la base di partenza, con ogni pagina dinamica; "fase 1" è dopo la cache; "fase 4" è la misura finale prima della messa online, l'8 ottobre 2026, con filtri e profili (stesso metodo, `next build` e `next start -p 3550` su `dokkan_dev`, `CPU_PROFILE_HANDLE=demo_rotation`):
 
   | classe | prima (ogni pagina dinamica) | fase 1 | fase 1, NEXT_CACHE_MEMORY=0 | fase 4 (2026-10-08) |
@@ -2629,7 +2731,7 @@ Per un fork, in breve:
    `npm run prod:migrate -- --yes` (migrazioni e permessi, senza rifare
    l'import). L'ordine rispetto al codice dipende dalla migrazione (sezione
    "Sulle migrazioni"): una colonna che il codice nuovo legge va **prima**
-   del codice (0027, 0028, 0034), un vincolo che il codice di prima non rispetta
+   del codice (0027, 0028, 0034, e la 0035 con la funzione che chiama), un vincolo che il codice di prima non rispetta
    va **subito dopo**, a meno che il codice di prima non scriva mai in
    quel frattempo (la 0033, punto 5).
 2. Le immagini di `public/assets` su un host statico
@@ -2686,7 +2788,12 @@ può fare, e poi il lavoro sui dati e sulle pagine.
    `npm run prod:migrate -- --yes` subito prima del push di questo codice
    (il settimanale è in prova: vedi la sezione della 0033), e lo stesso la
    0034, sempre prima del codice; poi un giro a mano del giornaliero ripara
-   le miniature LR senza cornice (sezione "Le miniature e la cornice"). Nei riepiloghi guarda anche le sezioni "Sources"
+   le miniature LR senza cornice (sezione "Le miniature e la cornice").
+   Anche la 0035 va online prima del codice della versione Global/Japan
+   (`npm run prod:migrate -- --yes`, poi il push), e dopo il deploy vanno
+   fatti i controlli della sezione "Versione Global/Japan" (i redirect
+   compilati dalla CDN, i 307 senza invocazioni, `?region=global` dalla
+   cache). Nei riepiloghi guarda anche le sezioni "Sources"
    (la freschezza del datamine) e "Storage". Japan resta senza finestre
    vere, e 374 eventi Global restano "attivi, fine non nota" (312 del wiki,
    62 del gioco). Le corse di un'area riaperta dopo più di un mese partono
@@ -2728,10 +2835,17 @@ può fare, e poi il lavoro sui dati e sulle pagine.
    testo. Una carta come premio senza miniatura ha il segnaposto.
 5. **L'invio, da rifinire.** Le pagine ci sono (sotto). Mancano la storia
    delle versioni nella pagina (`getClearVersions` è pronta), un modo di
-   riusare le proprie squadre invece di ricomporle, e la ricerca delle
-   carte per chi gioca la versione giapponese (il picker mostra solo le
-   uscite Global; il builder accetta qualsiasi carta).
-6. **Piccole cose lasciate aperte.**
+   riusare le proprie squadre invece di ricomporle. Il picker propone le
+   carte uscite nella versione del clear (le solo giapponesi nei clear
+   Japan); il builder accetta comunque qualsiasi carta.
+6. **La lingua, e il resto della versione Japan.** Il sito è in inglese
+   anche nella versione Japan: il passo dopo è il giapponese sui percorsi
+   `/japan` (sezione "Versione Global/Japan", "La lingua, dopo";
+   `app_user.locale` c'è già). Non fatti per ora: il prerender al build
+   delle pagine Japan degli eventi recenti (`staticEventIds` è solo
+   Global) e le pagine evento Japan nella sitemap (c'è solo
+   `/events/japan`).
+7. **Piccole cose lasciate aperte.**
    - Un commento su un evento dove l'autore non ha altri clear né commenti
      aggiorna il conteggio dei commenti del suo profilo solo alla
      rivalidazione giornaliera: l'azione del commento non invalida

@@ -6,11 +6,14 @@ import { PickerFiltri, type Categoria } from '@/components/builder/picker-filtri
 import { opzioneId, PickerRisultati } from '@/components/builder/picker-risultati'
 import { FILTRI_VUOTI, useCarte, type CartaTrovata, type Filtri } from '@/components/builder/use-carte'
 import { cardHref } from '@/lib/urls'
+import type { Region } from '@/lib/queries'
 
 type Props = {
   /** cosa si sta riempiendo, per il titolo: "Rotation 1, slot 2" */
   titolo: string | null
   categorie: Categoria[]
+  /** la versione del clear: si scelgono le carte uscite li' */
+  reg: Region
   onScegli: (c: CartaTrovata) => void
   onChiudi: () => void
 }
@@ -20,14 +23,14 @@ type Props = {
  * dentro, Escape lo chiude e il focus torna allo slot che l'ha aperto.
  * Sotto i 640px occupa tutto lo schermo.
  */
-export function Picker({ titolo, categorie, onScegli, onChiudi }: Props) {
+export function Picker({ titolo, categorie, reg, onScegli, onChiudi }: Props) {
   const dialogo = useRef<HTMLDialogElement>(null)
   const campoQ = useRef<HTMLInputElement>(null)
   const id = useId()
   const [filtri, setFiltri] = useState<Filtri>(FILTRI_VUOTI)
   const [attiva, setAttiva] = useState(0)
   const aperto = titolo !== null
-  const { ricerca, altre } = useCarte(filtri, aperto)
+  const { ricerca, altre } = useCarte(filtri, aperto, reg)
 
   useEffect(() => {
     const d = dialogo.current

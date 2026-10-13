@@ -7,7 +7,8 @@ import { requireOnboardedUser } from '@/lib/dal'
 import { clearCardIds } from '@/lib/clears'
 import { clearPage } from '@/lib/queries'
 import { afterClearWrite } from '@/lib/cache/invalidate'
-import { clearAnchor, eventHref } from '@/lib/urls'
+import { clearAnchor, eventHref, homeHref } from '@/lib/urls'
+import { versioneRichiesta } from '@/lib/versione/server'
 import { friendlyClearError } from '@/lib/clears/errors'
 import { kickPush } from '@/lib/notify/kick'
 import {
@@ -64,11 +65,20 @@ async function whereIsVersion(versionId: string): Promise<Where | null> {
 // (tagsFor): l'evento subito per invio, revisione, cancellazione e
 // commento; il voto senza rigenerare la pagina nella risposta.
 
-/** Il clear nella pagina del suo tier, alla pagina dove la lista lo mostra. */
+/**
+ * Il clear nella pagina del suo tier, alla pagina dove la lista lo mostra.
+ * explicit: la versione del clear vince su quella scelta nel sito (lib/
+ * versione). Il redirect di un'azione tiene l'URL scritto qui, quindi deve
+ * essere gia' quello giusto: un URL non marcato mostrerebbe a chi ha scelto
+ * Japan la pagina giapponese sotto l'URL Global.
+ */
 async function clearHref(w: Where, clearId: string) {
   const page = (await clearPage(w.tier_id, w.reg, clearId)) ?? 1
-  return eventHref({ id: w.event_id, reg: w.reg, tier: w.tier_id, page }) + clearAnchor(clearId)
+  return eventHref({ id: w.event_id, reg: w.reg, tier: w.tier_id, page, explicit: true }) + clearAnchor(clearId)
 }
+
+/** La home della versione di chi guarda, quando il clear non si trova piu'. */
+const casa = async () => homeHref(await versioneRichiesta())
 
 /** Invia un clear dal builder. Se riesce porta al clear, nella pagina dell'evento. */
 export async function submitClear(_prev: ClearActionState, form: FormData): Promise<ClearActionState> {
@@ -94,7 +104,7 @@ export async function submitClear(_prev: ClearActionState, form: FormData): Prom
   if (w) afterClearWrite('submit', { eventId: w.event_id, cardIds: await clearCardIds(clearId), handles: [user.handle] })
   // il feed degli admin (0032): after() gira anche dopo il redirect
   kickPush()
-  redirect(w ? await clearHref(w, clearId) : '/events')
+  redirect(w ? await clearHref(w, clearId) : await casa())
 }
 
 /**
@@ -120,7 +130,7 @@ export async function reviseClear(_prev: ClearActionState, form: FormData): Prom
   // le carte di tutte le versioni: quelle tolte e quelle nuove
   if (w) afterClearWrite('revise', { eventId: w.event_id, cardIds: await clearCardIds(clearId), handles: [user.handle] })
   kickPush()
-  redirect(w ? await clearHref(w, clearId) : '/events')
+  redirect(w ? await clearHref(w, clearId) : await casa())
 }
 
 /** Cancella un clear dell'utente, con versioni, voti e commenti. */
@@ -139,7 +149,7 @@ export async function deleteClear(_prev: ClearActionState, form: FormData): Prom
   kickPush()
   // Dalla pagina di modifica (un clear nascosto non e' nella lista): si
   // torna all'evento. Il form dice solo se tornare; dove, lo dice il database.
-  if (w && form.get('dopo') === 'evento') redirect(eventHref({ id: w.event_id, reg: w.reg, tier: w.tier_id }))
+  if (w && form.get('dopo') === 'evento') redirect(eventHref({ id: w.event_id, reg: w.reg, tier: w.tier_id, explicit: true }))
   return { ok: true }
 }
 

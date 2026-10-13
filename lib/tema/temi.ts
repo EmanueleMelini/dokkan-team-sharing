@@ -46,6 +46,19 @@ export const TEMI: readonly Tema[] = [
 /** La barra del browser mobile con System: i due sfondi di oggi, per media query. */
 export const BARRA_SISTEMA = { light: '#f3f4f8', dark: '#0f111d' } as const
 
+/**
+ * Il content del theme-color nostro (lo script del <head>, applicaTema):
+ * lo sfondo del tema in maiuscolo, lo stesso colore per il browser. Serve
+ * a non somigliare ai due del layout: React prende come suoi i <meta> gia'
+ * nel documento confrontando content e name, non media, e il nostro sta
+ * per primo. Con Light o Dark (gli stessi colori di BARRA_SISTEMA) si
+ * prendeva il nostro: al primo giro del layout dal server (un'azione che
+ * scrive un cookie, come l'interruttore della versione) React lo toglieva,
+ * e dopo un cambio di tema, gia' tolto, il commit si rompeva su
+ * removeChild. Un test lo controlla (db/test/temi.test.mts).
+ */
+export const coloreBarra = (sfondo: string) => sfondo.toUpperCase()
+
 export const isTemaId = (v: unknown): v is TemaId =>
   typeof v === 'string' && (TEMA_IDS as readonly string[]).includes(v)
 
@@ -80,11 +93,12 @@ export function riconciliaTema(account: TemaId | undefined, locale: TemaId, attu
  * pagina non lampeggia col tema sbagliato. Accetta solo gli id noti (un
  * valore qualunque in localStorage non finisce in un attributo) e mette in
  * testa al <head> un theme-color suo: il primo che corrisponde vince sui
- * due per media query del layout. try/catch: localStorage puo' lanciare
- * (cookie bloccati, navigazione privata).
+ * due per media query del layout (il colore e' coloreBarra, qui sopra).
+ * try/catch: localStorage puo' lanciare (cookie bloccati, navigazione
+ * privata).
  */
 export function scriptTema(): string {
-  const colori = Object.fromEntries(TEMI.filter((t) => t.sfondo).map((t) => [t.id, t.sfondo]))
+  const colori = Object.fromEntries(TEMI.flatMap((t) => (t.sfondo ? [[t.id, coloreBarra(t.sfondo)]] : [])))
   return `(function(){try{var t=localStorage.getItem(${JSON.stringify(TEMA_KEY)}),c=${JSON.stringify(colori)};` +
     `if(!Object.prototype.hasOwnProperty.call(c,t))return;document.documentElement.setAttribute("data-theme",t);` +
     `var m=document.createElement("meta");m.name="theme-color";m.content=c[t];m.setAttribute("data-tema","");` +

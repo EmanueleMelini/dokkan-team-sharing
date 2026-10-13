@@ -8,7 +8,7 @@
 import { readFileSync } from 'node:fs'
 import { db } from '@/lib/db'
 import {
-  BARRA_SISTEMA, TEMA_IDS, TEMA_KEY, TEMI, isTemaId, riconciliaTema, scriptTema, temaDaAccount, temaPerAccount,
+  BARRA_SISTEMA, TEMA_IDS, TEMA_KEY, TEMI, coloreBarra, isTemaId, riconciliaTema, scriptTema, temaDaAccount, temaPerAccount,
 } from '@/lib/tema/temi'
 import { DOMINIO, check, esito, guardia, one, q, stato, utente } from '@/db/test/builder-helpers'
 
@@ -144,6 +144,17 @@ function lista() {
   check('la barra di System usa gli sfondi di Light e Dark',
     BARRA_SISTEMA.light === temiCss.get('light')?.props.get('--sfondo') &&
     BARRA_SISTEMA.dark === temiCss.get('dark')?.props.get('--sfondo'))
+  // Il theme-color nostro non deve essere uguale, come testo, a uno dei due
+  // del layout: React li confronta per content e name (non media) e
+  // prenderebbe il nostro come suo (lib/tema/temi.ts coloreBarra).
+  const sistema: string[] = Object.values(BARRA_SISTEMA)
+  const uguali = TEMI.filter((t) => t.sfondo && sistema.includes(coloreBarra(t.sfondo)))
+  check('il theme-color di ogni tema non e\' scritto come quelli del layout (React lo prenderebbe come suo)',
+    uguali.length === 0, uguali.map((t) => t.id).join())
+  const altri = TEMI.filter((t) => t.sfondo && coloreBarra(t.sfondo).toLowerCase() !== t.sfondo.toLowerCase())
+  check('...ma e\' lo stesso colore', altri.length === 0, altri.map((t) => t.id).join())
+  check('applicaTema scrive lo stesso colore dello script del <head>',
+    /m\.content = coloreBarra\(sfondo\)/.test(readFileSync(new URL('../../lib/tema/client.ts', import.meta.url), 'utf8')))
   check('isTemaId rifiuta il resto', !isTemaId('') && !isTemaId('Dark') && !isTemaId(null) && !isTemaId('__proto__'))
   check('verso l\'account: System e\' null', temaPerAccount('system') === null && temaPerAccount('oled') === 'oled')
   check('dall\'account: null e\' System, assente o sconosciuto non tocca niente',
@@ -188,6 +199,12 @@ function script() {
   const r = eseguiScript('oled')
   check('un tema noto: data-theme e un theme-color in testa', r.tema === 'oled' && r.meta.length === 1 &&
     r.meta[0].name === 'theme-color' && r.meta[0].content === '#000000', JSON.stringify(r))
+  for (const id of ['light', 'dark'] as const) {
+    const x = eseguiScript(id)
+    check(`${id}: il theme-color ha il colore di System, ma scritto in maiuscolo (non quello del layout)`,
+      x.meta.length === 1 && x.meta[0].content === BARRA_SISTEMA[id].toUpperCase() && x.meta[0].content !== BARRA_SISTEMA[id],
+      JSON.stringify(x.meta))
+  }
   for (const v of [null, 'system', 'nope', '"><script>', 'constructor', 'toString']) {
     const x = eseguiScript(v)
     check(`${JSON.stringify(v)}: nessun attributo e nessun meta`, x.tema === undefined && x.meta.length === 0,

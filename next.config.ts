@@ -83,6 +83,48 @@ const unsubscribeHeaders = ['/notifications/unsubscribe', '/api/notifications/un
 // cambia a ogni build.
 const swVersion = (process.env.VERCEL_GIT_COMMIT_SHA ?? `b${Date.now().toString(36)}`).slice(0, 12)
 
+// La versione del sito, Global o Japan (lib/versione/versione.ts). Chi ha
+// scelto Japan ha il cookie dts_version=japan, e un URL che non dice la
+// versione (un link Global, /, la start_url della PWA, quelli delle email
+// dopo /notifications/<id>) lo porta alla stessa pagina giapponese. Sta
+// nel routing, prima di proxy.ts e delle pagine: su Vercel e' una regola
+// della CDN, nessuna funzione, e le pagine restano prerender uguali per
+// tutti (non leggono il cookie, e alla CDN una richiesta col cookie per un
+// URL Global non arriva mai). La query passa (anche _rsc delle navigazioni
+// del client).
+//
+//   - 307 e mai 308: un redirect permanente il browser lo ricorda, e
+//     tornare a Global non funzionerebbe piu';
+//   - un URL che dice gia' la versione vince sempre: un percorso /japan, o
+//     ?region= (global o japan, i link "espliciti" di lib/urls.ts);
+//   - le Server Action (header next-action) non si toccano: un'azione
+//     partita da una scheda vecchia non viene rimandata altrove;
+//   - chi non ha il cookie (Global, chi non ha scelto, i motori) non ne
+//     vede nessuno; il valore e' ancorato (^japan$): japan2 non vale;
+//   - la pagina /p/<n> si perde: nell'altra versione puo' non esserci.
+//
+// Nessuna destinazione ricade in una regola: niente giri. seguiVersione()
+// e' lo specchio di queste regole per i redirect delle Server Action, e
+// db/test/versione.test.mts le prova col valutatore di Next e le confronta.
+const VERSIONE_JAPAN = [{ type: 'cookie' as const, key: 'dts_version', value: 'japan' }]
+const VERSIONE_GIA_DETTA = [{ type: 'query' as const, key: 'region' }, { type: 'header' as const, key: 'next-action' }]
+const ID = ':id(\\d{1,18})'
+const TIER = ':tier(\\d{1,18})'
+const versione = (source: string, destination: string) =>
+  ({ source, destination, permanent: false, has: VERSIONE_JAPAN, missing: VERSIONE_GIA_DETTA })
+const versioneRedirects = [
+  // dritto alla home giapponese, senza passare da /events
+  versione('/', '/events/japan'),
+  versione('/events', '/events/japan'),
+  versione(`/events/${ID}`, '/events/:id/japan'),
+  versione(`/events/${ID}/t/${TIER}`, '/events/:id/japan/t/:tier'),
+  versione(`/events/${ID}/t/${TIER}/p/:n(\\d{1,6})`, '/events/:id/japan/t/:tier'),
+  versione('/events/browse', '/events/browse?region=japan'),
+  versione(`/events/${ID}/clears`, '/events/:id/clears?region=japan'),
+  // solo i link vecchi: submitHref scrive sempre la regione
+  versione(`/events/${ID}/submit`, '/events/:id/submit?region=japan'),
+]
+
 const nextConfig: NextConfig = {
   images: { unoptimized: true },
   poweredByHeader: false,
@@ -93,9 +135,10 @@ const nextConfig: NextConfig = {
   // NEXT_CACHE_MEMORY=0 imita in locale una funzione serverless, dove la
   // cache in memoria non sopravvive fra le richieste (test/cpu.sh).
   ...(process.env.NEXT_CACHE_MEMORY === '0' ? { cacheMaxMemorySize: 0 } : {}),
-  // Il redirect sta nel routing: nessuna funzione per chi apre /.
+  // I redirect stanno nel routing: nessuna funzione per chi apre /. Prima
+  // quelli della versione: con il cookie Japan / va dritto a /events/japan.
   async redirects() {
-    return [{ source: '/', destination: '/events', permanent: false }]
+    return [...versioneRedirects, { source: '/', destination: '/events', permanent: false }]
   },
   async headers() {
     return [{ source: '/:path*', headers: securityHeaders }, ...pwaHeaders, ...unsubscribeHeaders]

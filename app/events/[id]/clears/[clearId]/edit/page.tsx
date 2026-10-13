@@ -34,7 +34,8 @@ export default async function ModificaClear(props: PageProps<'/events/[id]/clear
 
   // la pagina della lista dove il clear sta davvero
   const page = (await clearPage(clear.tier_id, clear.reg, clear.id)) ?? 1
-  const indietro = eventHref({ id, reg: clear.reg, tier: clear.tier_id, page }) + clearAnchor(clear.id)
+  // explicit: la versione del clear, qualunque sia quella scelta nel sito
+  const indietro = eventHref({ id, reg: clear.reg, tier: clear.tier_id, page, explicit: true }) + clearAnchor(clear.id)
   // La ricorrenza del clear resta scelta anche se nel frattempo è finita
   const runs = dati.runs.some((r) => r.id === clear.run_id)
     ? dati.runs
@@ -65,6 +66,7 @@ export default async function ModificaClear(props: PageProps<'/events/[id]/clear
         modo="edit"
         eventId={id}
         tierId={clear.tier_id}
+        reg={clear.reg}
         clearId={clear.id}
         runs={runs}
         categorie={dati.categorie}

@@ -50,7 +50,7 @@ export function OnboardingForm({ next, suggestion, reg }: Props) {
             </label>
           ))}
         </div>
-        <p className="mt-1 text-[11px] text-tenue">Events and dates follow this version. You can see the other one too.</p>
+        <p className="mt-1 text-[11px] text-tenue">Events, dates and clears follow this version. You can switch any time from the menu.</p>
       </fieldset>
 
       {state.error && (

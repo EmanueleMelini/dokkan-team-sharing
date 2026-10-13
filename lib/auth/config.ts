@@ -8,9 +8,17 @@ import type { AuthEnv } from '@/lib/auth/env'
 import { FRESH_SESSION_SECONDS, isFreshSession } from '@/lib/auth/fresh'
 import { mayEmail, rateLimitStorage } from '@/lib/auth/rate-limit'
 import { HINT_COOKIE, hintOptions } from '@/lib/viewer/hint'
+import { cookieVersione } from '@/lib/versione/versione'
 
 export const MAGIC_LINK_TTL_SECONDS = 600
 export const SESSION_DAYS = 30
+
+/**
+ * Le rotte di better-auth dove nasce la sessione di un accesso: il magic
+ * link, il ritorno da un provider OAuth e il suo accesso con un idToken.
+ * Le altre che danno una sessione nuova la rinnovano o la riscrivono.
+ */
+export const ACCESSI: ReadonlySet<string> = new Set(['/magic-link/verify', '/callback/:id', '/sign-in/social'])
 
 type Options = {
   env: AuthEnv
@@ -181,10 +189,26 @@ export function createAuth({ env, sendMagicLink, plugins = [] }: Options) {
       // nuova (magic link, callback OAuth) e muore con l'uscita. Le pagine in
       // cache non leggono la sessione: e' lui a dire al browser di chiedere
       // /api/me. Dura quanto la sessione; /api/me lo rinnova a ogni visita.
+      //
+      // La versione del sito (dts_version, lib/versione): a un accesso vero
+      // di un account completo vince l'account (app_user.reg), come il
+      // tema; un account nuovo o senza handle lascia quella del dispositivo,
+      // che /welcome propone. L'uscita non la tocca: resta del dispositivo.
+      // Solo agli accessi (ACCESSI): newSession c'e' anche quando
+      // /get-session rinnova la sessione (una volta al giorno, anche da
+      // /api/me e dalle azioni) o /update-user la riscrive, e li' una
+      // risposta partita prima di un cambio lo disfarebbe.
       after: createAuthMiddleware(async (ctx) => {
         const opzioni = hintOptions(env.baseURL, SESSION_DAYS * 24 * 60 * 60)
         if (ctx.path === '/sign-out') ctx.setCookie(HINT_COOKIE, '', { ...opzioni, maxAge: 0 })
-        else if (ctx.context.newSession) ctx.setCookie(HINT_COOKIE, '1', opzioni)
+        else if (ctx.context.newSession) {
+          ctx.setCookie(HINT_COOKIE, '1', opzioni)
+          const u = ctx.context.newSession.user as { onboardedAt?: unknown; reg?: unknown }
+          if (ACCESSI.has(ctx.path) && u.onboardedAt != null) {
+            const c = cookieVersione(u.reg === 'japan' ? 'japan' : 'global', env.baseURL)
+            ctx.setCookie(c.name, c.value, c.options)
+          }
+        }
       }),
     },
 

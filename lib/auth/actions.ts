@@ -2,12 +2,12 @@
 
 import { revalidatePath } from 'next/cache'
 import { cookies, headers } from 'next/headers'
-import { redirect } from 'next/navigation'
+import { RedirectType, redirect } from 'next/navigation'
 import { DatabaseError } from 'pg'
-import { sql } from '@/lib/db'
+import { sql, sqlOne } from '@/lib/db'
 import { auth } from '@/lib/auth/auth'
 import { friendlyAccountError, handleMatches } from '@/lib/auth/account'
-import { PROVIDERS } from '@/lib/auth/env'
+import { PROVIDERS, readAuthEnv } from '@/lib/auth/env'
 import { safeNext } from '@/lib/auth/safe-next'
 import { currentUser, requireFreshUser, requireOnboardedUser, requireUser } from '@/lib/dal'
 import { afterUserChanged, collectUserFootprint, invalidateProfiles, invalidateUser } from '@/lib/cache/invalidate'
@@ -17,6 +17,9 @@ import { soloGiorno } from '@/lib/date'
 import { HINT_COOKIE } from '@/lib/viewer/hint'
 import { isTemaId, temaPerAccount } from '@/lib/tema/temi'
 import { kickPush } from '@/lib/notify/kick'
+import { cambiaVersione } from '@/lib/versione/cambio'
+import { versioneRichiesta } from '@/lib/versione/server'
+import { cookieVersione, seguiVersione, type CookieVersione } from '@/lib/versione/versione'
 
 // Le Server Action dell'accesso. Ognuna si comporta come un endpoint
 // pubblico (una POST diretta la raggiunge): rilegge la sessione da sola
@@ -32,20 +35,35 @@ async function togliIndizio() {
   ;(await cookies()).delete(HINT_COOKIE)
 }
 
-/** Esce: cancella la riga della sessione e il cookie, poi torna alla home. */
+/** Il cookie della versione (lib/versione) nella risposta. */
+async function scriviVersione(c: CookieVersione) {
+  ;(await cookies()).set(c.name, c.value, c.options)
+}
+
+/**
+ * Esce: cancella la riga della sessione e il cookie, poi torna alla home.
+ * La versione del sito resta: e' una scelta del dispositivo, come il tema.
+ * La home e' quella della versione (seguiVersione): il redirect di
+ * un'azione tiene l'URL scritto qui, e /events mostrerebbe la lista
+ * giapponese sotto l'URL di Global.
+ */
 export async function signOutAction() {
   await auth.api.signOut({ headers: await headers() })
   // Anche l'hook di better-auth lo toglie; qui resta vero se l'uscita
   // avviene senza passare dalla sua rotta HTTP.
   await togliIndizio()
-  redirect('/events')
+  redirect(seguiVersione('/events', await versioneRichiesta()))
 }
 
 export type OnboardingState = { error?: string; handle?: string; reg?: string }
 
 const HANDLE = /^[A-Za-z0-9_]{3,24}$/
 
-/** /welcome: handle e regione, salvati da complete_onboarding (0014). */
+/**
+ * /welcome: handle e regione, salvati da complete_onboarding (0014). La
+ * regione e' anche la versione del sito (lib/versione): il cookie la segue,
+ * e si torna a next gia' risolto per quella versione.
+ */
 export async function completeOnboardingAction(
   _prev: OnboardingState,
   form: FormData,
@@ -56,7 +74,7 @@ export async function completeOnboardingAction(
   const reg = String(form.get('reg') ?? '')
   const echo = { handle, reg }
 
-  if (user.onboarded) redirect(next)
+  if (user.onboarded) redirect(seguiVersione(next, await versioneRichiesta()))
   // Lo stesso controllo lo rifa' il database: qui serve solo a rispondere
   // con una frase chiara senza un giro su Postgres.
   if (!HANDLE.test(handle)) {
@@ -76,9 +94,12 @@ export async function completeOnboardingAction(
     const msg = onboardingError(e)
     if (msg !== 'done') return { ...echo, error: msg }
   }
+  // 'done' (un secondo invio dello stesso form) arriva qui come la prima
+  // volta: la scelta del form vale anche per il dispositivo.
+  await scriviVersione(cookieVersione(reg, readAuthEnv().baseURL))
   // L'header passa da "Finish setup" all'handle da solo: il provider del
   // client rilegge /api/me al cambio di pagina finche' l'utente e' in setup.
-  redirect(next)
+  redirect(seguiVersione(next, reg))
 }
 
 function onboardingError(e: unknown): string {
@@ -158,7 +179,8 @@ export async function deleteAccountAction(_prev: AccountState, form: FormData): 
   invalidateUser(tracce)
   await auth.api.signOut({ headers: await headers() })
   await togliIndizio()
-  redirect('/events?account=deleted')
+  // La versione del sito resta sul dispositivo, come all'uscita.
+  redirect(seguiVersione('/events?account=deleted', await versioneRichiesta()))
 }
 
 // ---------------------------------------------------------------------
@@ -220,6 +242,45 @@ export async function setThemeAction(theme: string): Promise<ThemeState> {
     throw e
   }
   return { saved: true }
+}
+
+// ---------------------------------------------------------------------
+//  La versione del sito: Global o Japan (lib/versione, 0035)
+// ---------------------------------------------------------------------
+
+/** saved: dove e' rimasta la scelta (l'account, o solo questo dispositivo). */
+export type VersionState = { saved?: 'account' | 'device'; error?: string }
+
+/**
+ * L'interruttore Global/Japan (menu, header, Settings). Chiunque puo'
+ * usarlo: il cookie dts_version vale per il dispositivo, e chi ha un
+ * account completo lo ritrova sugli altri (set_region, app_user.reg; anche
+ * da sospeso, e' una preferenza). qui e' la pagina da cui si parte
+ * (pathname e query): se ha un gemello nell'altra versione ci si va con un
+ * replace, altrimenti la pagina resta e cambia solo quello che segue
+ * data-reg. null quando si resta comunque (la pagina e' gia' della
+ * versione scelta: lib/versione/interruttore.ts quiPerCambio). Il
+ * redirect va gia' all'URL della versione nuova (gemello): vedi
+ * seguiVersione.
+ *
+ * Niente sessione fresca e niente /login, come per il tema: un cambio di
+ * versione non deve mai portare altrove.
+ */
+export async function setVersionAction(v: string, qui: string | null): Promise<VersionState> {
+  const [user, jar] = await Promise.all([currentUser(), cookies()])
+  const esito = await cambiaVersione(v, qui, readAuthEnv().baseURL, {
+    utente: user,
+    salva: async (id, reg) =>
+      (await sqlOne<{ changed: boolean }>('select set_region($1::uuid, $2::region) as changed', [id, reg]))?.changed === true,
+    // "Plays Global/Japan" sul profilo pubblico
+    invalida: (handle) => invalidateProfiles([handle]),
+    scrivi: (c) => { jar.set(c.name, c.value, c.options) },
+    utenteSparito: (e) => e instanceof DatabaseError && e.constraint === 'user_not_found',
+  })
+  if ('error' in esito) return { error: esito.error }
+  // redirect-versione: il gemello (gemello()), gia' l'URL della versione nuova
+  if (esito.vai) redirect(esito.vai, RedirectType.replace)
+  return { saved: esito.saved }
 }
 
 // ---------------------------------------------------------------------

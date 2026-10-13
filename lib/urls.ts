@@ -20,12 +20,23 @@ export const PAGINA_MAX = 100_000
 
 export type EventView = { reg: Region; tier: string | null; page: number }
 
-/** /events/<id>[/japan][/t/<tier>[/p/<n>]]. La pagina vale solo con un tier. */
-export function eventHref({ id, reg = 'global', tier = null, page = 1 }: {
+/**
+ * /events/<id>[/japan][/t/<tier>[/p/<n>]]. La pagina vale solo con un tier.
+ *
+ * explicit: il link dice la versione anche per Global (?region=global),
+ * cosi' chi ha scelto Japan (il cookie dts_version, lib/versione) non viene
+ * portato alla pagina giapponese dai redirect di next.config.ts. Serve ai
+ * link verso un clear preciso (l'ancora #clear-N attraverserebbe il 307 e
+ * finirebbe su un tier dell'altra versione) e a quelli che cambiano
+ * versione apposta. La pagina non legge la query: e' la stessa voce in
+ * cache, e il canonical resta senza. Per Japan il percorso /japan basta.
+ */
+export function eventHref({ id, reg = 'global', tier = null, page = 1, explicit = false }: {
   id: string
   reg?: Region
   tier?: string | null
   page?: number
+  explicit?: boolean
 }): string {
   let href = `/events/${id}`
   if (reg === 'japan') href += '/japan'
@@ -33,6 +44,7 @@ export function eventHref({ id, reg = 'global', tier = null, page = 1 }: {
     href += `/t/${tier}`
     if (page > 1) href += `/p/${Math.min(Math.trunc(page), PAGINA_MAX)}`
   }
+  if (explicit && reg !== 'japan') href += '?region=global'
   return href
 }
 
@@ -64,10 +76,13 @@ export type BrowseFilters = {
   page?: number
 }
 
+/** La home degli eventi di una versione: due pagine statiche, /events e /events/japan. */
+export const homeHref = (reg: Region = 'global') => (reg === 'japan' ? '/events/japan' : '/events')
+
 /**
- * La lista filtrata. Senza filtri e' /events, la pagina statica; con
- * qualsiasi filtro e' /events/browse con gli stessi parametri di prima
- * (region solo se japan, page solo da 2).
+ * La lista filtrata. Senza filtri e' la home della versione (/events o
+ * /events/japan, statiche); con qualsiasi filtro e' /events/browse con gli
+ * stessi parametri di prima (region solo se japan, page solo da 2).
  */
 export function browseHref({ reg = 'global', kind = null, status = null, search = null, page = 1 }: BrowseFilters = {}): string {
   const p = new URLSearchParams()
@@ -77,12 +92,17 @@ export function browseHref({ reg = 'global', kind = null, status = null, search 
   if (search) p.set('q', search)
   if (page > 1) p.set('page', String(page))
   const s = p.toString()
-  return s ? `/events/browse?${s}` : '/events'
+  return s && s !== 'region=japan' ? `/events/browse?${s}` : homeHref(reg)
 }
 
-/** Il builder di un tier: resta con la query string, e' per utente e dinamico. */
+/**
+ * Il builder di un tier: resta con la query string, e' per utente e
+ * dinamico. La regione c'e' sempre, anche global: il bottone sta su pagine
+ * in cache uguali per tutti, e il builder deve aprire le run della pagina
+ * da cui si parte, non quelle della versione scelta nel sito.
+ */
 export function submitHref(id: string, reg: Region, tier: string): string {
-  const p = new URLSearchParams({ ...(reg === 'japan' ? { region: reg } : {}), tier })
+  const p = new URLSearchParams({ region: reg, tier })
   return `/events/${id}/submit?${p}`
 }
 

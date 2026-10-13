@@ -5,6 +5,7 @@ import {
   CARD_CLASSES, CARD_RARITIES, CARD_SEARCH_MAX, CARD_TYPES, searchCards,
   type CardClass, type CardRarity, type CardType,
 } from '@/lib/cards'
+import type { Region } from '@/lib/queries'
 
 // La ricerca del picker delle carte: pubblica (sono dati del gioco, uguali
 // per tutti) e in sola lettura. Parametri sbagliati danno 400 e non una
@@ -23,6 +24,8 @@ function intParam(v: string | null, max: number): number | null | undefined {
   return n <= max ? n : undefined
 }
 
+const REGIONI: readonly Region[] = ['global', 'japan']
+
 const bad = (error: string) =>
   Response.json({ error }, { status: 400, headers: { 'Cache-Control': 'no-store' } })
 
@@ -35,14 +38,18 @@ export async function GET(request: NextRequest) {
   const rarity = oneOf<CardRarity>(CARD_RARITIES, sp.get('rarity'))
   const category = intParam(sp.get('category'), 32767)
   const offset = intParam(sp.get('offset'), 10_000)
+  // la versione del clear (il builder la manda solo per Japan): Global per
+  // difetto, cosi' le chiavi della CDN di Global restano quelle di prima
+  const reg = oneOf<Region>(REGIONI, sp.get('reg'))
   if (type === undefined) return bad(`type must be one of ${CARD_TYPES.join(', ')}`)
   if (cls === undefined) return bad(`class must be one of ${CARD_CLASSES.join(', ')}`)
   if (rarity === undefined) return bad(`rarity must be one of ${CARD_RARITIES.join(', ')}`)
   if (category === undefined) return bad('category must be a category id')
   if (offset === undefined) return bad('offset must be a number from 0 to 10000')
+  if (reg === undefined) return bad(`reg must be one of ${REGIONI.join(', ')}`)
 
   const hits = await searchCards({
-    q, type, class: cls, rarity, category, offset: offset ?? 0, limit: CARD_SEARCH_MAX,
+    q, type, class: cls, rarity, category, reg: reg ?? 'global', offset: offset ?? 0, limit: CARD_SEARCH_MAX,
   })
   const total = hits[0]?.total ?? 0
   const from = offset ?? 0
