@@ -144,7 +144,10 @@ verifica_404 "admin: il registro" /admin/log
 # porta alla base con un 308; un id che non e' una carta e' un 404 vero.
 echo "la pagina di una carta"
 verifica "una carta" /cards/1032310 200 'Third Eye Gomah' "$ERRORE"
-verifica "una carta senza artwork ne' testi (solo datamine)" /cards/1031350 200 'Artwork not available yet' "$ERRORE"
+# Una carta presa dal gioco (Buu (Kid) LR): finche' il wiki non ha la sua
+# immagine mostra il segnaposto, poi l'artwork. Vanno bene tutte e due: il
+# segnaposto lo verificano i suoi test, qui conta che la pagina ci sia.
+verifica "una carta presa dal gioco" /cards/1034150 200 'Artwork not available yet|Buu \(Kid\)' "$ERRORE"
 verifica_404 "carta: id non numerico" /cards/abc
 verifica_404 "carta: id che non esiste" /cards/99999999
 verifica_404 "carta: zeri iniziali" /cards/01032310

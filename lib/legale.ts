@@ -7,8 +7,8 @@ export const LEGALE = {
   titolare: 'Emanuele Melini',
   paese: 'Italy',
   contatto: 'privacy@emanuelemelini.dev',
-  sito: 'dokkants.emanuelemelini.dev',
-  aggiornato: 'October 10, 2026',
+  sito: 'dokkants.app',
+  aggiornato: 'October 13, 2026',
   etaMinima: 16,
   /** dopo quanti giorni si cancellano le segnalazioni chiuse (purge_resolved_reports, 0024) */
   giorniSegnalazioni: 180,

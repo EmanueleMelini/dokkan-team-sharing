@@ -2637,20 +2637,26 @@ Deciso: tutto sui piani gratuiti, senza carta da nessuna parte. Superare
 una quota ferma un servizio invece di addebitarlo, e il codice è scritto
 per non arrivarci.
 
-- **App** su Vercel Hobby (`https://dokkants.emanuelemelini.dev`, CNAME su
-  Cloudflare in "DNS only"), funzioni in `fra1` (`vercel.json`), accanto al
-  database.
+- **App** su Vercel Hobby (`https://dokkants.app`, CNAME sull'apex con il
+  flattening di Cloudflare, in "DNS only"; `www` porta all'apex con un 308),
+  funzioni in `fra1` (`vercel.json`), accanto al database. Il dominio di
+  prima, `dokkants.emanuelemelini.dev`, resta su Vercel solo come redirect
+  308 verso lo stesso percorso su `dokkants.app`.
 - **Database** su Supabase Free a Francoforte. A runtime `DATABASE_URL` è il
   pooler Supavisor in **transaction mode** (porta 6543); migrazioni e
   restore passano dalla connessione diretta o di sessione. Il codice non usa
   niente di legato alla sessione (SET, LISTEN, lock di sessione): i lock
   sono `pg_advisory_xact_lock`, dentro la transazione.
-- **Immagini** su Cloudflare Pages (`https://dokkants-assets.emanuelemelini.dev`),
+- **Immagini** su Cloudflare Pages (`https://assets.dokkants.app`; il dominio di
+  prima `dokkants-assets.emanuelemelini.dev` resta collegato, per le pagine
+  e le email gia' in giro),
   caricate con `wrangler pages deploy public/assets`. `ASSET_BASE_URL` punta
   lì; il database non cambia.
-- **Email** da Resend (`login@dokkants.emanuelemelini.dev`), con i record
-  sul sottodominio `send.dokkants…` e `resend._domainkey.dokkants…`: non
-  toccano l'Email Routing dell'apex.
+- **Email** da Resend (il mittente di `EMAIL_FROM`, un indirizzo
+  `@dokkants.app`), con i record sul sottodominio `send.dokkants.app` e
+  `resend._domainkey.dokkants.app`: non toccano l'Email Routing dell'apex.
+  La chiave API di Resend e' limitata al dominio da cui si spedisce: con un
+  dominio nuovo va cambiata anche lei.
 
 **Cosa fa il codice per starci dentro.**
 
