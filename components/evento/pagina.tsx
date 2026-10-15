@@ -24,7 +24,7 @@ import { Tips } from '@/components/tips/tips'
 import { listTipsCached } from '@/lib/cache/tips'
 import { extraClear } from '@/lib/clears/vista'
 import { DIFFICOLTA, nomeTier } from '@/lib/livelli'
-import { Missioni } from '@/components/missioni'
+import { LinkMissioni, Missioni } from '@/components/missioni'
 import { ConteggioClear } from '@/components/conteggio-clear'
 import { Paginazione } from '@/components/paginazione'
 import { FiltriClear, type OpzioniFiltri } from '@/components/clears/filtri-clear'
@@ -33,6 +33,7 @@ import { SPIEGA_ORDINE, VUOTI, filtriAttivi, soloOrdine, type FiltriClear as Fil
 import { datiFiltri } from '@/lib/clears/filtri-pagina'
 import { CorniceCarta, SegnapostoEvento } from '@/components/segnaposto'
 import { segnapostoEvento } from '@/lib/segnaposto'
+import { relRobots } from '@/lib/robots'
 
 // Il corpo della pagina di un evento, per tutte le sue viste
 // (/events/<id>[/japan][/t/<tier>[/p/<n>]]). Legge solo dati in cache e
@@ -169,6 +170,7 @@ export async function EventPage({ id, view, filtri }: { id: string; view: EventV
   const nFiltri = filtriAttivi(f)
 
   // Le missioni ci sono solo per Global: il datamine è quello della versione Global.
+  // Sulle viste di un tier se ne usa solo il numero (il link alla sezione, in fondo).
   // Le tip non hanno regione (gli stage nemmeno): le stesse in Global e Japan.
   const offset = (pagina - 1) * CLEAR_PER_PAGINA
   const altra = altraVersione(reg)
@@ -295,6 +297,8 @@ export async function EventPage({ id, view, filtri }: { id: string; view: EventV
             <p className={`mt-1.5 text-[13px] ${classeVersione(reg)}`}>
               <Link
                 href={versioneAltra}
+                rel={relRobots(versioneAltra)}
+                prefetch={false}
                 className="inline-flex items-center gap-1 text-testo underline decoration-oro-linea underline-offset-2 hover:text-inchiostro"
               >
                 {linkAltraVersione(reg)}
@@ -306,7 +310,12 @@ export async function EventPage({ id, view, filtri }: { id: string; view: EventV
           {legami.normal && (
             <p className="mt-2 text-[13px] text-testo">
               Super version of{' '}
-              <Link href={linkEvento(legami.normal.id)} className="underline decoration-oro-linea underline-offset-2 hover:text-inchiostro">
+              <Link
+                href={linkEvento(legami.normal.id)}
+                rel={relRobots(linkEvento(legami.normal.id))}
+                prefetch={false}
+                className="underline decoration-oro-linea underline-offset-2 hover:text-inchiostro"
+              >
                 {legami.normal.name}
               </Link>
             </p>
@@ -314,7 +323,12 @@ export async function EventPage({ id, view, filtri }: { id: string; view: EventV
           {legami.supers.map((s) => (
             <p key={s.id} className="mt-2 text-[13px] text-testo">
               Super version:{' '}
-              <Link href={linkEvento(s.id)} className="underline decoration-oro-linea underline-offset-2 hover:text-inchiostro">
+              <Link
+                href={linkEvento(s.id)}
+                rel={relRobots(linkEvento(s.id))}
+                prefetch={false}
+                className="underline decoration-oro-linea underline-offset-2 hover:text-inchiostro"
+              >
                 {s.name}
               </Link>
             </p>
@@ -350,6 +364,7 @@ export async function EventPage({ id, view, filtri }: { id: string; view: EventV
                     <Link
                       key={f}
                       href={href(livelli[0].tier_id)}
+                      rel={relRobots(href(livelli[0].tier_id))}
                       prefetch={false}
                       scroll={false}
                       aria-current={attiva ? 'true' : undefined}
@@ -379,6 +394,7 @@ export async function EventPage({ id, view, filtri }: { id: string; view: EventV
                     <li key={s.tier_id}>
                       <Link
                         href={href(s.tier_id)}
+                        rel={relRobots(href(s.tier_id))}
                         prefetch={false}
                         scroll={false}
                         aria-current={attivo ? 'page' : undefined}
@@ -429,6 +445,7 @@ export async function EventPage({ id, view, filtri }: { id: string; view: EventV
                           <Link
                             key={s.tier_id}
                             href={href(s.tier_id)}
+                            rel={relRobots(href(s.tier_id))}
                             prefetch={false}
                             scroll={false}
                             aria-current={attivo ? 'page' : undefined}
@@ -570,6 +587,8 @@ export async function EventPage({ id, view, filtri }: { id: string; view: EventV
                     </p>
                     <Link
                       href={href(scelto!.tier_id)}
+                      rel={relRobots(href(scelto!.tier_id))}
+                      prefetch={false}
                       className="inline-block mt-4 px-3 py-1.5 text-[13px] font-medium rounded-[var(--raggio)] bg-inchiostro text-sfondo hover:opacity-90 transition-opacity"
                     >
                       Go to the first page
@@ -608,7 +627,11 @@ export async function EventPage({ id, view, filtri }: { id: string; view: EventV
         </div>
       )}
 
-      <Missioni missioni={missioni} />
+      {/* Le missioni solo sulla pagina dell'evento. Sono le stesse per ogni
+          tier, e ripetute su ogni vista erano la parte piu' pesante delle
+          pagine in cache (un evento ne ha 462, su 36 URL): sulle viste di un
+          tier resta un link alla loro sezione. */}
+      {view.tier ? <LinkMissioni eventId={e.id} n={missioni.length} /> : <Missioni missioni={missioni} />}
     </div>
   )
 }

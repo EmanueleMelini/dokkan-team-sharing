@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { ArrowRight, Globe } from '@phosphor-icons/react/dist/ssr'
 import { UsaVersione } from '@/components/versione/usa-versione'
 import { avvisoVersione } from '@/lib/versione/interruttore'
+import { relRobots } from '@/lib/robots'
 import type { Versione } from '@/lib/versione/versione'
 
 /**
@@ -18,7 +19,9 @@ import type { Versione } from '@/lib/versione/versione'
  *
  * altra: la pagina gemella (gemello() o browseHref). Su una pagina Japan e'
  * l'URL Global senza marca: l'avviso lo vede solo chi e' su Global, che
- * non viene rimandato. Su una pagina Global e' il percorso /japan, marcato.
+ * non viene rimandato. Su una pagina Global e' il percorso /japan, marcato,
+ * e nofollow: robots.txt esclude le pagine Japan degli eventi (lib/robots.ts),
+ * e questo link e' nell'HTML di ogni pagina Global.
  */
 export function AvvisoVersione({ reg, altra, className = '' }: { reg: Versione; altra: string | null; className?: string }) {
   const a = avvisoVersione(reg)
@@ -37,6 +40,7 @@ export function AvvisoVersione({ reg, altra, className = '' }: { reg: Versione; 
             {altra && (
               <Link
                 href={altra}
+                rel={relRobots(altra)}
                 prefetch={false}
                 className="inline-flex items-center gap-1 font-medium text-inchiostro underline decoration-oro-linea underline-offset-2 hover:decoration-oro"
               >

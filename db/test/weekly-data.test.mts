@@ -22,7 +22,12 @@ import { hasChanged, lastOkRun } from '../prod/last-run.mjs'
 import { missingAssets, missingMarkdown } from '../prod/missing-assets.mjs'
 import { PIPELINE_IMAGES } from '../prod/pipeline.mjs'
 import { treeGuard, verifyFile, safePath } from '../prod/mirror-assets.mjs'
-import { checkDatamine, checkPages } from '../prod/sanity.mjs'
+import { CSV_MIN_BYTES, checkDatamine, checkDatamineDir, checkPages } from '../prod/sanity.mjs'
+import {
+  COLLEGAMENTI_ASSET, RINFRESCO_CHIUSO, TAG_PER_RICHIESTA, TAG_TETTO, TUTTO, cambiamenti, daRecuperare, giroPrecedente, gruppi, legamiAsset,
+  pianoRinfresco, rinfresca,
+} from '../prod/rinfresco.mjs'
+import { TAG_MAX } from '@/lib/cache/revalidate'
 import { TABLES, unclassified } from '../prod/tables.mjs'
 import { headersFor, resolveCommit } from '../import/datamine-source.mjs'
 import { ASSET_ADOTTA_SQL, ASSET_SCARICA_SQL, selectJobs, siMuove } from '../import/asset-select.mjs'
@@ -36,6 +41,11 @@ function check(nome: string, ok: boolean, dettaglio = '') {
   console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${nome}${dettaglio ? `  (${dettaglio})` : ''}`)
   if (ok) passes++
   else fails++
+}
+const mostra = (v: unknown) => JSON.stringify(v) ?? String(v)
+function vale<T>(nome: string, got: T, atteso: T) {
+  const ok = mostra(got) === mostra(atteso)
+  check(nome, ok, `= ${mostra(got)}${ok ? '' : `, atteso ${mostra(atteso)}`}`)
 }
 
 const LIMITS = JSON.parse(readFileSync('db/prod/limits.json', 'utf8'))
@@ -149,9 +159,45 @@ check('pagine del wiki: -3% non va', checkPages('wiki cards', 1000, 970).length 
 check('pagine del wiki: -1% va bene', checkPages('wiki cards', 1000, 990).length === 0)
 check('pagine del wiki: senza cache precedente basta che ci siano', checkPages('w', null, 5).length === 0 &&
   checkPages('w', null, null).length === 1 && checkPages('w', null, 0).length === 1)
-check('datamine: un CSV mancante non va', checkDatamine({ cards: 100 }, { cards: undefined }, ['cards']).length === 1)
-check('datamine: un CSV a meta\' non va', checkDatamine({ cards: 100 }, { cards: 50 }, ['cards']).length === 1)
-check('datamine: al 95% va bene', checkDatamine({ cards: 100 }, { cards: 95 }, ['cards']).length === 0)
+check('datamine: un CSV mancante non va', checkDatamine({ cards: 100_000 }, { cards: undefined }, ['cards']).length === 1)
+check('datamine: un CSV a meta\' non va', checkDatamine({ cards: 100_000 }, { cards: 50_000 }, ['cards']).length === 1)
+check('datamine: al 95% va bene', checkDatamine({ cards: 100_000 }, { cards: 95_000 }, ['cards']).length === 0)
+// Le tabelle piccole cambiano a salti veri (points.csv il 2026-10-15: da
+// 777 a 99 byte, 28 varianti di punti mai usate tolte dal datamine): il 90%
+// vale solo da CSV_MIN_BYTES in su. Mancante o vuota resta un errore.
+check('datamine: CSV_MIN_BYTES e\' 4 KB', CSV_MIN_BYTES === 4096)
+check('datamine: points.csv da 777 a 99 byte va bene', checkDatamine({ points: 777 }, { points: 99 }, ['points']).length === 0)
+check('datamine: una tabella piccola mancante o di 0 byte non va', checkDatamine({ points: 777 }, { points: undefined }, ['points']).length === 1 &&
+  checkDatamine({ points: 777 }, { points: 0 }, ['points']).length === 1)
+check('datamine: una tabella piccola con la sola intestazione non va',
+  checkDatamine({ points: 777 }, { points: 15 }, ['points'], { senzaRighe: ['points'] }).length === 1)
+check('datamine: al confine, 4096 byte la volta prima: il 90% vale', checkDatamine({ t: 4096 }, { t: 3000 }, ['t']).length === 1 &&
+  checkDatamine({ t: 4095 }, { t: 100 }, ['t']).length === 0)
+{
+  // sulle cartelle vere: la cache di adesso contro quella della volta prima
+  const base = mkdtempSync(join(tmpdir(), 'sanity-'))
+  try {
+    const scrivi = (dir: string, t: string, testo: string) => {
+      mkdirSync(join(base, dir, 'datamine'), { recursive: true })
+      writeFileSync(join(base, dir, 'datamine', `${t}.csv`), testo)
+    }
+    const righe = (n: number) => 'id,type,amount\n' + Array.from({ length: n }, (_, i) => `${i + 1},Point::Stone,${i}`).join('\n') + '\n'
+    scrivi('prev', 'points', righe(40))
+    scrivi('prev', 'cards', 'id,name\n' + 'x'.repeat(10_000) + '\n')
+    scrivi('cur', 'points', righe(4))
+    scrivi('cur', 'cards', 'id,name\n' + 'x'.repeat(9_500) + '\n')
+    const ok = checkDatamineDir(join(base, 'prev'), join(base, 'cur'), ['points', 'cards'])
+    check('cartelle: points da 40 righe a 4 e cards al 95%: va bene', ok.length === 0, ok.join('; '))
+    scrivi('cur', 'points', 'id,type,amount\n')
+    const vuota = checkDatamineDir(join(base, 'prev'), join(base, 'cur'), ['points', 'cards'])
+    check('cartelle: points con la sola intestazione: missing or empty', vuota.length === 1 && /points\.csv: missing or empty/.test(vuota[0]), vuota.join('; '))
+    scrivi('cur', 'points', righe(4))
+    scrivi('cur', 'cards', 'id,name\n' + 'x'.repeat(4_000) + '\n')
+    const meta = checkDatamineDir(join(base, 'prev'), join(base, 'cur'), ['points', 'cards'])
+    check('cartelle: cards dimezzato: under 90%', meta.length === 1 && /cards\.csv: .*under 90%/.test(meta[0]), meta.join('; '))
+    check('cartelle: senza la volta prima basta che ci siano', checkDatamineDir(null, join(base, 'cur'), ['points', 'cards']).length === 0)
+  } finally { rmSync(base, { recursive: true, force: true }) }
+}
 
 console.log('fetch-datamine: il commit e il token')
 {
@@ -261,6 +307,99 @@ console.log('last-run: niente di nuovo?')
   check('stesso commit e stesso wiki: no', !hasChanged({ datamine_commit: 'c1', wiki_sha: 'w1' }, inp).changed)
   check('commit nuovo: si', hasChanged({ datamine_commit: 'c0', wiki_sha: 'w1' }, inp).changed)
   check('wiki cambiato: si', hasChanged({ datamine_commit: 'c1', wiki_sha: 'w0' }, inp).changed)
+}
+
+console.log('rinfresco.mjs: cosa rinfrescare dopo un giro')
+{
+  check('TAG_PER_RICHIESTA e\' TAG_MAX di /api/revalidate', TAG_PER_RICHIESTA === TAG_MAX, `${TAG_PER_RICHIESTA} / ${TAG_MAX}`)
+  const base = {
+    card: content({ '1': 'a', '2': 'b' }), event: content({ '9': 'e' }),
+    asset: content({ 'cards/1/thumb.webp': 'x' }), stage: content({ '5': 's' }),
+  }
+  vale('due fotografie uguali: niente', cambiamenti(snap(base), snap(base)), {})
+  vale('le chiavi cambiate, aggiunte e tolte, tabella per tabella',
+    cambiamenti(snap(base), snap({ ...base, card: content({ '1': 'a2', '2': 'b', '3': 'c' }), asset: content({}) })),
+    { asset: ['cards/1/thumb.webp'], card: ['1', '3'] })
+  const utenti = snap(base)
+  utenti.tables.app_user = user(4, 'bbb')
+  vale('le tabelle degli utenti non contano', cambiamenti(snap(base), utenti), {})
+  vale('una tabella che c\'e\' in una fotografia sola: chiavi ignote', cambiamenti(snap(base), snap({ ...base, nuova: content({ '1': 'x' }) })), { nuova: null })
+
+  const leg = { carte: [] as string[], eventi: [] as string[], copertine: [] as string[], icone: false }
+  vale('niente cambiato: nessuna richiesta', pianoRinfresco({}, { imagesOnly: false }).tags, [])
+  vale('...nemmeno nel giro delle immagini', pianoRinfresco({}, { imagesOnly: true, legami: leg }).tags, [])
+  vale('giro completo con un cambio: catalog ed events-list', pianoRinfresco({ stage: ['5'] }, { imagesOnly: false }).tags, ['catalog', 'events-list'])
+  vale('immagini: le carte e gli eventi toccati in ordine, e la lista',
+    pianoRinfresco({ card: ['10', '2'], event: ['7'], asset: ['k'] },
+      { imagesOnly: true, legami: { carte: ['2', '33'], eventi: ['8'], copertine: ['8'], icone: false } }).tags,
+    ['card:2', 'card:10', 'card:33', 'event:7', 'event:8', 'events-list'])
+  vale('immagini: solo carte, niente events-list', pianoRinfresco({ card: ['5'] }, { imagesOnly: true, legami: leg }).tags, ['card:5'])
+  vale('immagini: un asset che niente usa, nessuna richiesta', pianoRinfresco({ asset: ['k'] }, { imagesOnly: true, legami: leg }).tags, [])
+  vale('immagini: un\'icona (tipo, rarita\', premio), catalog', pianoRinfresco({ asset: ['k'] }, { imagesOnly: true, legami: { ...leg, icone: true } }).tags, TUTTO)
+  vale('immagini: una tabella che il giro non tocca, catalog', pianoRinfresco({ reward_item: ['x'], card: ['1'] }, { imagesOnly: true, legami: leg }).tags, TUTTO)
+  vale('immagini: una tabella senza chiavi, catalog', pianoRinfresco({ card: null }, { imagesOnly: true, legami: leg }).tags, TUTTO)
+  vale('immagini senza i legami (lettura fallita): catalog', pianoRinfresco({ card: ['1'] }, { imagesOnly: true, legami: null }).tags, TUTTO)
+  const ids = (n: number) => Array.from({ length: n }, (_, i) => String(i + 1))
+  check(`immagini: ${TAG_TETTO} pagine si mandano una per una`, pianoRinfresco({ card: ids(TAG_TETTO) }, { imagesOnly: true, legami: leg }).tags.length === TAG_TETTO)
+  vale(`...una di piu\': catalog`, pianoRinfresco({ card: ids(TAG_TETTO + 1) }, { imagesOnly: true, legami: leg }).tags, TUTTO)
+  check('mai community, mai un id che non e\' un numero', pianoRinfresco({ card: ['1', 'x;y'], event: ['2'] }, { imagesOnly: true, legami: leg }).tags.join() ===
+    'card:1,event:2,events-list')
+  vale('gruppi da 50', gruppi(ids(120)).map((g) => g.length), [50, 50, 20])
+
+  // il giro prima ha lasciato pagine da rinfrescare: si manda tutto, anche senza cambi
+  vale('il giro prima non ha chiuso il rinfresco: TUTTO anche senza cambi', pianoRinfresco({}, { imagesOnly: true, legami: leg, recupera: true }).tags, TUTTO)
+  vale('...e anche nel giro completo', pianoRinfresco({ stage: ['5'] }, { imagesOnly: false, recupera: true }).tags, TUTTO)
+  vale('il conto chiuso: sent e nothing', [...RINFRESCO_CHIUSO].sort(), ['nothing', 'sent'])
+  const prec = (status: string, refresh: string | null) => ({ status, refresh })
+  check('nessun giro prima: niente da recuperare', !daRecuperare(null) && !daRecuperare(undefined))
+  check('un giro riuscito che ha rinfrescato (o non ne aveva bisogno): niente', !daRecuperare(prec('ok', 'sent')) && !daRecuperare(prec('ok', 'nothing')))
+  check('...e un giro fallito che ha rinfrescato prima di uscire: niente', !daRecuperare(prec('failed', 'sent')) && !daRecuperare(prec('failed', 'nothing')))
+  check('un giro fallito senza rinfresco arrivato, un processo morto (stale), un giro senza segreto, uno di prima del campo: si recupera',
+    daRecuperare(prec('failed', 'failed')) && daRecuperare(prec('failed', null)) && daRecuperare(prec('ok', 'off')) &&
+    daRecuperare(prec('ok', 'failed')) && daRecuperare(prec('ok', null)))
+
+  const chiamate: { url: string, auth: string, tags: string[] }[] = []
+  const avvisi: string[] = []
+  const finto = (stati: (number | 'rete')[]) => (async (u: URL | string, init: { headers: Record<string, string>, body: string }) => {
+    chiamate.push({ url: String(u), auth: init.headers.Authorization, tags: JSON.parse(init.body).tags })
+    const s = stati.shift() ?? 200
+    if (s === 'rete') throw new TypeError('fetch failed')
+    return { ok: s < 400, status: s }
+  }) as unknown as typeof fetch
+  const SEGRETO = 'segreto-finto-del-rinfresco-0123456789'
+  const tutti = ids(120).map((id) => `card:${id}`)
+  const r1 = await rinfresca({ site: 'https://sito.example', secret: SEGRETO, tags: tutti, fetch: finto([200, 500, 'rete']),
+    log: () => {}, warn: (m: string) => avvisi.push(m) })
+  check('tre richieste (50, 50, 20) a /api/revalidate col Bearer', chiamate.length === 3 &&
+    chiamate.every((x) => x.url === 'https://sito.example/api/revalidate' && x.auth === `Bearer ${SEGRETO}`) &&
+    chiamate.map((x) => x.tags.length).join() === '50,50,20' && chiamate.flatMap((x) => x.tags).join() === tutti.join(), JSON.stringify(chiamate.map((x) => x.tags.length)))
+  check('un 500 e un errore di rete: avvisa e continua', r1.inviati === 50 && r1.falliti === 70 && avvisi.length === 2 &&
+    !avvisi.join(' ').includes(SEGRETO), avvisi.join(' | '))
+  chiamate.length = 0; avvisi.length = 0
+  await rinfresca({ site: 'http://sito.example', secret: SEGRETO, tags: ['catalog'], fetch: finto([]), log: () => {}, warn: (m: string) => avvisi.push(m) })
+  check('http: nessuna richiesta (il segreto non viaggia in chiaro)', chiamate.length === 0 && /https/.test(avvisi[0] ?? ''))
+  await rinfresca({ site: 'non un url', secret: SEGRETO, tags: ['catalog'], fetch: finto([]), log: () => {}, warn: (m: string) => avvisi.push(m) })
+  check('un PROD_SITE_URL sbagliato: nessuna richiesta', chiamate.length === 0 && avvisi.length === 2)
+  // update.mjs: la fotografia solo quando il rinfresco c'e', e il piano dopo il giro
+  const upd = readFileSync('db/prod/update.mjs', 'utf8')
+  check('update.mjs: fotografia delle tabelle di gioco prima e dopo, solo se si rinfresca',
+    /const prima = RINFRESCO \? await fotografia\(\) : null/.test(upd) && /takeSnapshot\(c, \{ contentOnly: true \}\)/.test(upd) &&
+    /const RINFRESCO = !info\.local && Boolean\(SITE && SECRET\)/.test(upd))
+  check('update.mjs: niente cambiato, nessuna richiesta; altrimenti i tag del piano',
+    /if \(!piano\.tags\.length\) \{ console\.log\(`  niente da rinfrescare/.test(upd) &&
+    /await rinfresca\(\{ site: SITE, secret: SECRET, tags: piano\.tags, warn \}\)/.test(upd) && !/tags: \['catalog', 'events-list'\]/.test(upd))
+  // un passo fallito: i passi prima hanno gia' scritto, quindi il rinfresco
+  // va prima dell'uscita, e il suo esito in summary.refresh per il giro dopo
+  const fallito = upd.match(/if \(r\.status !== 0\) \{([\s\S]*?)\n {2}\}\n\}/)?.[1] ?? ''
+  check('update.mjs: un passo fallito rinfresca quello che e\' gia\' scritto, poi chiude failed con l\'esito, poi esce',
+    /const esito = await revalidate\(\)\s*await finish\('failed', \{ failed_step: script, refresh: esito \}\)\s*process\.exit\(1\)/.test(fallito), fallito.trim().slice(0, 200))
+  check('update.mjs: un giro riuscito chiude ok con l\'esito del rinfresco',
+    /\nconst refresh = await revalidate\(\)\nawait finish\('ok', \{ refresh \}\)\n/.test(upd))
+  check('update.mjs: il giro prima letto dopo import_run_begin, e il piano lo sa',
+    upd.indexOf('import_run_begin') < upd.indexOf('const recupera = RINFRESCO ? await daRecuperarePrima() : false') &&
+    /giroPrecedente\(c, runId\)/.test(upd) && /pianoRinfresco\(cambi, \{ imagesOnly: IMAGES_ONLY, legami, recupera \}\)/.test(upd))
+  check('update.mjs: gli esiti del rinfresco sono quelli che daRecuperare conosce',
+    ["return 'local'", "return 'off'", "return 'nothing'", "'sent' : 'failed'", "return 'failed'"].every((x) => upd.includes(x)))
 }
 
 // ------------------------------------------------- sul database di test
@@ -379,6 +518,28 @@ console.log('import_run (0023)')
   } finally { await c.query('rollback') }
 }
 
+console.log('import_run: il giro prima ha chiuso il rinfresco? (rinfresco.mjs giroPrecedente)')
+{
+  await c.query('begin')
+  try {
+    await c.query(`update import_run set status = 'failed', finished_at = now() where status = 'running'`)
+    await c.query(`insert into import_run (source, status, finished_at, summary) values ('ci', 'failed', now(), '{"mode": "full", "failed_step": "db/import/load-equipment.mjs"}')`)
+    const id1 = (await c.query(`select import_run_begin('ci', null) as id`)).rows[0].id
+    const p1 = await giroPrecedente(c, id1)
+    check('un giro fallito senza summary.refresh: da recuperare', p1?.status === 'failed' && p1.refresh === null && daRecuperare(p1), JSON.stringify(p1))
+    await c.query(`select import_run_end($1, 'ok', '{"refresh": "sent"}', null, null, null)`, [id1])
+    const id2 = (await c.query(`select import_run_begin('ci', null) as id`)).rows[0].id
+    const p2 = await giroPrecedente(c, id2)
+    check('...il giro dopo, riuscito e rinfrescato: niente da recuperare', p2?.id === String(id1) && p2.refresh === 'sent' && !daRecuperare(p2), JSON.stringify(p2))
+    // il processo muore a meta': il giro resta running, e il prossimo lo chiude come stale
+    await c.query(`update import_run set started_at = now() - interval '3 hours' where id = $1`, [id2])
+    const id3 = (await c.query(`select import_run_begin('local', null) as id`)).rows[0].id
+    const p3 = await giroPrecedente(c, id3)
+    check('...un giro morto, chiuso come stale: da recuperare', p3?.id === String(id2) && p3.status === 'failed' && daRecuperare(p3), JSON.stringify(p3))
+    check('il giro in corso non e\' mai "quello prima"', (await giroPrecedente(c, Number(id3) + 1))?.id === String(id2))
+  } finally { await c.query('rollback') }
+}
+
 console.log('import_run: i giri delle sole immagini')
 {
   await c.query('begin')
@@ -424,6 +585,58 @@ console.log('immagini mancanti, anche senza pagina wiki')
   // il settimanale scarica anche con le sole miniature nude: bare_thumbs fra gli output
   const go = existsSync(out) ? readFileSync(out, 'utf8') : ''
   check('...e scrive pending e bare_thumbs in GITHUB_OUTPUT', go.includes(`pending=${m.pending}\n`) && go.includes('bare_thumbs=0\n'), go)
+}
+
+console.log('rinfresco.mjs: le pagine dietro le immagini, sul database')
+{
+  const WIKI = 'https://static.wikia.nocookie.net/dbz-dokkanbattle/images/a/ab/Card_1_thumb.png/revision/latest'
+  const riga = (key: string, kind = 'card_thumb', frame: boolean | null = null) =>
+    [key, kind, 'image/webp', 1, 1, 1, 'x', 'wiki', WIKI, frame]
+  const { rows: fk } = await c.query(`
+    select k.conrelid::regclass::text || '.' || a.attname as col
+    from pg_constraint k join pg_attribute a on a.attrelid = k.conrelid and a.attnum = any(k.conkey)
+    where k.contype = 'f' and k.confrelid = 'public.asset'::regclass order by 1`)
+  vale('COLLEGAMENTI_ASSET: tutte e sole le colonne con una FK verso asset(key)', fk.map((r) => r.col), Object.keys(COLLEGAMENTI_ASSET).sort())
+  await c.query('begin')
+  try {
+    // una carta con il suo evento di copertina (se il test non ne ha, la si fa qui)
+    const { rows: [x] } = await c.query(`select (select id::text from card order by id limit 1) as carta,
+      (select id::text from event order by id limit 1) as ev`)
+    await c.query('update event set cover_card_id = $1 where id = $2', [x.carta, x.ev])
+    const { rows: [y] } = await c.query(`select id::text as carta from card where id <> $1 and id not in
+      (select cover_card_id from event where cover_card_id is not null) order by id limit 1`, [x.carta])
+    const prima = await takeSnapshot(c, { inTransaction: true, contentOnly: true })
+    check('contentOnly: niente md5 degli utenti ne\' nomi', prima.tables.app_user.hash === undefined && Object.keys(prima.names).length === 0 &&
+      !!prima.tables.card.rows)
+    await c.query(ASSET_SCARICA_SQL, riga('test/rinfresco-thumb.webp', 'card_thumb', false))
+    await c.query('update card set thumb_key = $1 where id = $2', ['test/rinfresco-thumb.webp', x.carta])
+    const dopo = await takeSnapshot(c, { inTransaction: true, contentOnly: true })
+    const cambi = cambiamenti(prima, dopo)
+    vale('cambiate: la riga di asset e la carta', cambi, { asset: ['test/rinfresco-thumb.webp'], card: [x.carta] })
+    const leg = await legamiAsset(c, { assetKeys: cambi.asset ?? [], cardIds: cambi.card ?? [] })
+    check('legami: la carta, e l\'evento che l\'ha per copertina', leg.carte.includes(x.carta) && leg.eventi.includes(x.ev) &&
+      leg.copertine.includes(x.ev) && !leg.icone, JSON.stringify(leg))
+    const piano = pianoRinfresco(cambi, { imagesOnly: true, legami: leg })
+    check('piano: card, event ed events-list, mai catalog', piano.tags.includes(`card:${x.carta}`) && piano.tags.includes(`event:${x.ev}`) &&
+      piano.tags.at(-1) === 'events-list' && !piano.tags.includes('catalog'), JSON.stringify(piano))
+    // un asset gia' collegato che cambia senza che la carta cambi (le misure dell'artwork, la cornice)
+    await c.query(ASSET_SCARICA_SQL, riga('test/rinfresco-art.webp', 'card_art'))
+    await c.query('update card set art_key = $1 where id = $2', ['test/rinfresco-art.webp', y.carta])
+    const s2 = await takeSnapshot(c, { inTransaction: true, contentOnly: true })
+    await c.query(`update asset set width = 999 where key = 'test/rinfresco-art.webp'`)
+    const cambi2 = cambiamenti(s2, await takeSnapshot(c, { inTransaction: true, contentOnly: true }))
+    vale('solo la riga di asset cambia', cambi2, { asset: ['test/rinfresco-art.webp'] })
+    const leg2 = await legamiAsset(c, { assetKeys: cambi2.asset ?? [], cardIds: [] })
+    vale('...e la pagina della carta che lo usa si rinfresca', pianoRinfresco(cambi2, { imagesOnly: true, legami: leg2 }).tags, [`card:${y.carta}`])
+    // un'icona: sta su quasi ogni pagina
+    await c.query(ASSET_SCARICA_SQL, riga('test/rinfresco-icona.webp', 'item_icon'))
+    await c.query(`insert into reward_item (slug, asset_key) values ('rinfresco-test', 'test/rinfresco-icona.webp')`)
+    const leg3 = await legamiAsset(c, { assetKeys: ['test/rinfresco-icona.webp'], cardIds: [] })
+    check('un\'icona dei premi: icone', leg3.icone === true && leg3.carte.length === 0)
+    vale('...e il piano torna a catalog', pianoRinfresco({ asset: ['test/rinfresco-icona.webp'] }, { imagesOnly: true, legami: leg3 }).tags, TUTTO)
+    const leg4 = await legamiAsset(c, { assetKeys: ['test/non-c-e.webp'], cardIds: [] })
+    check('un asset che niente usa: nessuna pagina', leg4.carte.length === 0 && leg4.eventi.length === 0 && !leg4.icone)
+  } finally { await c.query('rollback') }
 }
 
 console.log('provenienza degli asset (0033)')

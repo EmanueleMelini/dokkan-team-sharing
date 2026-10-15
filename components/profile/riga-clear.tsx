@@ -6,6 +6,7 @@ import { CorniceCarta, SegnapostoCarta } from '@/components/segnaposto'
 import { soloGiorno } from '@/lib/date'
 import { DIFFICOLTA } from '@/lib/livelli'
 import { clearAnchor, eventHref } from '@/lib/urls'
+import { relRobots } from '@/lib/robots'
 import type { ProfileClear } from '@/lib/profiles'
 
 /** "Stage name, Super 2", o "Level 30" per gli EZA: come la pagina dell'evento. */
@@ -20,7 +21,8 @@ const chip = 'inline-flex items-center gap-1 text-[11px] text-testo px-1.5 py-0.
  * Un clear nella lista del profilo, compatto: evento, stage, la squadra di
  * partenza in miniatura, i segni e il punteggio. Il link porta alla pagina
  * del tier dove la lista dell'evento mostra il clear, e al clear stesso.
- * Senza prefetch: venti righe per pagina.
+ * Senza prefetch: venti righe per pagina. Nofollow: i tier sono fuori da
+ * robots.txt (lib/robots.ts).
  */
 export function RigaClear({ c }: { c: ProfileClear }) {
   // explicit: la versione del clear, qualunque sia quella scelta nel sito (lib/versione)
@@ -30,6 +32,7 @@ export function RigaClear({ c }: { c: ProfileClear }) {
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
         <Link
           href={href}
+          rel={relRobots(href)}
           prefetch={false}
           className="min-w-0 text-[13px] font-medium text-inchiostro underline-offset-2 decoration-oro-linea hover:underline"
         >

@@ -278,6 +278,13 @@ grep -q 'Disallow: /events/browse' "$TMP/html" && pass "robots.txt esclude /even
 grep -q 'Disallow: /admin' "$TMP/html" && pass "robots.txt esclude /admin" || fail "robots.txt senza /admin"
 grep -qx 'Disallow: /events/\*/clears' "$TMP/html" && pass "robots.txt esclude /events/*/clears" || fail "robots.txt senza /events/*/clears"
 grep -qx 'Disallow: /notifications' "$TMP/html" && pass "robots.txt esclude /notifications" || fail "robots.txt senza /notifications"
+# Le scritture ISR (README): i tier e le pagine Japan degli eventi fuori dai
+# motori, /events/japan (nella sitemap) dentro.
+grep -qx 'Disallow: /events/\*/t/' "$TMP/html" && pass "robots.txt esclude i tier (/events/*/t/)" || fail "robots.txt senza /events/*/t/"
+grep -qx 'Disallow: /events/\*/japan' "$TMP/html" && pass "robots.txt esclude le pagine Japan degli eventi (/events/*/japan)" \
+  || fail "robots.txt senza /events/*/japan"
+grep -qE '^Disallow: /events/japan' "$TMP/html" && fail "robots.txt esclude /events/japan" || pass "robots.txt lascia /events/japan"
+grep -qE '^Sitemap: .*/sitemap\.xml$' "$TMP/html" && pass "robots.txt con la sitemap" || fail "robots.txt senza Sitemap"
 # security.txt (RFC 9116): Expires al massimo un anno avanti, quindi va
 # rinnovato a mano. Le date ISO in UTC si confrontano come stringhe.
 prendi /.well-known/security.txt
@@ -424,6 +431,63 @@ else
     cmp -s "$TMP/uno" "$TMP/due" && pass "$FILTRI: lo stesso HTML per due visitatori diversi" \
       || fail "$FILTRI: l'HTML cambia con il cookie o il browser"
   fi
+fi
+
+# I link verso le pagine che robots.txt esclude (lib/robots.ts: i tier, le
+# pagine Japan degli eventi, le viste filtrate e il builder) sono nofollow,
+# su ogni pagina che un motore puo' leggere; quelli verso un evento Global
+# no. Il conto e' sull'HTML del server, senza gli <script>.
+echo "nofollow verso i tier e le pagine Japan (lib/robots.ts)"
+nofollow () { # percorso [quanti-link-almeno]
+  prendi "$1"
+  if [ "$codice" != 200 ]; then fail "nofollow: $1 ha risposto $codice"; return; fi
+  local n=0 s=0
+  read -r n s < <(perl -0ne 's/<script\b.*?<\/script>//gs; my ($n, $s) = (0, 0);
+    while (/<a\b([^>]*)>/g) { my $x = $1;
+      next unless $x =~ /\bhref="\/events\/(?:\d+\/(?:japan|t\/|clears|submit)|browse)/;
+      $n++; $s++ unless $x =~ /\brel="[^"]*\bnofollow\b/ }
+    print "$n $s\n"' "$TMP/html")
+  if [ "${n:-0}" -lt "${2:-1}" ]; then fail "nofollow: $1 ha $n link verso tier o pagine Japan, attesi almeno ${2:-1}"; return; fi
+  [ "${s:-1}" = 0 ] && pass "$1: i $n link verso tier, pagine Japan e viste filtrate sono nofollow" \
+    || fail "$1: $s dei $n link verso tier, pagine Japan o viste filtrate senza nofollow"
+}
+for p in ${EZA:+/events/$EZA} ${TIER:+/events/$EZA/t/$TIER} ${STAGE:+/events/$STAGE} ${STAGE:+/events/$STAGE/japan} /events/japan ${FILTRI:-}; do
+  nofollow "$p"
+done
+for p in /events /cards/1032310 ${UTENTE:+/users/$UTENTE}; do nofollow "$p" 0; done
+prendi /events
+read -r n s < <(perl -0ne 's/<script\b.*?<\/script>//gs; my ($n, $s) = (0, 0);
+  while (/<a\b([^>]*)>/g) { my $x = $1; next unless $x =~ /\bhref="\/events\/\d+"/; $n++; $s++ if $x =~ /\bnofollow\b/ }
+  print "$n $s\n"' "$TMP/html")
+[ "${n:-0}" -gt 0 ] && [ "${s:-1}" = 0 ] && pass "/events: i $n link agli eventi Global si seguono (niente nofollow)" \
+  || fail "/events: $n link agli eventi, $s con nofollow"
+
+# Le missioni solo sulla pagina dell'evento: sulle viste di un tier il link
+# alla loro sezione (#missions), con la versione esplicita. L'evento si
+# cerca fra quello di SMOKE_FILTRI, la sfida e l'EZA: il primo con missioni.
+echo "le missioni solo sulla pagina dell'evento"
+MEV=''
+for ev in ${FILTRI:+$(sed -E 's#^/events/([0-9]+).*#\1#' <<<"$FILTRI")} ${STAGE:-} ${EZA:-}; do
+  prendi "/events/$ev"
+  if grep -q 'id="missions"' "$TMP/html"; then MEV=$ev; break; fi
+done
+if [ -z "$MEV" ]; then
+  echo "  (nessun evento con missioni fra quelli provati: salto)"
+else
+  pass "/events/$MEV: la sezione delle missioni (id=\"missions\")"
+  MT=$(grep -oE "href=\"/events/$MEV/t/[0-9]+\"" "$TMP/html" | head -1 | grep -oE '[0-9]+"$' | tr -d '"')
+  if [ -z "$MT" ]; then fail "/events/$MEV senza link a un tier"
+  else
+    prendi "/events/$MEV/t/$MT"
+    grep -q 'id="missions"' "$TMP/html" && fail "/events/$MEV/t/$MT ha ancora la sezione delle missioni" \
+      || pass "/events/$MEV/t/$MT: niente sezione delle missioni"
+    grep -qF "href=\"/events/$MEV?region=global#missions\"" "$TMP/html" && grep -q '>Missions</span>' "$TMP/html" \
+      && pass "/events/$MEV/t/$MT: il link Missions alla sezione della pagina dell'evento" \
+      || fail "/events/$MEV/t/$MT senza il link a /events/$MEV?region=global#missions"
+  fi
+  prendi "/events/$MEV/japan"
+  grep -q 'id="missions"' "$TMP/html" && fail "/events/$MEV/japan ha le missioni (sono solo Global)" \
+    || pass "/events/$MEV/japan senza missioni (sono solo Global)"
 fi
 
 # La PWA (fase 1): manifest, icone con la misura vera (dall'IHDR), il

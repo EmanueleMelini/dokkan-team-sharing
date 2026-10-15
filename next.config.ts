@@ -37,11 +37,18 @@ const securityHeaders = [
 //
 // partialPrefetching serve all'ISR degli id non prerenderizzati al build:
 // la prima visita genera la pagina, le successive la trovano in cache.
+//
+// expire e' di 30 giorni per tutti e due (come SCADENZA in lib/cache/vita.ts):
+// una pagina prende la scadenza piu' corta fra i dati che legge, e con una
+// settimana la coda lunga visitata di rado si riscriveva da capo nella
+// cache ISR (le scritture di Vercel Hobby, sezione del README). I dati
+// restano freschi coi tag e col revalidate di un giorno, e una
+// rigenerazione che da' gli stessi byte non costa scritture.
 const cacheLife = {
   // dati del gioco: cambiano solo con un import, che invalida per tag
   catalog: { stale: 300, revalidate: 86_400, expire: 2_592_000 },
   // clear, voti, commenti: invalidati per tag a ogni scrittura
-  community: { stale: 60, revalidate: 86_400, expire: 604_800 },
+  community: { stale: 60, revalidate: 86_400, expire: 2_592_000 },
 }
 
 // La PWA (public/sw.js, public/offline.html). sw.js ha un URL fisso: con

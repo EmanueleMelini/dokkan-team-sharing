@@ -4,6 +4,7 @@ import { assetUrl } from '@/lib/db'
 import { soloGiorno } from '@/lib/date'
 import { FONTE_TESTI, paginaWiki } from '@/lib/legale'
 import { eventHref } from '@/lib/urls'
+import { relRobots } from '@/lib/robots'
 import { skillTiers, skillsForTier, type CardClear, type CardDetail } from '@/lib/card-page'
 import type { Region } from '@/lib/queries'
 import { Tipo } from '@/components/tipo'
@@ -84,7 +85,7 @@ export function CardPage({ card, clears }: { card: CardDetail; clears: BloccoCle
             <ul className="mt-2 space-y-1 text-[13px] text-testo">
               {card.ezaEvents.map((e) => (
                 <li key={e.id}>
-                  <Link href={eventHref({ id: e.id })} prefetch={false} className="underline decoration-oro-linea underline-offset-2 hover:text-inchiostro">
+                  <Link href={eventHref({ id: e.id })} rel={relRobots(eventHref({ id: e.id }))} prefetch={false} className="underline decoration-oro-linea underline-offset-2 hover:text-inchiostro">
                     {e.name}
                   </Link>
                 </li>

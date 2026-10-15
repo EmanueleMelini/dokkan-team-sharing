@@ -460,9 +460,13 @@ try {
     if (!check(`${PAN}: l'ultima corsa del gioco e' aperta dal 2025-08-08T01:00Z`, aperta?.source === 'game'
                && aperta.ends_at === null && stesso(aperta.starts_at, '2025-08-08T01:00Z'), descrivi(prima)) || !aperta) return
     let manuale: Riga | undefined
+    // La fine a 30 giorni da oggi: la run a mano deve essere in corso
+    // (active) qualunque giorno girino i test. Con il 2026-10-15 scritto qui
+    // il controllo e' diventato rosso quel giorno stesso.
+    const AL = new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10) + 'T08:00Z'
     try {
       const out = lancia('set-event-window.mjs', ['--evento', String(PAN), '--reg', 'global',
-                                                  '--dal', '2026-10-01T05:00Z', '--al', '2026-10-15T08:00Z'])
+                                                  '--dal', '2026-10-01T05:00Z', '--al', AL])
       const dopo = await runs(PAN)
       manuale = dopo.find((r) => r.source === 'manual')
       const chiusa = dopo.find((r) => r.id === aperta.id)
@@ -470,7 +474,7 @@ try {
             !!chiusa && chiusa.source === 'game' && stesso(chiusa.ends_at, '2026-10-01T05:00Z') && !chiusa.ends_at_known
               && out.includes(`chiusa al --dal la run ${aperta.id} (game`), descrivi(dopo))
       check('la run a mano c\'e\', e la corsa del 2016 e\' intatta',
-            !!manuale && stesso(manuale.starts_at, '2026-10-01T05:00Z') && stesso(manuale.ends_at, '2026-10-15T08:00Z')
+            !!manuale && stesso(manuale.starts_at, '2026-10-01T05:00Z') && stesso(manuale.ends_at, AL)
               && manuale.ends_at_known && manuale.status === 'active' && dopo.length === prima.length + 1
               && dopo[0].id === prima[0].id && stesso(dopo[0].ends_at, prima[0].ends_at.toISOString()), descrivi(dopo))
       lancia('load-windows.mjs')

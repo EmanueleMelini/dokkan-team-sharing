@@ -21,13 +21,25 @@
 // pubblicato, cosi' fetch-assets --offline adotta i file nuovi.
 //
 // Alla fine, se ci sono PROD_SITE_URL e CRON_SECRET, chiede al sito di
-// rinfrescare le pagine dei dati di gioco (POST /api/revalidate). E' un
-// tentativo: se fallisce lo dice e basta, i dati sono gia' scritti.
+// rinfrescare le pagine cambiate (POST /api/revalidate), e solo quelle:
+// una fotografia delle tabelle di gioco prima e dopo il giro dice cosa e'
+// cambiato (db/prod/rinfresco.mjs). Niente cambiato, niente richiesta; un
+// giro delle immagini manda i tag delle carte e degli eventi toccati, un
+// giro completo catalog ed events-list. E' un tentativo: se fallisce lo
+// dice e basta, i dati sono gia' scritti.
+//
+// Anche un giro che si ferma a un passo fallito rinfresca, prima di uscire:
+// i passi riusciti hanno gia' scritto. Com'e' andato il rinfresco resta in
+// import_run.summary.refresh, e se il giro prima non ha chiuso il conto
+// (fallito, morto, senza segreto) questo manda tutto anche se non cambia
+// niente: le sue fotografie non vedrebbero quello che l'altro ha scritto.
 import { spawnSync } from 'node:child_process'
 import { join } from 'node:path'
 import pg from 'pg'
 import { describeInputs } from './inputs.mjs'
 import { PIPELINE, PIPELINE_IMAGES, stepNames } from './pipeline.mjs'
+import { TUTTO, cambiamenti, daRecuperare, giroPrecedente, legamiAsset, pianoRinfresco, rinfresca, soloImmagini } from './rinfresco.mjs'
+import { takeSnapshot } from './snapshot.mjs'
 import { ROOT, prepare, runNode } from './target.mjs'
 
 const CI = process.env.GITHUB_ACTIONS === 'true'
@@ -48,10 +60,28 @@ function gitSha() {
 
 // Una connessione breve per aprire e una per chiudere: il lucchetto e' la
 // riga, non la sessione, e durante l'import non resta niente aperto.
-async function sql(text, params) {
+async function conClient(fn) {
   const c = new pg.Client({ connectionString: url })
   await c.connect()
-  try { return (await c.query(text, params)).rows } finally { await c.end() }
+  try { return await fn(c) } finally { await c.end() }
+}
+const sql = (text, params) => conClient(async (c) => (await c.query(text, params)).rows)
+
+// Il rinfresco delle pagine in cache. Mai nel giro di prova (database
+// locale): rinfrescherebbe la produzione per dati che li' non ci sono.
+const SITE = process.env.PROD_SITE_URL, SECRET = process.env.CRON_SECRET
+const RINFRESCO = !info.local && Boolean(SITE && SECRET)
+
+// Le tabelle di gioco, per sapere dopo cosa e' cambiato. Se la fotografia
+// non riesce si rinfresca tutto, come prima: meglio una rigenerazione in
+// piu' che una pagina vecchia.
+async function fotografia() {
+  try {
+    return await conClient((c) => takeSnapshot(c, { contentOnly: true }))
+  } catch (err) {
+    warn(`snapshot for the page refresh failed (${err.message}): refreshing everything`)
+    return null
+  }
 }
 
 let runId
@@ -62,6 +92,22 @@ try {
   process.exit(1)
 }
 console.log(`  import_run ${runId} aperto`)
+const prima = RINFRESCO ? await fotografia() : null
+
+// Il giro chiuso prima di questo ha lasciato pagine da rinfrescare? Se la
+// lettura non riesce si rinfresca tutto, come per la fotografia.
+async function daRecuperarePrima() {
+  try {
+    const p = await conClient((c) => giroPrecedente(c, runId))
+    if (!daRecuperare(p)) return false
+    console.log(`  il giro ${p.id} (${p.status}) non ha chiuso il rinfresco (${p.refresh ?? 'not recorded'}): questo rinfresca tutto`)
+    return true
+  } catch (err) {
+    warn(`reading the previous import_run failed (${err.message}): refreshing everything`)
+    return true
+  }
+}
+const recupera = RINFRESCO ? await daRecuperarePrima() : false
 
 const inputs = describeInputs()
 const t0 = Date.now()
@@ -88,34 +134,51 @@ for (const [script, args] of STEPS) {
   if (r.status !== 0) {
     console.error(`\n  ${script} e' fallito (uscita ${r.status ?? r.signal}): mi fermo qui.`)
     console.error('  Gli importer sono idempotenti: sistemato il problema, si rilancia da capo.\n')
-    await finish('failed', { failed_step: script })
+    // i passi prima di questo hanno gia' scritto: le loro pagine si rinfrescano ora
+    const esito = await revalidate()
+    await finish('failed', { failed_step: script, refresh: esito })
     process.exit(1)
   }
 }
-await finish('ok', {})
+const refresh = await revalidate()
+await finish('ok', { refresh })
 console.log(`\n  import_run ${runId} chiuso: ok`)
 
-// Il rinfresco delle pagine in cache. Mai nel giro di prova (database
-// locale): rinfrescherebbe la produzione per dati che li' non ci sono.
+/**
+ * Il rinfresco delle pagine, e come e' andato (summary.refresh di
+ * import_run, letto dal giro dopo: rinfresco.mjs daRecuperare). Non lancia
+ * mai: le sue letture e le richieste avvisano e basta.
+ */
 async function revalidate() {
-  const site = process.env.PROD_SITE_URL, secret = process.env.CRON_SECRET
-  if (info.local) return
-  if (!site || !secret) { console.log('  PROD_SITE_URL o CRON_SECRET assenti: niente rinfresco delle pagine'); return }
-  let u
-  try { u = new URL('/api/revalidate', site) } catch { warn('PROD_SITE_URL is not a valid URL'); return }
-  // il segreto non viaggia in chiaro
-  if (u.protocol !== 'https:') { warn('PROD_SITE_URL must be https: page refresh skipped'); return }
+  if (info.local) return 'local'
+  if (!RINFRESCO) { console.log('  PROD_SITE_URL o CRON_SECRET assenti: niente rinfresco delle pagine'); return 'off' }
   try {
-    const res = await fetch(u, {
-      method: 'POST', signal: AbortSignal.timeout(15000),
-      headers: { Authorization: `Bearer ${secret}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tags: ['catalog', 'events-list'] }),
-    })
-    if (res.ok) console.log('  pagine dei dati di gioco rinfrescate')
-    else warn(`page refresh answered HTTP ${res.status}: pages update when their cache expires`)
+    return await pianoEInvio()
   } catch (err) {
-    warn(`page refresh failed (${err.name}): pages update when their cache expires`)
+    warn(`page refresh failed (${err?.message ?? err}): those pages update when their cache revalidates`)
+    return 'failed'
   }
 }
-await revalidate()
+
+async function pianoEInvio() {
+  const dopo = prima ? await fotografia() : null
+  let piano
+  if (!prima || !dopo) piano = { tags: TUTTO, motivo: 'no snapshot to compare' }
+  else {
+    const cambi = cambiamenti(prima, dopo)
+    let legami = null
+    if (IMAGES_ONLY && soloImmagini(cambi)) {
+      try {
+        legami = await conClient((c) => legamiAsset(c, { assetKeys: cambi.asset ?? [], cardIds: cambi.card ?? [] }))
+      } catch (err) {
+        warn(`reading the pages behind the changed images failed (${err.message}): refreshing everything`)
+      }
+    }
+    piano = pianoRinfresco(cambi, { imagesOnly: IMAGES_ONLY, legami, recupera })
+  }
+  if (!piano.tags.length) { console.log(`  niente da rinfrescare: ${piano.motivo}`); return 'nothing' }
+  console.log(`  rinfresco: ${piano.motivo} (${piano.tags.length} tag)`)
+  const { inviati, falliti } = await rinfresca({ site: SITE, secret: SECRET, tags: piano.tags, warn })
+  return !falliti && inviati === piano.tags.length ? 'sent' : 'failed'
+}
 console.log('\n  prod:update finito.\n')

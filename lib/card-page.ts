@@ -122,7 +122,7 @@ export async function getCard(id: string): Promise<CardDetail | null> {
          select id, -d as ord from su
          union all select $1::bigint, 0
          union all select id, d from giu
-       ) x order by id, abs(ord)
+       ) x order by id, abs(ord), ord
      )
      select c.id::text, c.type::text, c.class::text, c.rarity::text, c.has_eza, c.is_seza,
             c.hp, c.atk, c.def, c.wiki_title, ct.name, ct.epithet,
@@ -135,11 +135,11 @@ export async function getCard(id: string): Promise<CardDetail | null> {
                                       order by r.reg)
                         from card_release r where r.card_id = c.id), '[]'::json) as releases,
             coalesce((select json_agg(json_build_object('id', l.link_id, 'name', l.name, 'effect', l.effect)
-                                      order by l.name)
+                                      order by l.name, l.link_id)
                         from card_link cl
                         join link_skill_text l on l.link_id = cl.link_id and l.locale = 'en'
                        where cl.card_id = c.id), '[]'::json) as links,
-            coalesce((select json_agg(json_build_object('id', g.category_id, 'name', g.name) order by g.name)
+            coalesce((select json_agg(json_build_object('id', g.category_id, 'name', g.name) order by g.name, g.category_id)
                         from card_category cc
                         join category_text g on g.category_id = cc.category_id and g.locale = 'en'
                        where cc.card_id = c.id), '[]'::json) as categories,
@@ -163,7 +163,7 @@ export async function getCard(id: string): Promise<CardDetail | null> {
                       'thumb_bare', asset_bare(kc.thumb_key),
                       'global', exists (select 1 from card_release r
                                          where r.card_id = k.id and r.reg = 'global'))
-                    order by k.ord)
+                    order by k.ord, k.id)
                from catena k
                join card kc on kc.id = k.id
                left join card_text kt on kt.card_id = k.id and kt.locale = 'en') as chain

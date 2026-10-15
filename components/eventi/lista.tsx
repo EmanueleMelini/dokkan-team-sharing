@@ -9,6 +9,7 @@ import { pagina as leggiPagina, regione, testoRicerca, uno, type Ricerca } from 
 import { EVENTI_PER_PAGINA, type EventKind, type EventRow, type Region, type Status } from '@/lib/queries'
 import { listEventsCached } from '@/lib/cache/data'
 import { browseHref, eventHref } from '@/lib/urls'
+import { relRobots } from '@/lib/robots'
 import { AttesaLink } from '@/components/attesa-link'
 import { ConteggioClear } from '@/components/conteggio-clear'
 import { Paginazione } from '@/components/paginazione'
@@ -58,6 +59,8 @@ function Filtro({
   return (
     <Link
       href={href}
+      rel={relRobots(href)}
+      prefetch={false}
       aria-current={attivo ? 'page' : undefined}
       className={`relative px-2.5 py-1 text-[13px] rounded-[var(--raggio)] border transition-colors ${
         attivo
@@ -267,6 +270,8 @@ export async function EventList({ filtri }: { filtri: FiltriLista }) {
                   // 60 schede per pagina: il prefetch di ognuna costerebbe un
                   // render sul server per ogni evento non ancora in cache.
                   prefetch={false}
+                  // sulla lista Japan le pagine /japan, fuori da robots.txt
+                  rel={relRobots(eventHref({ id: e.id, reg }))}
                   className="group relative block h-full border border-linea rounded-[var(--raggio)] bg-superficie overflow-hidden hover:border-linea-forte transition-colors"
                 >
                   <div className="relative aspect-[16/7] bg-superficie-2 flex items-center justify-center">
@@ -337,6 +342,8 @@ function AzioneVuoto({ href, children }: { href: string; children: React.ReactNo
   return (
     <Link
       href={href}
+      rel={relRobots(href)}
+      prefetch={false}
       className="inline-block mt-4 px-3 py-1.5 text-[13px] font-medium rounded-[var(--raggio)] bg-inchiostro text-sfondo hover:opacity-90 transition-opacity"
     >
       {children}

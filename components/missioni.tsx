@@ -1,7 +1,10 @@
 import Image from 'next/image'
-import { CaretRight } from '@phosphor-icons/react/dist/ssr'
+import Link from 'next/link'
+import { ArrowRight, CaretRight } from '@phosphor-icons/react/dist/ssr'
 import { assetUrl } from '@/lib/db'
 import { soloGiorno } from '@/lib/date'
+import { eventHref } from '@/lib/urls'
+import { relRobots } from '@/lib/robots'
 import { CorniceCarta, SegnapostoCarta } from '@/components/segnaposto'
 import type { MissionRow } from '@/lib/queries'
 
@@ -11,11 +14,14 @@ const numero = new Intl.NumberFormat('en-US')
 // e aperta spingerebbe tutto il resto della pagina in fondo.
 const APERTA_FINO_A = 12
 
+/** L'ancora della sezione, per il link dalle viste di un tier. */
+export const ANCORA_MISSIONI = 'missions'
+
 /** Le missioni della ricorrenza mostrata, con i premi come li dà il gioco. */
 export function Missioni({ missioni }: { missioni: MissionRow[] }) {
   if (!missioni.length) return null
   return (
-    <section aria-labelledby="titolo-missioni" className="mt-12">
+    <section id={ANCORA_MISSIONI} aria-labelledby="titolo-missioni" className="mt-12 scroll-mt-6">
       <details open={missioni.length <= APERTA_FINO_A} className="group">
         {/* summary con dentro un titolo: lo permette l'HTML, e così la sezione
             resta nella navigazione per titoli anche quando è chiusa */}
@@ -72,5 +78,35 @@ export function Missioni({ missioni }: { missioni: MissionRow[] }) {
         </ol>
       </details>
     </section>
+  )
+}
+
+/**
+ * Al posto delle missioni, sulle viste di un tier: sono le stesse
+ * dell'evento, e ripeterle su ogni tier pesava piu' del resto della pagina
+ * in cache. Il link porta alla loro sezione nella pagina dell'evento, con
+ * la versione esplicita (le missioni ci sono solo su Global, e chi ha
+ * scelto Japan non va rimandato alla pagina giapponese). Lo stesso titolo
+ * e lo stesso numero della sezione, come link; niente prefetch.
+ */
+export function LinkMissioni({ eventId, n }: { eventId: string; n: number }) {
+  if (!n) return null
+  const href = `${eventHref({ id: eventId, explicit: true })}#${ANCORA_MISSIONI}`
+  return (
+    <p className="mt-10">
+      <Link
+        href={href}
+        rel={relRobots(href)}
+        prefetch={false}
+        className="group inline-flex items-baseline gap-2"
+      >
+        <span className="text-[13px] font-medium text-inchiostro underline decoration-oro-linea underline-offset-2 group-hover:decoration-oro">
+          Missions
+        </span>
+        <span className="numeri text-[12px] text-tenue">{numero.format(n)}</span>
+        <span className="sr-only">, on the event page</span>
+        <ArrowRight size={12} weight="bold" aria-hidden className="self-center text-tenue group-hover:text-inchiostro transition-colors" />
+      </Link>
+    </p>
   )
 }

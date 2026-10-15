@@ -6,11 +6,14 @@
 #   CDN, la provenienza, i limiti di spazio, la cornice delle miniature)
 #   -> fonti fresche e copia del
 #   datamine -> configurazione di produzione (pool, TLS, cron, IP) ->
+#   deploy su Vercel (l'Ignored Build Step) ->
 #   import dei dati veri (carte del wiki, poi quelle solo nel gioco) -> query
 #   delle pagine (lib/queries.ts vero) -> parametri dell'URL (lib/parametri.ts)
-#   -> URL degli eventi (lib/urls.ts) -> filtri dei clear (parametri)
+#   -> URL degli eventi (lib/urls.ts) e robots.txt (lib/robots.ts, nofollow)
+#   -> filtri dei clear (parametri)
 #   -> PWA (public/sw.js, offline.html, manifest)
-#   -> tag della cache (lib/cache/*)
+#   -> tag della cache (lib/cache/*) e scritture ISR (vite delle pagine,
+#   prefetch, missioni, ordini deterministici)
 #   -> builder dei clear (0016, lib/clears*, lib/cards.ts, /api/cards)
 #   -> build degli slot (0018, Skill Orb, /api/equipment) -> sfere
 #   esclusive (0021)
@@ -104,6 +107,14 @@ passo "configurazione di produzione" verifica node_ts db/test/prod-config.test.m
 # database (in una cartella temporanea). Legge soltanto: harden (anche su
 # una funzione creata dopo) gira in una transazione annullata.
 passo "script di produzione" verifica node_ts db/test/prod-scripts.test.mts
+# L'Ignored Build Step di Vercel (scripts/vercel-ignore.mjs): ogni deploy di
+# produzione riparte con la cache ISR vuota, quindi si costruisce solo dal
+# branch release e solo se e' cambiato un file fuori da NON_RUNTIME (una voce
+# sconosciuta costruisce). Un git finto, poi un repository git vero in una
+# cartella temporanea (anche con lo script lanciato da un link simbolico), e
+# le guardie: ogni voce del repository classificata, il codice del sito che
+# non legge db/, scripts/, test/, docs/.
+passo "deploy su Vercel (ignoreCommand)" verifica node_ts db/test/deploy.test.mts
 # Le cache locali, nessuna rete. fetch-assets resta fuori: senza
 # --offline interroga il wiki, e con --offline dipenderebbe da cosa c'e'
 # in public/assets su questa macchina. Le verifiche delle query non
@@ -122,8 +133,11 @@ passo "import equipaggiamento (cache)" prepara node db/import/load-equipment.mjs
 passo "query delle pagine" verifica node_ts db/test/queries.test.mts
 passo "parametri dell'URL" verifica node_ts db/test/parametri.test.mts
 # Gli URL degli eventi (lib/urls.ts): la grammatica dei percorsi e i link
-# che il sito costruisce. Funzioni pure, niente database.
-passo "URL degli eventi" verifica node_ts db/test/urls.test.mts
+# che il sito costruisce. Poi robots.txt (app/robots.ts, lib/robots.ts),
+# letto come lo leggono i motori: i tier e le pagine Japan degli eventi
+# fuori, /events/japan dentro, e il rel nofollow dei link verso di loro.
+# Funzioni pure, niente database.
+passo "URL degli eventi e robots.txt" verifica node_ts db/test/urls.test.mts
 # I filtri della lista dei clear (lib/clears/filtri.ts) e i loro URL
 # (lib/urls.ts filteredClearsHref, clearListHref): valori sbagliati che
 # valgono "non impostato", l'URL canonico, la guardia dei moduli puri.
@@ -139,8 +153,13 @@ passo "PWA" verifica node_ts db/test/pwa.test.mts
 # /api/revalidate con una funzione finta al posto di next/cache, e la
 # guardia che tiene lib/queries.ts, lib/clears.ts, lib/cards.ts,
 # lib/equipment.ts, lib/tips.ts, lib/card-page.ts e lib/card-art.ts senza
-# 'use cache'. Funzioni pure.
-passo "cache: tag e /api/revalidate" verifica node_ts db/test/cache-tags.test.mts
+# 'use cache'. Poi le scritture ISR: 30 giorni di scadenza e un giorno di
+# revalidate (anche /events), le pagine di un utente scadute una per una e
+# mai tutto community, le missioni solo sulla pagina dell'evento, i <Link>
+# calcolati senza prefetch e col rel di robots.txt, ogni ORDER BY delle
+# letture in cache con una chiave unica, niente orologio ne' caso nel
+# render. Funzioni pure e file.
+passo "cache: tag, /api/revalidate, scritture ISR" verifica node_ts db/test/cache-tags.test.mts
 # Il builder dei clear (0016): invio e revisione in una transazione, gli
 # assetti congelati, chi puo' cosa, il limite per ora, voti e commenti.
 # Dopo gli import (servono carte e ricorrenze vere) e dopo le query delle
@@ -356,7 +375,13 @@ passo "missioni" verifica node_ts db/test/missions.test.mts
 # immagini non sono "l'ultimo import"), le immagini mancanti anche senza
 # pagina, i vincoli della provenienza (0033, in transazioni annullate) e la
 # forma dei due workflow (permessi job per job, i passi Decide eseguiti
-# davvero).
+# davvero). E il rinfresco dopo un giro (db/prod/rinfresco.mjs): niente
+# cambiato niente richiesta, i tag delle sole righe toccate da un giro delle
+# immagini (le carte, gli eventi e le copertine dietro gli asset, letti sul
+# database in una transazione annullata), le richieste da 50 con un fetch
+# finto, il giro fallito che rinfresca prima di uscire e quello dopo che
+# recupera (summary.refresh, giroPrecedente); e sanity.mjs con le tabelle
+# piccole (sotto 4 KB niente 90%).
 # Crea solo weeklytest+weekly_author e il database <test>_mc_test, e li toglie.
 passo "aggiornamento settimanale" verifica node_ts db/test/weekly-data.test.mts
 

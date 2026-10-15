@@ -300,8 +300,10 @@ async function righeVere() {
 
 function guardieFile() {
   console.log('\n  -- guardie sui file')
-  const robots = file('app/robots.ts')
-  check('robots.txt esclude /notifications (copre /notifications/<id>)', /'\/notifications'/.test(robots))
+  // le regole stanno in lib/robots.ts, app/robots.ts le scrive tutte
+  const robots = file('lib/robots.ts')
+  check('robots.txt esclude /notifications (copre /notifications/<id>)', /'\/notifications'/.test(robots) &&
+    /disallow: \[\.\.\.DISALLOW\]/.test(file('app/robots.ts')))
   const pagina = file('app/notifications/page.tsx')
   check('/notifications: per utente, noindex, requireOnboardedUser', /export const instant = false/.test(pagina) &&
     /robots: \{ index: false \}/.test(pagina) && /requireOnboardedUser\(/.test(pagina))

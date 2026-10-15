@@ -7,6 +7,7 @@ import {
 } from '@/lib/queries'
 import { getComments, getVersionLineups } from '@/lib/clears'
 import { TAG, eventTag } from '@/lib/cache/tags'
+import { GIORNO, vitaAlConfine } from '@/lib/cache/vita'
 
 // Le letture delle pagine pubbliche, in cache. Avvolgono le funzioni pure
 // di lib/queries.ts e lib/clears.ts, che restano senza cacheTag/cacheLife:
@@ -18,21 +19,8 @@ import { TAG, eventTag } from '@/lib/cache/tags'
 // importa lib/dal ne' next/headers (regola eslint).
 //
 // Ogni funzione ha il suo cacheLife: la vita della pagina e' la piu' corta
-// fra quelle dei dati che legge.
-
-const GIORNO = 86_400
-const SETTIMANA = 7 * GIORNO
-const clamp = (n: number, min: number, max: number) => Math.min(max, Math.max(min, n))
-
-/**
- * La vita di un dato che dipende da now() (lo stato Ongoing/Ended): si
- * rigenera al prossimo confine di una ricorrenza, non prima di 5 minuti
- * (sotto, il dato uscirebbe dal prerender) e non oltre il tetto.
- */
-function vitaAlConfine(secondi: number | null, tetto: number) {
-  const revalidate = clamp(secondi ?? tetto, 300, tetto)
-  return { stale: 300, revalidate, expire: Math.max(revalidate * 2, SETTIMANA) }
-}
+// fra quelle dei dati che legge. La scadenza di ogni pagina pubblica e' di
+// 30 giorni (lib/cache/vita.ts SCADENZA, e i profili di next.config.ts).
 
 export async function getEventCached(id: string, reg: Region) {
   'use cache'
@@ -96,12 +84,17 @@ export type FiltriEventi = {
   limit?: number
 }
 
-/** La lista: i conteggi dei clear cambiano con gli invii, lo stato al confine. */
+/**
+ * La lista: i conteggi dei clear cambiano con gli invii (events-list), lo
+ * stato al confine di una ricorrenza (secondsToNextStatusChange). Il tetto
+ * e' un giorno come per gli eventi: con un'ora le due home si rigeneravano
+ * fino a 24 volte al giorno senza che niente fosse cambiato.
+ */
 export async function listEventsCached(f: FiltriEventi) {
   'use cache'
   cacheTag(TAG.catalog, TAG.eventsList)
   const [righe, secondi] = await Promise.all([listEvents(f), secondsToNextStatusChange(null)])
-  cacheLife(vitaAlConfine(secondi, 3600))
+  cacheLife(vitaAlConfine(secondi, GIORNO))
   return righe
 }
 

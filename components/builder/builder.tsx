@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { relRobots } from '@/lib/robots'
 import { useActionState, useReducer, useState } from 'react'
 import { Plus } from '@phosphor-icons/react/dist/ssr'
 import { BuildEditor, type BuildAperta } from '@/components/builder/build-editor'
@@ -158,7 +159,8 @@ export function Builder({ modo, eventId, tierId, reg, clearId, runs, categorie, 
           >
             {inCorso ? 'Saving…' : modo === 'edit' ? 'Save the new version' : 'Submit the clear'}
           </button>
-          <Link href={annulla} className="text-[13px] text-testo underline decoration-oro-linea underline-offset-2 hover:text-inchiostro">
+          {/* torna al tier: senza prefetch, che ne avvierebbe la generazione */}
+          <Link href={annulla} rel={relRobots(annulla)} prefetch={false} className="text-[13px] text-testo underline decoration-oro-linea underline-offset-2 hover:text-inchiostro">
             Cancel
           </Link>
         </div>

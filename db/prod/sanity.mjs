@@ -16,6 +16,17 @@ import { CACHE_DIR } from './inputs.mjs'
 
 export const WIKI_MAX_DROP_PCT = 2
 export const CSV_MIN_PCT = 90
+/**
+ * Sotto questa misura (la volta prima) un CSV non si confronta col 90%:
+ * basta che ci sia e non sia vuoto. Le tabelle piccole cambiano a salti
+ * veri: il 2026-10-15 points.csv e' passato da 777 a 99 byte perche' il
+ * datamine ha tolto 28 varianti di punti mai usate da mission_rewards (che
+ * usa solo gli id 11-14, con la quantita' in colonna), e il settimanale si
+ * e' fermato. Un CSV troncato a meta' resta un errore dove conta, sulle
+ * tabelle grandi; per le altre ci sono i limiti alle cancellazioni di
+ * compare.mjs.
+ */
+export const CSV_MIN_BYTES = 4096
 
 // Pure, per i test: ognuna torna l'elenco dei problemi (vuoto = va bene).
 export function checkPages(label, prev, cur, maxDropPct = WIKI_MAX_DROP_PCT) {
@@ -28,17 +39,24 @@ export function checkPages(label, prev, cur, maxDropPct = WIKI_MAX_DROP_PCT) {
 }
 
 /**
+ * Ogni CSV deve esserci e avere almeno una riga di dati (vuoto vuol dire
+ * zero byte, o la sola intestazione: senzaRighe). Se la volta prima era di
+ * almeno minBytes, deve anche essere almeno il minPct% di allora.
+ *
  * @param {Record<string, number>} prev  tabella -> byte, la volta prima
  * @param {Record<string, number | undefined>} cur  tabella -> byte, adesso
  * @param {string[]} required
+ * @param {{ minPct?: number, minBytes?: number, senzaRighe?: Iterable<string> }} [opts]
+ *   senzaRighe: le tabelle di adesso con la sola intestazione
  */
-export function checkDatamine(prev, cur, required = TABLES, minPct = CSV_MIN_PCT) {
+export function checkDatamine(prev, cur, required = TABLES, { minPct = CSV_MIN_PCT, minBytes = CSV_MIN_BYTES, senzaRighe = [] } = {}) {
+  const vuote = new Set(senzaRighe)
   const out = []
   for (const t of required) {
     const size = cur[t]
-    if (!size) { out.push(`datamine ${t}.csv: missing or empty`); continue }
+    if (!size || vuote.has(t)) { out.push(`datamine ${t}.csv: missing or empty`); continue }
     const was = prev[t]
-    if (was && size < was * (minPct / 100)) {
+    if (was && was >= minBytes && size < was * (minPct / 100)) {
       out.push(`datamine ${t}.csv: ${size} bytes, ${was} last time (under ${minPct}%)`)
     }
   }
@@ -49,10 +67,29 @@ const pageCount = (file) => {
   if (!existsSync(file)) return null
   try { return JSON.parse(readFileSync(file, 'utf8')).pages.length } catch { return null }
 }
-const csvSizes = (dir) => Object.fromEntries(TABLES.map((t) => {
+const csvSizes = (dir, tables = TABLES) => Object.fromEntries(tables.map((t) => {
   const f = join(dir, 'datamine', `${t}.csv`)
   return [t, existsSync(f) ? statSync(f).size : undefined]
 }))
+
+/**
+ * Le tabelle con la sola intestazione (o nemmeno quella), lette solo fra
+ * quelle piccole: un CSV di almeno minBytes ha righe per forza.
+ */
+export function csvSenzaRighe(dir, sizes, tables = TABLES, minBytes = CSV_MIN_BYTES) {
+  return tables.filter((t) => {
+    const n = sizes[t]
+    if (!n || n >= minBytes) return false
+    const righe = readFileSync(join(dir, 'datamine', `${t}.csv`), 'utf8').split(/\r?\n/).filter((l) => l.trim() !== '')
+    return righe.length < 2
+  })
+}
+
+/** checkDatamine sulle cartelle: adesso (cache) contro la volta prima (prev, o null). */
+export function checkDatamineDir(prev, cache, tables = TABLES) {
+  const cur = csvSizes(cache, tables)
+  return checkDatamine(prev ? csvSizes(prev, tables) : {}, cur, tables, { senzaRighe: csvSenzaRighe(cache, cur, tables) })
+}
 
 export function checkCache(cache, prev) {
   const hasPrev = prev && existsSync(prev)
@@ -60,7 +97,7 @@ export function checkCache(cache, prev) {
   return [
     ...checkPages('wiki cards', hasPrev ? pc(prev, 'wiki-cards.json') : null, pc(cache, 'wiki-cards.json')),
     ...checkPages('wiki events', hasPrev ? pc(prev, 'wiki-events.json') : null, pc(cache, 'wiki-events.json')),
-    ...checkDatamine(hasPrev ? csvSizes(prev) : {}, csvSizes(cache)),
+    ...checkDatamineDir(hasPrev ? prev : null, cache),
   ]
 }
 

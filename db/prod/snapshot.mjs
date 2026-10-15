@@ -64,11 +64,13 @@ async function names(client, sql) {
 
 /**
  * @param {import('pg').ClientBase} client
- * @param {{ tables?: typeof TABLES, inTransaction?: boolean }} [opts]
+ * @param {{ tables?: typeof TABLES, inTransaction?: boolean, contentOnly?: boolean }} [opts]
  *   inTransaction: dentro una transazione gia' aperta (i test, che poi la
  *   annullano): niente begin/commit propri
+ *   contentOnly: solo le tabelle di gioco, senza conteggi e md5 di quelle
+ *   degli utenti ne' i nomi (update.mjs, per sapere cosa rinfrescare)
  */
-export async function takeSnapshot(client, { tables = TABLES, inTransaction = false } = {}) {
+export async function takeSnapshot(client, { tables = TABLES, inTransaction = false, contentOnly = false } = {}) {
   if (!inTransaction) await client.query('begin isolation level repeatable read read only')
   try {
     // le chiavi con un orario (event_run.starts_at) non devono dipendere
@@ -90,13 +92,16 @@ export async function takeSnapshot(client, { tables = TABLES, inTransaction = fa
       if (spec.class === 'content') {
         const r = await contentRows(client, t, spec)
         out[t] = { class: 'content', count: Object.keys(r).length, rows: r }
-      } else if (spec.class === 'user') {
+      } else if (spec.class === 'user' && !contentOnly) {
         out[t] = { class: 'user', ...await opaque(client, t) }
+      } else if (spec.class === 'user') {
+        out[t] = { class: 'user' }
       } else {
         out[t] = { class: 'system' }
       }
     }
-    const nm = {
+    /** @type {Record<string, Record<string, string>>} */
+    const nm = contentOnly ? {} : {
       card: await names(client, `select card_id as id, name from card_text where locale = 'en'`),
       event: await names(client, `select event_id as id, name from event_text where locale = 'en'`),
     }

@@ -1,13 +1,18 @@
 import Link from 'next/link'
 import { ArrowLeft } from '@phosphor-icons/react/dist/ssr'
+import { relRobots } from '@/lib/robots'
 
 type Props = { titolo: string; evento: string; livello: string; indietro: string }
 
-/** Il titolo delle pagine del builder: dove si sta inviando il clear. */
+/**
+ * Il titolo delle pagine del builder: dove si sta inviando il clear. Il
+ * link torna alla pagina del tier: senza prefetch, che ne avvierebbe la
+ * generazione per chi non ci torna.
+ */
 export function Intestazione({ titolo, evento, livello, indietro }: Props) {
   return (
     <header>
-      <Link href={indietro} className="inline-flex items-center gap-1.5 text-[13px] text-tenue hover:text-inchiostro transition-colors">
+      <Link href={indietro} rel={relRobots(indietro)} prefetch={false} className="inline-flex items-center gap-1.5 text-[13px] text-tenue hover:text-inchiostro transition-colors">
         <ArrowLeft size={14} weight="bold" aria-hidden />
         Back to the event
       </Link>

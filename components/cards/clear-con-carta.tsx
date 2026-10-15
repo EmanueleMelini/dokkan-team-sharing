@@ -3,6 +3,7 @@ import { Camera } from '@phosphor-icons/react/dist/ssr'
 import { DIFFICOLTA } from '@/lib/livelli'
 import { HandleLink } from '@/components/handle-link'
 import { browseHref, clearAnchor, eventHref } from '@/lib/urls'
+import { relRobots } from '@/lib/robots'
 import type { CardClear } from '@/lib/card-page'
 import type { Region } from '@/lib/queries'
 
@@ -27,7 +28,8 @@ export type AltraVersioneCarta = { reg: Region; totale: number; primo: CardClear
 
 /**
  * I migliori clear che usano la carta, ciascuno col link al punto della
- * lista del suo tier dove si vede. La lista e' densa: niente prefetch.
+ * lista del suo tier dove si vede. La lista e' densa: niente prefetch. I
+ * tier sono fuori da robots.txt (lib/robots.ts): link nofollow.
  *
  * perVersione: la pagina ha un blocco per versione e chi guarda ne vede
  * uno solo (components/cards/pagina.tsx). Allora il blocco vuoto dice di
@@ -50,7 +52,7 @@ export function ClearConCarta({ clears, totale, reg, perVersione = false, altra 
           <>
             On {REGIONE[altra.reg]} it&apos;s in <span className="numeri">{altra.totale}</span>{' '}
             {altra.totale === 1 ? 'clear' : 'clears'}, the top one in{' '}
-            <Link href={hrefClear(altra.primo, altra.reg)} prefetch={false} className={LINK}>
+            <Link href={hrefClear(altra.primo, altra.reg)} rel={relRobots(hrefClear(altra.primo, altra.reg))} prefetch={false} className={LINK}>
               {altra.primo.event_name}
             </Link>.{' '}
           </>
@@ -75,7 +77,7 @@ export function ClearConCarta({ clears, totale, reg, perVersione = false, altra 
           return (
             <li key={c.id} className="py-2.5 min-w-0">
               {/* Il link e' sull'evento, l'handle ha il suo: due link, mai uno dentro l'altro */}
-              <Link href={href} prefetch={false} className="block text-[13px] font-medium text-inchiostro hover:underline decoration-oro-linea underline-offset-2">
+              <Link href={href} rel={relRobots(href)} prefetch={false} className="block text-[13px] font-medium text-inchiostro hover:underline decoration-oro-linea underline-offset-2">
                 {c.event_name}
               </Link>
               <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-tenue">

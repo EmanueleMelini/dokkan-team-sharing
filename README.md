@@ -193,7 +193,10 @@ alias `@/` di tsconfig.
 
 `npm run test:smoke` è un'altra cosa e **non fa parte di `db:test`**: prova
 il sito che gira già (per difetto `http://localhost:3000`, si cambia con
-`SMOKE_URL`) con sole richieste GET, quindi non scrive niente. Controlla i
+`SMOKE_URL`) con sole richieste GET, quindi non scrive nel database. Contro
+la produzione pero' costa scritture ISR: ogni prima GET di un URL fuori
+cache e ogni 404 si salvano (sezione "Scritture ISR su Vercel Hobby"), quindi
+lanciarlo su `dokkants.app` solo dopo un deploy e con margine. Controlla i
 codici HTTP e i testi chiave della lista eventi e delle viste filtrate
 (`/events/browse`, noindex), della ricerca con `_`, `%` e `%00`, delle
 pagine che non esistono (404, non 500), di un'EZA, di una sfida, degli URL
@@ -314,7 +317,7 @@ app/                          Next.js 16, App Router
   privacy/, terms/            le pagine legali (testi in lib/legale.ts)
   api/                        auth/ (better-auth), me/ (chi guarda), cards/ e equipment/ (i picker),
                               revalidate/ (dopo un import), cron/purge/ (la pulizia giornaliera), cron/digest/ (il digest email)
-  robots.ts, sitemap.ts       cosa indicizzare: eventi e carte, mai le viste filtrate
+  robots.ts, sitemap.ts       cosa indicizzare: eventi, carte e profili; mai le viste filtrate, i tier e le pagine Japan (le regole in lib/robots.ts)
   icon.svg, favicon.ico, apple-icon.png, opengraph-image.png, twitter-image.png
                               le icone e l'anteprima dei link, file statici generati da scripts/brand/
 proxy.ts                      solo per /admin: senza cookie di sessione un 404 vero, senza database
@@ -344,7 +347,8 @@ lib/
   profiles.ts                 i profili (pure): solo dalla vista public_profile
   cards.ts, equipment.ts      le ricerche dei picker (anche GET /api/cards e /api/equipment)
   parametri.ts, urls.ts       la query string letta con difesa, e tutti gli URL interni
-  cache/                      'use cache' sopra le query pure, i tag, l'invalidazione, /api/revalidate
+  robots.ts                   le regole di robots.txt e il rel nofollow dei link verso le pagine escluse (puro)
+  cache/                      'use cache' sopra le query pure, i tag, l'invalidazione, /api/revalidate, le vite dei dati (vita.ts, puro)
   viewer/                     chi guarda: il tipo di /api/me e il cookie dts_signed_in
   tema/                       i temi: id e nomi, lo script del <head> (temi.ts, puro), applicarli nel browser (client.ts)
   versione/                   la versione Global/Japan: cookie, specchio dei redirect, gemello e script del <head> (versione.ts, puro), il browser (client.ts), le decisioni dell'interfaccia (interruttore.ts, puro), il cambio (cambio.ts), il cookie della richiesta (server.ts)
@@ -385,6 +389,7 @@ db/
     harden.mjs                toglie i privilegi su public ai ruoli della Data API di Supabase
     tables.mjs                ogni tabella classificata: di gioco o degli utenti
     snapshot.mjs, compare.mjs, limits.json   la fotografia delle tabelle e i limiti dell'aggiornamento settimanale
+    rinfresco.mjs             cosa rinfrescare sul sito dopo un giro (solo le righe cambiate) e la richiesta a /api/revalidate
     dump.mjs, rehearsal.mjs   il backup della produzione e il giro di prova su una copia locale
     sanity.mjs, last-run.mjs, missing-assets.mjs, mirror-assets.mjs   i controlli e le immagini del workflow
     storage.mjs               lo spazio delle immagini contro i limiti, e la guardia prima del deploy
@@ -402,8 +407,10 @@ test/
 .github/workflows/weekly-data.yml   l'aggiornamento settimanale automatico
 .github/workflows/daily-images.yml  il giro giornaliero delle sole immagini (mai il venerdi')
 scripts/assets-deploy.mjs     public/assets su Cloudflare Pages, con _headers (assets:deploy)
+scripts/vercel-ignore.mjs     l'Ignored Build Step di Vercel: un deploy di produzione si costruisce solo da release e solo se cambia il codice del sito
+scripts/vercel-ignore-decidi.mjs  le regole di quella decisione, senza effetti (le prova db/test/deploy.test.mts)
 scripts/brand/                il marchio: geometria, SVG sorgente (svg/) e il generatore delle icone (npm run brand)
-vercel.json                   regione fra1, i cron (pulizia alle 4 UTC, digest email alle 17), anteprime saltate (ignoreCommand)
+vercel.json                   regione fra1, i cron (pulizia alle 4 UTC, digest email alle 17), anteprime, build di produzione non da release e deploy senza codice nuovo saltati (ignoreCommand)
 public/.well-known/security.txt   il contatto per chi trova una vulnerabilita' (RFC 9116): Expires va rinnovato ogni anno, entro ottobre (test:smoke lo segnala)
 public/assets/                le immagini ospitate da noi (non versionate)
 backups/                      le copie di prod:backup (non versionate)
@@ -1100,7 +1107,8 @@ della 0033: le pagine chiamano `asset_bare()` e leggono `asset.frame`, e
 alla produzione) e righe di `asset` rifiutate. La colonna è nullable e senza
 default, e la funzione nuova: il codice di prima continua a funzionare
 sopra. Quindi `npm run prod:migrate -- --yes` da un export pulito del
-commit, poi subito il push su `main`. Se mancasse, il piano del giornaliero
+commit, poi subito il merge su `main` e il rilascio (`git push origin
+main:release`, sezione "Il rilascio"). Se mancasse, il piano del giornaliero
 si ferma con il messaggio di `fetch-assets`, e il giro di prova a
 `migrate --check`.
 
@@ -1147,7 +1155,8 @@ falliscono con `function asset_bare(text) does not exist`: è il primo passo):
 In produzione:
 
 1. `npm run prod:migrate -- --yes` (da un export pulito del commit), poi il
-   push su `main`. Controllo: `select count(*) from asset where frame =
+   merge su `main` e il rilascio (`git push origin main:release`).
+   Controllo: `select count(*) from asset where frame =
    false` dà 179 (se è meno, le righe che mancano restano null: nessuna
    cornice disegnata, come oggi);
 2. GitHub Actions, Daily images, Run workflow su `main` con `dry_run`
@@ -1166,9 +1175,11 @@ In produzione:
    Pages), il deploy, `update.mjs --images-only` (con `--offline` adotta i
    file nuovi dall'albero e misura la cornice dagli stessi byte del giro di
    prova) e il controllo dopo, uguale al giro di prova;
-4. dopo: le pagine del catalogo e la lista degli eventi si rinfrescano; le
-   liste dei clear in cache mostrano le miniature nuove quando la loro
-   cache scade (le vecchie URL funzionano ancora). Il riepilogo delle
+4. dopo: si rinfrescano le pagine delle carte e degli eventi toccati (e la
+   lista degli eventi, se cambia un banner o una copertina), non tutto il
+   catalogo (`db/prod/rinfresco.mjs`, sezione "Scritture ISR su Vercel
+   Hobby"); le liste dei clear in cache mostrano le miniature nuove al loro
+   revalidate di un giorno (le vecchie URL funzionano ancora). Il riepilogo delle
    immagini dice "16 cards show a drawn frame".
 
 Lo stesso lo fa il settimanale del venerdì nel suo passo dei download, una
@@ -1223,8 +1234,10 @@ settimanale. Riscaricarle dal Mac non serve più.
   il giro di prova. Al massimo 40 minuti.
 - **`update.mjs --images-only`** fa solo `fetch-assets --offline`
   (`PIPELINE_IMAGES` in `db/prod/pipeline.mjs`): adotta i file appena
-  pubblicati e li collega, con lo stesso lucchetto di `import_run`, lo
-  stesso controllo dello schema e lo stesso rinfresco delle pagine. Chiude
+  pubblicati e li collega, con lo stesso lucchetto di `import_run` e lo
+  stesso controllo dello schema; il rinfresco manda solo i tag delle carte
+  e degli eventi toccati (`card:<id>`, `event:<id>`), o niente se non è
+  cambiato niente. Chiude
   `import_run` con `summary.mode = 'images'` e senza commit del datamine, e
   `last-run.mjs` lo ignora: un giro delle immagini non fa credere al
   settimanale che il commit di oggi sia già importato. Le copertine degli
@@ -2483,7 +2496,7 @@ Guardare l'altra versione da un link marcato vale una pagina: il primo link senz
 
 **I file.** `lib/versione/versione.ts` (puro: il cookie, `seguiVersione`, `gemello`, lo script del `<head>`, `localeDi`), `client.ts` (`data-reg` nel browser, `useVersione`, la regione live, il riallineamento una volta per scheda), `server.ts` (`versioneRichiesta`), `cambio.ts` (il cambio, senza Next), `interruttore.ts` (puro: quale versione mostra un URL, quando il cambio porta al gemello, i testi degli avvisi, i blocchi della carta); `components/versione/` (l'interruttore, `LinkEventi`, `SeguiVersione`, gli avvisi); le regole in `next.config.ts`; `set_region` nella 0035.
 
-**Le prove.** Il passo "versione del sito" (`db/test/versione.test.mts`): le regole di `next.config.ts` nel valutatore di Next 16 (`unstable_getResponseFromNextConfig`: chi va dove, cosa non si tocca mai, `_rsc` che passa, nessun giro), `seguiVersione` uguale alle regole, anche con le maiuscole nel percorso (che il router vero non distingue e il valutatore di prova sì: per queste righe il test usa i matcher del router di Next, `buildCustomRoute` di `router-utils/filesystem` con la `caseSensitiveRoutes` della config, e prima controlla che sulle righe di sempre diano lo stesso del valutatore) e con le barre doppie o in fondo (i 308 del router seguiti come li segue il browser: `normalizeRepeatedSlashes` di Next e la sua prima regola, che il test controlla sia ancora quella della barra in fondo; ogni riga di sempre anche con una barra in più in fondo e con le barre doppie), `gemello` nei due sensi, il cookie e lo script del `<head>` su un document finto, `set_region` e il cambio con il database vero, e le guardie sui file (ogni redirect delle azioni e dei moduli di `lib/` che importano `redirect`, letto col parser di TypeScript, con la sua controprova; nessuno scrive il cookie dal browser). Il passo "versione del sito (interfaccia)" (`db/test/versione-ui.test.mts`, senza database): quale versione mostra un URL e se è marcato, quando il cambio porta al gemello (sempre a un URL diverso, già risolto), il riallineamento, il redirect di un'azione riconosciuto come lo riconosce Next, i testi (anche l'errore di un cambio, breve quanto basta per stare in una riga a 320 px), i blocchi della carta, i contrasti in tutti i temi, e le guardie su interruttore (`aria-pressed`, niente radio, lo stesso peso per le due opzioni, il pieno di sistema con i colori forzati, hover e pressione solo su quella non scelta, le misure dei bersagli, il focus attaccato, il velo mentre gira), burger (l'errore nella cella dell'etichetta), header (accanto a Events, fuori dalla parte che cambia con `/api/me`; l'errore che se ne va cambiando pagina), tag JP sul burger (tolto col focus da tastiera), Settings (l'esito in una riga riservata, con l'errore nello stesso posto), avvisi (il link solo verso una run, il focus di "Use … everywhere", l'errore nel bottone), la cache del router dopo un cambio in un'altra scheda, liste, pagina evento (il link esplicito solo a chi non vede l'avviso) e carta. In più i passi "account" (il cookie all'accesso e all'uscita, e mai al rinnovo della sessione), il cambio che con un errore del database non scrive il cookie, "URL degli eventi", "notifiche (app)", "attivita' del sito", la pagina della carta (i blocchi su carte vere), il builder (`/api/cards` con `reg`), "script di produzione" (`set_region` dopo harden), e `test:smoke` contro `next start` (i 307 veri col cookie, `_rsc` che passa, le pagine marcate che restano, nessun redirect senza cookie, l'HTML del server uguale per tutti con l'interruttore e gli avvisi, `/events/japan` e `?region=global` serviti dalla cache).
+**Le prove.** Il passo "versione del sito" (`db/test/versione.test.mts`): le regole di `next.config.ts` nel valutatore di Next 16 (`unstable_getResponseFromNextConfig`: chi va dove, cosa non si tocca mai, `_rsc` che passa, nessun giro), `seguiVersione` uguale alle regole, anche con le maiuscole nel percorso (che il router vero non distingue e il valutatore di prova sì: per queste righe il test usa i matcher del router di Next, `buildCustomRoute` di `router-utils/filesystem` con la `caseSensitiveRoutes` della config, e prima controlla che sulle righe di sempre diano lo stesso del valutatore) e con le barre doppie o in fondo (i 308 del router seguiti come li segue il browser: `normalizeRepeatedSlashes` di Next e la sua prima regola, che il test controlla sia ancora quella della barra in fondo; ogni riga di sempre anche con una barra in più in fondo e con le barre doppie), `gemello` nei due sensi, il cookie e lo script del `<head>` su un document finto, `set_region` e il cambio con il database vero, e le guardie sui file (ogni redirect delle azioni e dei moduli di `lib/` che importano `redirect`, letto col parser di TypeScript, con la sua controprova; nessuno scrive il cookie dal browser). Il passo "versione del sito (interfaccia)" (`db/test/versione-ui.test.mts`, senza database): quale versione mostra un URL e se è marcato, quando il cambio porta al gemello (sempre a un URL diverso, già risolto), il riallineamento, il redirect di un'azione riconosciuto come lo riconosce Next, i testi (anche l'errore di un cambio, breve quanto basta per stare in una riga a 320 px), i blocchi della carta, i contrasti in tutti i temi, e le guardie su interruttore (`aria-pressed`, niente radio, lo stesso peso per le due opzioni, il pieno di sistema con i colori forzati, hover e pressione solo su quella non scelta, le misure dei bersagli, il focus attaccato, il velo mentre gira), burger (l'errore nella cella dell'etichetta), header (accanto a Events, fuori dalla parte che cambia con `/api/me`; l'errore che se ne va cambiando pagina), tag JP sul burger (tolto col focus da tastiera), Settings (l'esito in una riga riservata, con l'errore nello stesso posto), avvisi (il link solo verso una run, il focus di "Use … everywhere", l'errore nel bottone), la cache del router dopo un cambio in un'altra scheda, liste, pagina evento (il link esplicito solo a chi non vede l'avviso) e carta. In più i passi "account" (il cookie all'accesso e all'uscita, e mai al rinnovo della sessione), il cambio che con un errore del database non scrive il cookie, "URL degli eventi e robots.txt", "notifiche (app)", "attivita' del sito", la pagina della carta (i blocchi su carte vere), il builder (`/api/cards` con `reg`), "script di produzione" (`set_region` dopo harden), e `test:smoke` contro `next start` (i 307 veri col cookie, `_rsc` che passa, le pagine marcate che restano, nessun redirect senza cookie, l'HTML del server uguale per tutti con l'interruttore e gli avvisi, `/events/japan` e `?region=global` serviti dalla cache).
 
 **In produzione: prima la 0035, poi il codice.** `npm run prod:migrate -- --yes` (migrazioni e permessi: `harden` toglie `set_region` ai ruoli della Data API come le altre funzioni), e solo dopo il deploy. Senza la 0035 `setVersionAction` fallisce per chi è entrato con un account completo (con "Couldn't change the version. Try again.", e il dispositivo resta com'era: il cookie si scrive solo dopo l'account); i redirect, lo script del `<head>` e i link funzionano anche senza, e il codice di prima sulla 0035 va (nessuno la chiama). Dopo il primo deploy:
 
@@ -2688,8 +2701,10 @@ per non arrivarci.
   scritto da Vercel: un header mandato dal client non lo sposta.
   `AUTH_IP_HEADERS` lo cambia (per esempio dietro un altro proxy).
 - `robots.ts` e `sitemap.ts`: indicizzati eventi, carte e profili; fuori
-  API, accesso, Settings, `/admin`, pagine di invio e modifica e le viste
-  filtrate (`/events/browse`, `/events/*/clears`). La sitemap ha `/events`,
+  API, accesso, Settings, `/admin`, pagine di invio e modifica, le viste
+  filtrate (`/events/browse`, `/events/*/clears`), i tier e le pagine Japan
+  degli eventi (`/events/*/t/`, `/events/*/japan`; sezione "Scritture ISR
+  su Vercel Hobby"). Le regole stanno in `lib/robots.ts`. La sitemap ha `/events`,
   tutti gli eventi e le carte uscite su Global (i profili no), in cache
   per un giorno.
   **Il build legge il database** (solo SELECT): prerenderizza `/events`, la
@@ -2710,10 +2725,10 @@ Vercel Hobby dà 4 ore di CPU attiva al mese, senza extra. Per questo le pagine 
 
 - **URL**: `/events` e `/events/japan` (statiche, le home di Global e Japan) · `/events/browse?region=&type=&status=&q=&page=` (viste filtrate, dinamiche, noindex, escluse da `robots.txt`) · `/events/<id>` · `/events/<id>/japan` · `/events/<id>[/japan]/t/<tier>` · `…/t/<tier>/p/<n>` (n ≥ 2) · `/events/<id>/clears?tier=&…` (la lista filtrata dei clear, dinamica, noindex, esclusa da `robots.txt`) · `/cards/<id>` · `/users/<handle>[/p/<n>]`. Si costruiscono solo con `lib/urls.ts` (`eventHref`, `browseHref`, `clearListHref`, `cardHref`, `profileHref`). Un tier che non è dell'evento, `p/1` o una pagina oltre l'ultima sono 404. Su `next start` e su Vercel la prima visita a un URL non prerenderizzato riceve lo shell con 200 e il 404 nello stream (noindex); dalla seconda visita è un 404 vero, dalla cache. `/` porta a `/events` con un 307 (`next.config.ts`). Restano con la query string le pagine per utente: `/events/<id>/submit?region=&tier=` (la regione c'è sempre, anche global) e `/events?account=deleted` dopo la cancellazione dell'account (l'avviso lo legge un'isola client). Un `?region=global` su una pagina evento la marca per chi ha scelto Japan (sezione "Versione Global/Japan"): la pagina non lo legge, è la stessa voce in cache. `/events`, `/events/japan` e ogni pagina evento hanno il loro `canonical`, quindi `?region=global` e `?account=deleted` non sono doppioni.
 - **Dati**: `lib/cache/*.ts` (`'use cache'` con `cacheLife` e `cacheTag`: `data.ts`, `cards.ts`, `tips.ts`, `filters.ts`, `profiles.ts`) avvolge i moduli di query (`lib/queries.ts`, `lib/clears.ts`, `lib/card-page.ts`, `lib/tips.ts`, `lib/profiles.ts`), che restano senza cache perché i test li importano fuori da Next (lo controlla una guardia in `cache-tags.test.mts`). eslint vieta a `lib/cache/*` di importare `lib/dal`, `lib/auth` e `next/headers`. Tag: `catalog`, `events-list`, `community`, `event:<id>`, `card:<id>`, `profile:<handle>`. Lo stato degli eventi (Ongoing/Ended) scade al prossimo inizio o fine di una run (minimo 5 minuti).
-- **Invalidazione** (`lib/cache/invalidate.ts`): invio, revisione, cancellazione e commento rigenerano subito l'evento (`updateTag`), e invio, revisione e cancellazione anche le carte del clear e il profilo dell'autore; il voto lo segna vecchio senza rigenerare (`revalidateTag` `'max'`): gli altri vedono il voto dopo una visita, chi vota lo vede subito da `/api/me`. Cambio di handle, cancellazione dell'account e sospensione passano da `afterUserChanged`, che raccoglie dal database eventi, carte e handle toccati (sopra 300 id invalida tutto `community`). Mai `revalidatePath('/', 'layout')`.
+- **Invalidazione** (`lib/cache/invalidate.ts`): invio, revisione, cancellazione e commento rigenerano subito l'evento (`updateTag`), e invio, revisione e cancellazione anche le carte del clear e il profilo dell'autore; il voto lo segna vecchio senza rigenerare (`revalidateTag` `'max'`): gli altri vedono il voto dopo una visita, chi vota lo vede subito da `/api/me`. Cambio di handle, cancellazione dell'account e sospensione passano da `afterUserChanged`, che raccoglie dal database eventi, carte e handle toccati e li fa scadere uno per uno, quanti che siano (prima, sopra 300 id, scadeva tutto `community`: ogni pagina del sito da riscrivere). Mai `revalidatePath('/', 'layout')`, mai `community` in blocco.
 - **Chi guarda**: il cookie `dts_signed_in=1` (non segreto, non httpOnly) lo mette better-auth a ogni accesso e lo toglie l'uscita; solo con lui il browser chiama `/api/me` (private, no-store). Header, voto, Edit/Delete, commenti e invio sono isole client (`components/viewer`). La versione del sito è il cookie `dts_version` (non segreto, non httpOnly): lo legge lo script del `<head>`, mai una pagina pubblica, e i suoi redirect stanno in `next.config.ts`, cioè sulla CDN. Nessuna pagina cambia col cookie: con il cookie Japan un URL senza versione è un 307 (che non va in cache), e un URL marcato è lo stesso per tutti, quindi niente `Vary`. Chi non ha il cookie non paga niente, chi è su Japan una richiesta in più alla CDN per redirect, mai una funzione.
-- **Import**: in produzione `db/prod/update.mjs` chiama `POST /api/revalidate` (Bearer `CRON_SECRET`, la stessa variabile del cron; serve anche `PROD_SITE_URL`, da mettere nell'ambiente degli script di produzione per la routine a mano). In locale `db:import`, `db:refresh` e `db:demo` finiscono con `npm run cache:clear`; dopo una modifica a mano con psql lancialo tu, altrimenti `next dev` mostra i dati vecchi fino al riavvio. In `next dev` senza `CRON_SECRET` la rotta è aperta.
-- **Build**: legge il database (solo SELECT): fino a 100 eventi Global in corso o in arrivo, fino a 100 carte (le più usate nei clear), i 20 profili con più clear, `/events`, `/events/japan` e la sitemap (tutti gli eventi, `/events/japan` e le carte uscite su Global). Sulla macchina di sviluppo dura pochi secondi (6-9 s con la cache di Turbopack, 167 pagine generate). Se Supabase Free è in pausa, il build fallisce. Ogni deploy riparte con la cache vuota.
+- **Import**: in produzione `db/prod/update.mjs` chiama `POST /api/revalidate` (Bearer `CRON_SECRET`, la stessa variabile del cron; serve anche `PROD_SITE_URL`, da mettere nell'ambiente degli script di produzione per la routine a mano), e solo se il giro ha cambiato qualcosa: un giro delle immagini manda i tag delle sole carte ed eventi toccati (`db/prod/rinfresco.mjs`, sezione "Scritture ISR su Vercel Hobby"). In locale `db:import`, `db:refresh` e `db:demo` finiscono con `npm run cache:clear`; dopo una modifica a mano con psql lancialo tu, altrimenti `next dev` mostra i dati vecchi fino al riavvio. In `next dev` senza `CRON_SECRET` la rotta è aperta.
+- **Build**: legge il database (solo SELECT): fino a 100 eventi Global in corso o in arrivo, fino a 100 carte (le più usate nei clear), i 20 profili con più clear, `/events`, `/events/japan` e la sitemap (tutti gli eventi, `/events/japan` e le carte uscite su Global). Sulla macchina di sviluppo dura pochi secondi (6-9 s con la cache di Turbopack, 167 pagine generate). Se Supabase Free è in pausa, il build fallisce. Ogni deploy riparte con la cache vuota: è il costo più grande in scritture ISR (sezione seguente).
 - **Misure** (`test/cpu.sh` su `next start` locale, 200 richieste per classe, ms di CPU per richiesta). "Prima" è la base di partenza, con ogni pagina dinamica; "fase 1" è dopo la cache; "fase 4" è la misura finale prima della messa online, l'8 ottobre 2026, con filtri e profili (stesso metodo, `next build` e `next start -p 3550` su `dokkan_dev`, `CPU_PROFILE_HANDLE=demo_rotation`):
 
   | classe | prima (ogni pagina dinamica) | fase 1 | fase 1, NEXT_CACHE_MEMORY=0 | fase 4 (2026-10-08) |
@@ -2734,7 +2749,243 @@ Vercel Hobby dà 4 ore di CPU attiva al mese, senza extra. Per questo le pagine 
 
 **In locale su macOS non provare le maiuscole diverse di un profilo contro `next start`.** La cache ISR locale sta su file, e APFS non distingue le maiuscole: il 308 di `/users/DEMO_ROTATION` prende il posto della voce di `/users/demo_rotation`, che poi risponde con un redirect a se stessa fino al build dopo. Su Vercel la cache ISR non sta su un file system locale, ma va provato al primo deploy; `test:smoke` con `SMOKE_EXPECT_CACHE=1` salta quella verifica.
 
-Le prove: `npm run db:test` (passi "URL degli eventi" e "cache: tag e /api/revalidate") e `npm run test:smoke`, che con `SMOKE_EXPECT_CACHE=1` contro `next start` controlla anche che la seconda visita a `/events`, a un evento, a una carta e a un profilo sia un `x-nextjs-cache: HIT`.
+Le prove: `npm run db:test` (passi "URL degli eventi e robots.txt" e "cache: tag, /api/revalidate, scritture ISR") e `npm run test:smoke`, che con `SMOKE_EXPECT_CACHE=1` contro `next start` controlla anche che la seconda visita a `/events`, a un evento, a una carta e a un profilo sia un `x-nextjs-cache: HIT`.
+
+## Scritture ISR su Vercel Hobby
+
+Hobby include **200.000 unità di scrittura ISR** (8 KB l'una) su 30 giorni
+mobili, senza extra: oltre il limite Vercel mette in pausa la produzione
+(503 `DEPLOYMENT_PAUSED`), e la pausa non passa da sola. Si chiede lo
+sblocco a vercel.com/help quando il totale dei 30 giorni è tornato sotto
+(prima, i controlli automatici la rimettono). Il 15 ottobre 2026 il totale
+era **266.000**, a una settimana dalla messa online.
+
+### La diagnosi (15 ottobre 2026)
+
+- **Gli URL**. Un crawler poteva raggiungere circa **22.000 URL in cache**
+  (contati su `dokkan_dev`): 792 pagine evento, 9.892 tier Global, 792
+  gemelli `/japan` con 7.955 tier Japan, 2.697 carte, i profili, `/events`,
+  `/events/japan` e la sitemap. La sitemap ne elenca 3.479: il resto un
+  motore lo trovava dai link. Ogni evento linka tutti i suoi tier, e ogni
+  pagina Global il suo gemello `/japan` (l'avviso della versione è
+  nell'HTML per tutti, lo nasconde solo il CSS). Tier e pagine Japan erano
+  circa **l'84%** degli URL e dei byte, e quasi tutti dicono "No clears yet".
+- **Il peso di una generazione**. Una pagina si salva in 6-7 oggetti (html,
+  rsc, meta e i segmenti `_tree`, `_index`, `_full`, `__PAGE__`), e i dati
+  della pagina ci stanno circa tre volte. Una pagina evento o tier pesa
+  190-200 KB: circa 28 unità senza compressione, 4-8 compresse (Vercel
+  comprime, ma non dice se arrotonda ogni oggetto a 8 KB). Una carta 120-150
+  KB, `/events` circa 490 KB, un 404 in cache circa 45 KB.
+- **Un giro completo** di un crawler dentro un deploy costava fra **91.000
+  e 650.000 unità**, secondo il modello di conteggio: dal 45% al 324% della
+  quota.
+- **Ogni deploy di produzione riparte con la cache ISR vuota.** Dopo un
+  deploy ogni pagina visitata si genera e si riscrive da capo. I tanti deploy
+  fra il 9 e il 13 ottobre (il dominio, la versione Global/Japan) hanno
+  moltiplicato il conto.
+- **Una rigenerazione che dà gli stessi byte non costa scritture** (lo dice
+  Vercel, ed è verificato in locale: due rinfreschi di `catalog` di fila su
+  un evento, il suo gemello, una carta e `/events` danno file identici). Il
+  revalidate di un giorno e le invalidazioni degli import costano CPU, e
+  scrivono solo le pagine che cambiano davvero. **Vale fra due generazioni a
+  runtime, non per i prerender del build**: dopo `next build` e un giro della
+  sitemap su `next start`, un rinfresco di `catalog`, `community` ed
+  `events-list` ha rigenerato 1.231 voci, e 1.179 sono uscite identiche
+  byte per byte. Le 49 diverse erano tutte route prerenderizzate dal build
+  (`.next/prerender-manifest.json`): cambiano solo dei numeri interni di
+  Next (gli indizi dell'albero della route, la riga finale del payload), e
+  in tre la disposizione delle righe. Dalla seconda rigenerazione in poi
+  anche loro sono stabili.
+- **I contributi minori**: la scadenza di una settimana (la coda lunga
+  visitata di rado si riscriveva da capo a ogni visita), le missioni ripetute
+  su ogni tier (Infinite Dragon Ball History ne ha 462: 2,28 MB per ognuno
+  dei suoi 36 URL), `revalidateTag('community', { expire: 0 })` per un
+  account con più di 300 pagine (scadeva ogni pagina con dei clear), il tag
+  `catalog` mandato anche dal giro delle immagini, i 404 in cache.
+
+### Cosa fa il codice
+
+- **robots.txt** (`lib/robots.ts`): `Disallow: /events/*/t/` e
+  `Disallow: /events/*/japan`, cioè i tier Global e Japan e le pagine Japan
+  degli eventi; `/events/japan` resta, e la sitemap non cambia. Ogni link
+  verso una pagina esclusa è `rel="nofollow"` (`relRobots(href)`): i tier, le
+  fasce e i livelli della pagina evento, il gemello dell'avviso, il link
+  all'altra versione, le righe dei clear su carte e profili, la lista
+  `/events/japan`, la paginazione dei tier. Un giro di un motore scende al
+  set della sitemap: circa 25.000-28.000 unità compresse (71.000-82.000
+  senza compressione), l'84-87% in meno. Le pagine restano in cache per chi
+  le apre.
+- **La scadenza** di ogni pagina pubblica è di **30 giorni**
+  (`next.config.ts`, profili `catalog` e `community`; `lib/cache/vita.ts`,
+  `SCADENZA`), il revalidate resta di un giorno. Anche `/events` e
+  `/events/japan` hanno un giorno di tetto (era un'ora), con i confini delle
+  run (`secondsToNextStatusChange`) e il tag `events-list` per gli invii.
+- **I deploy**: `vercel.json` `ignoreCommand` lancia
+  `scripts/vercel-ignore.mjs`, che decide con
+  `scripts/vercel-ignore-decidi.mjs`. Le preview mai. La produzione solo
+  dal branch `release` (`VERCEL_GIT_COMMIT_REF`): un deploy di produzione
+  da un altro branch, per esempio con il Production Branch della dashboard
+  rimesso a `main` o una preview promossa che porta il ref del suo branch,
+  si salta e lo dice nel log: per rilasciare si passa sempre da `release`.
+  Senza il ref (un deploy dalla CLI) si va avanti. E solo se fra il commit
+  dell'ultimo deploy riuscito (`VERCEL_GIT_PREVIOUS_SHA`) e questo è
+  cambiato un file fuori da `NON_RUNTIME`: i `.md` elencati lì (il README,
+  `AGENTS.md`), `.gitignore`, `eslint.config.mjs`, `db/`, `test/`,
+  `docs/`, `scripts/` e `.github/`. Si salta solo quando ogni file
+  cambiato sta lì, e un percorso che lo script non conosce (una cartella
+  `types/`, un `.npmrc`, un `vercel.ts`) costruisce. Nel dubbio si
+  costruisce: il primo deploy, un commit che il clone poco profondo di
+  Vercel non ha, git che fallisce, un Redeploy dello stesso commit, un
+  errore dello script. Lo script decide sempre, senza chiedersi se è il
+  modulo principale: un controllo su `import.meta.url` lo faceva uscire 0
+  ("salta") senza dire niente quando il percorso passava da un link
+  simbolico. Una voce nuova in cima al repository va comunque classificata
+  in `RUNTIME` o `NON_RUNTIME` (lo chiede il test).
+- **Niente prefetch** su ogni `<Link>` verso un URL calcolato (un evento, un
+  tier, una pagina `/p/<n>`, un gemello): il prefetch di un URL che non è in
+  cache ne avvia la generazione, cioè una scrittura, anche se poi nessuno ci
+  va.
+- **Le missioni** solo sulla pagina dell'evento (Global). Sulle viste di un
+  tier c'è il link "Missions" alla loro sezione,
+  `/events/<id>?region=global#missions`.
+- **Gli account**: cancellazione, sospensione e cambio di handle fanno
+  scadere le pagine dell'utente una per una (`invalidateUser`), mai tutto
+  `community` (lo invalida solo `cache:clear` in sviluppo).
+- **Gli import** (`db/prod/rinfresco.mjs`): `update.mjs` fotografa le
+  tabelle di gioco prima e dopo il giro. Niente cambiato, nessuna chiamata a
+  `/api/revalidate`. Un giro completo manda `catalog` ed `events-list`. Un
+  giro delle immagini manda `card:<id>` ed `event:<id>` delle righe toccate
+  (le carte e gli eventi che usano gli asset cambiati, gli eventi che hanno
+  quella carta per copertina), più `events-list` se tocca un evento, in
+  richieste da 50 tag. Torna a `catalog` se il giro tocca un'icona (tipo,
+  rarità, premio), una tabella che non dovrebbe toccare, o più di 300 pagine
+  (sei richieste): lì un tag solo costa meno e rinfresca lo stesso quasi
+  tutto. Le altre pagine che mostrano una di quelle immagini (i clear di un
+  evento, la catena di un'altra carta, i premi delle missioni) si allineano
+  col revalidate di un giorno. Se la fotografia non riesce, si rinfresca
+  tutto come prima. Un giro che si ferma a un passo fallito rinfresca prima
+  di uscire le pagine di quello che i passi riusciti hanno già scritto, e
+  l'esito del rinfresco resta in `import_run.summary.refresh` (`sent`,
+  `nothing`, `failed`, `off`): se il giro prima non ha chiuso il conto
+  (rinfresco non arrivato, processo morto e chiuso come stale, giro senza
+  segreto), quello dopo manda `catalog` ed `events-list` anche se lui non
+  cambia niente, perché le sue fotografie non vedrebbero quello che l'altro
+  ha scritto. Il primo giro dopo questa modifica lo fa una volta: i giri di
+  prima non hanno il campo.
+- **Un'uscita deterministica**: ogni ORDER BY delle letture in cache, anche
+  dentro un `json_agg`, finisce con una chiave unica o ha il vincolo dello
+  schema scritto nella guardia; niente `Date.now`, `new Date()` o
+  `Math.random` nel render delle pagine pubbliche. Una rigenerazione con gli
+  stessi dati dà gli stessi byte, e non si paga.
+
+Le prove: `npm run db:test` (passi "URL degli eventi e robots.txt", "cache:
+tag, /api/revalidate, scritture ISR", "deploy su Vercel (ignoreCommand)" e
+"aggiornamento settimanale") e `npm run test:smoke` (robots.txt, il
+nofollow sull'HTML vero di eventi, tier, pagine Japan, carte e profili, le
+missioni solo sulla pagina dell'evento).
+
+### Le regole
+
+1. **Deploy di produzione solo dal branch `release`**, al massimo una o due
+   volte al mese, con le modifiche accumulate. Mai un Redeploy per una
+   variabile d'ambiente o un dominio, a meno che serva subito a runtime.
+2. **Prima di ogni deploy** guarda Usage → ISR Writes, il totale dei 30
+   giorni: si deploya solo con **almeno ~85.000 unità di margine**, e solo
+   con la regola del Firewall sulle viste lunghe attiva (sotto): il conto
+   qui sotto vale per i crawler che rispettano robots.txt, e qualche parser
+   non capisce gli asterischi delle righe Disallow. Il conto
+   di un deploy è un giro della sitemap (25.000-28.000 unità compresse,
+   71.000-82.000 senza compressione, finché non si sa come conta Vercel)
+   più un **costo fisso** che c'è sempre: ogni route prerenderizzata dal
+   build (`/events`, `/events/japan`, 28 eventi e un gemello `/japan`, 100
+   carte, i profili: 159 route nel manifest, con le pagine fisse) si riscrive alla sua prima rigenerazione dopo il
+   deploy, il giorno dopo, anche se i dati non sono cambiati, perché i byte
+   del build e quelli del runtime differiscono (sezione "La diagnosi").
+   Misurato in locale sulle 136 voci prerenderizzate del giro: circa 1.000
+   unità compresse (fra 400 e 960, secondo il modello), circa 2.600 senza
+   compressione, per ogni rilascio. Lo si può ridurre con meno carte in
+   `staticCardIds` (con `cacheComponents` `generateStaticParams` deve
+   tornare almeno una voce), se mai il margine fosse stretto.
+3. **Cosa costa scritture**: ogni deploy di produzione (la cache riparte
+   vuota, e ogni pagina visitata dopo si riscrive); la prima rigenerazione a
+   runtime di ogni pagina prerenderizzata dal build (la regola 2); ogni URL
+   nuovo alla prima visita, anche se la visita è un prefetch o un bot; ogni
+   rigenerazione che dà byte diversi (un dato cambiato, un ORDER BY senza
+   chiave unica, un orario nel render); una pagina scaduta (30 giorni senza
+   visite); un 404 in cache. **Non costano**: un revalidate o un tag
+   invalidato che ridanno gli stessi byte di una generazione a runtime, le
+   preview saltate, le viste dinamiche (`/events/browse`, la lista filtrata:
+   costano CPU, non scritture), le richieste fermate dal firewall.
+4. **Gli import**: `WEEKLY_APPLY=false` quando il totale supera ~150.000,
+   di nuovo `true` quando c'è margine. Un giro applicato a settimana, dati e
+   immagini insieme; mai `community` né `expire: 0` dagli script.
+5. **Una famiglia nuova di route pubbliche** (o un link nuovo verso una
+   vista parametrica): prima di rilasciarla stima URL × 8 unità (compresse)
+   o × 28 (senza compressione) per ogni deploy. Le viste di coda lunga vanno
+   in `DISALLOW` di `lib/robots.ts`, i link verso di loro con
+   `rel={relRobots(href)}` e `prefetch={false}`, gli ORDER BY con una chiave
+   unica, niente orari né caso nel render. Le guardie di `cache-tags.test.mts`
+   (i `<Link>` calcolati, gli ORDER BY, l'orologio) e `test:smoke` (il
+   nofollow sull'HTML) lo controllano.
+6. **Dopo ogni rilascio**: Usage dopo 24 e dopo 72 ore, e i log runtime (su
+   Hobby durano un'ora) per i MISS: quali percorsi e quali user agent.
+
+### Il firewall (a mano, nella dashboard di Vercel)
+
+Non è nel codice: lo imposta il proprietario in Firewall, senza deploy (le
+regole valgono subito) e il traffico bloccato non si paga. Su Hobby ci sono
+3 regole custom e 1 di rate limit.
+
+- **Regola custom, la coda lunga ai bot**: Request Path matches regex
+  `^/events/[0-9]+/(japan|t/)` **e** User-Agent matches regex
+  `(?i)(bot|crawl|spider|slurp|fetch|scrap|python|curl|wget|httpx|go-http|headless|bytespider|ahrefs|semrush|mj12|dotbot|petal|yandex|baidu|facebookexternalhit)`,
+  azione Deny. Fa il lavoro di robots.txt anche per chi non lo legge, e non
+  tocca `/events/japan`, `/api/`, le pagine evento, le carte e chi naviga.
+- **Ruleset gestiti**: quello dei crawler dei modelli linguistici su Deny.
+  Bot Protection su Log, non Challenge: Challenge fermerebbe la POST delle
+  Actions a `/api/revalidate` e il one-click dei provider di posta su
+  `/api/notifications/unsubscribe` (se lo si vuole, serve una regola custom
+  che fa Bypass di `/api/`). Attack Mode solo durante un picco.
+- **Rate limit**: percorso che comincia con `/events/` o `/cards/` (mai
+  `/api/`), per esempio 120 richieste in 60 secondi per IP (o JA4), poi
+  Deny o 429. Ferma gli scraper che ignorano robots.txt e i bot che provano
+  id a caso (ogni 404 in cache è una scrittura).
+- **Domini**: `dokkants.emanuelemelini.dev` e il dominio `*.vercel.app` del
+  progetto come redirect 308 verso `dokkants.app` (Settings → Domains),
+  così la stessa pagina non ha una voce in cache per host.
+
+### Il rilascio
+
+- **Una volta, prima del primo merge su `main` con queste regole**: in
+  Vercel, Settings → Environments → Production → Branch Tracking, il
+  branch è `release`. Controllalo (e ricontrollalo se qualcuno tocca le
+  impostazioni del progetto): se fosse ancora `main`, il merge farebbe un
+  deploy di produzione con la cache vuota. L'ignoreCommand salta comunque
+  un build di produzione che non viene da `release` (il log dice
+  "production deploys come only from release"), già dal commit che porta
+  queste regole, ma è la seconda difesa, non la prima.
+- Si lavora su **`dev`**. Le sue push sono preview, che l'ignoreCommand
+  salta: nessun deploy, nessuna scrittura.
+- Le modifiche alla CI, agli script di `db/` e al README si portano su
+  **`main`** con un merge. `main` non deploya più (il Production Branch del
+  progetto è `release`, quindi anche le sue push sono preview saltate), e i
+  workflow settimanale e giornaliero girano da lì.
+- **Il deploy è la push di `main` su `release`**: `git push origin
+  main:release`, dopo la regola 2 e con la regola 6 a seguire. Anche su
+  `release` l'ignoreCommand salta il build se dall'ultimo deploy non è
+  cambiato niente che il sito esegue.
+- **Due velocità**: gli script di `db/` e i workflow vanno in uso appena
+  arrivano su `main` (il settimanale e il giornaliero li prendono da lì),
+  il sito resta quello di `release` fino alla push dopo. Le due cose devono
+  restare compatibili: uno script che chiede al sito qualcosa di nuovo (un
+  tag, una rotta, un campo) arriva su `main` solo quando `release` lo sa già
+  fare, oppure insieme a un rilascio. Per questa modifica lo sono:
+  `rinfresco.mjs` manda tag `card:<id>` ed `event:<id>` a gruppi di 50, e
+  il `/api/revalidate` di `beff153` (il sito online) li accetta già, e le
+  pagine di carte ed eventi li portano già.
+- **Le procedure scritte prima del branch `release`** (le migrazioni 0032,
+  0033, 0034) dicono "il push su `main`" per il deploy del sito: ora è il
+  merge su `main` seguito da `git push origin main:release`.
 
 ## Messa online
 

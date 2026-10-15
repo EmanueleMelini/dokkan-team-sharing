@@ -1,10 +1,14 @@
 // Gli URL degli eventi (lib/urls.ts). Ogni URL valido di una pagina evento
 // diventa una voce ISR salvata: la grammatica deve accettare una sola forma
 // per ogni contenuto e rifiutare tutto il resto (diventa un 404), e i link
-// che il sito costruisce devono rileggersi uguali.
+// che il sito costruisce devono rileggersi uguali. Poi robots.txt
+// (app/robots.ts, lib/robots.ts): cosa esclude, letto come lo leggono i
+// motori, e il rel nofollow dei link verso quelle pagine.
 //
 // Funzioni pure, niente database.
-import { browseHref, clearAnchor, eventHref, homeHref, parseEventView, submitHref, type EventView } from '@/lib/urls'
+import { browseHref, clearAnchor, cardHref, eventHref, filteredClearsHref, homeHref, parseEventView, profileHref, submitHref, type EventView } from '@/lib/urls'
+import { DISALLOW, DISALLOW_CODA, esclusoDaRobots, relRobots } from '@/lib/robots'
+import { VUOTI } from '@/lib/clears/filtri'
 
 let fails = 0
 let passes = 0
@@ -100,6 +104,85 @@ vale('la home Japan', homeHref('japan'), '/events/japan')
 vale('la home per difetto e\' Global', homeHref(), '/events')
 vale('submit Global: la regione c\'e\' sempre', submitHref('1', 'global', '5'), '/events/1/submit?region=global&tier=5')
 vale('submit Japan', submitHref('1', 'japan', '5'), '/events/1/submit?region=japan&tier=5')
+
+console.log('robots.txt (app/robots.ts, lib/robots.ts)')
+// robots() legge BETTER_AUTH_URL per la sitemap: valori finti, se mancano
+process.env.BETTER_AUTH_URL ??= 'https://example.invalid'
+process.env.BETTER_AUTH_SECRET ??= 'segreto-finto-dei-test-degli-url-0123456789'
+const { default: robots } = await import('@/app/robots')
+const r = robots() as { rules: { userAgent: string; allow: string; disallow: string[] }; sitemap: string }
+check('un blocco solo per tutti, Allow: /', r.rules.userAgent === '*' && r.rules.allow === '/')
+check('Disallow: /events/*/t/ e /events/*/japan', DISALLOW_CODA.every((x) => r.rules.disallow.includes(x)),
+  r.rules.disallow.join(' '))
+vale('le stesse regole di lib/robots.ts, nello stesso ordine', r.rules.disallow, [...DISALLOW])
+check('nessuna regola per /events/japan da sola', !r.rules.disallow.some((x) => /^\/events\/japan/.test(x)))
+check('la sitemap resta', r.sitemap === 'https://example.invalid/sitemap.xml', r.sitemap)
+
+// Un lettore di robots.txt scritto qui da capo (RFC 9309: la regola piu'
+// lunga che combacia vince, * qualsiasi sequenza, $ la fine), sulle righe
+// che app/robots.ts scrive davvero. Deve dire le stesse cose di
+// esclusoDaRobots, che e' quello che decide il rel dei link.
+const combacia = (regola: string, url: string) => {
+  const fine = regola.endsWith('$')
+  const pezzi = (fine ? regola.slice(0, -1) : regola).split('*')
+  if (!url.startsWith(pezzi[0])) return false
+  let i = pezzi[0].length
+  for (let n = 1; n < pezzi.length; n++) {
+    // con $ l'ultimo pezzo sta in fondo; gli altri il piu' presto possibile
+    const j = fine && n === pezzi.length - 1 ? url.length - pezzi[n].length : url.indexOf(pezzi[n], i)
+    if (j < i) return false
+    i = j + pezzi[n].length
+  }
+  return !fine || i === url.length
+}
+function vietatoDa(righe: { allow: string[]; disallow: string[] }, href: string) {
+  const url = href.split('#')[0]
+  const lunga = (xs: string[]) => Math.max(-1, ...xs.filter((x) => combacia(x, url)).map((x) => x.length))
+  const d = lunga(righe.disallow), a = lunga(righe.allow)
+  return d > a
+}
+const righe = { allow: [r.rules.allow], disallow: r.rules.disallow }
+const ammessi = [
+  '/', '/events', '/events/japan', '/events/123', '/events/123?region=global', '/events/123?region=global#missions',
+  '/cards/1032310', '/users/goku_fan', '/users/goku_fan/p/2', '/sitemap.xml', '/privacy', '/terms',
+]
+const esclusi = [
+  '/events/123/japan', '/events/123/japan/t/5', '/events/123/japan/t/5/p/2', '/events/123/t/5',
+  '/events/123/t/5/p/2', '/events/123/t/5?region=global#clear-c9', '/events/browse?page=2',
+  '/events/123/clears?tier=5', '/events/123/clears/c9/edit', '/events/123/submit?region=global&tier=5',
+  '/api/me', '/admin', '/admin/users/x', '/notifications', '/notifications/5', '/settings', '/login?next=%2F', '/welcome',
+]
+for (const u of ammessi) check(`ammesso: ${u}`, !vietatoDa(righe, u) && !esclusoDaRobots(u) && relRobots(u) === undefined)
+for (const u of esclusi) check(`escluso, e nofollow: ${u}`, vietatoDa(righe, u) && esclusoDaRobots(u) && relRobots(u) === 'nofollow')
+check('un URL esterno o senza barra non e\' mai nofollow per robots', [
+  'https://youtube.com/watch?v=1', '//evil.example/events/1/t/2', 'events/1/t/2', '#clear',
+].every((u) => relRobots(u) === undefined))
+
+console.log('il rel dei link del sito')
+{
+  let giri = 0, sbagliati = 0
+  for (const reg of ['global', 'japan'] as const) {
+    for (const tier of [null, '5']) {
+      for (const page of [1, 2]) {
+        for (const explicit of [false, true]) {
+          const href = eventHref({ id: '42', reg, tier, page, explicit }) + (tier ? clearAnchor('c9') : '')
+          const atteso = reg === 'japan' || tier ? 'nofollow' : undefined
+          giri++
+          if (relRobots(href) !== atteso || vietatoDa(righe, href) !== (atteso === 'nofollow')) {
+            sbagliati++
+            console.log(`    ${href}: ${relRobots(href)}`)
+          }
+        }
+      }
+    }
+  }
+  check(`${giri} link a un evento: nofollow solo verso i tier e le pagine Japan`, sbagliati === 0, `${sbagliati} sbagliati`)
+}
+check('le home, le carte e i profili si seguono', [homeHref('global'), homeHref('japan'), cardHref('1032310'),
+  profileHref('goku_fan'), profileHref('goku_fan', 3), browseHref({ reg: 'japan' })].every((u) => relRobots(u) === undefined))
+check('le viste filtrate e il builder: nofollow', [browseHref({ page: 2 }), browseHref({ kind: 'story' }),
+  filteredClearsHref({ id: '1', tier: '5', filtri: { ...VUOTI, proof: true } }), submitHref('1', 'global', '5')]
+  .every((u) => relRobots(u) === 'nofollow'))
 
 console.log(fails ? `\n  ${passes} verdi, ${fails} rosse\n` : `\n  ${passes} verifiche, TUTTO VERDE\n`)
 process.exit(fails ? 1 : 0)

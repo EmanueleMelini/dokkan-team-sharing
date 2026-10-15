@@ -42,11 +42,14 @@ export function afterClearWrite(kind: ClearWrite, where: ClearWhere | null) {
 export const collectUserFootprint = (userId: string, extraHandles: string[] = []) =>
   userFootprint(userId, extraHandles)
 
-/** Invalida le pagine raccolte; oltre la soglia tutto il contenuto utenti. */
+/**
+ * Fa scadere le pagine raccolte, una per tag (updateTag, in un giro solo):
+ * quello che si cancella sparisce dalla richiesta dopo, e il resto del sito
+ * resta in cache. Mai 'community' con { expire: 0 }: scadrebbe ogni pagina
+ * con il contenuto degli utenti, e ognuna si riscriverebbe alla visita dopo.
+ */
 export function invalidateUser(footprint: UserFootprint) {
-  const inv = tagsForUser(footprint)
-  if (inv.all) revalidateTag(TAG.community, { expire: 0 })
-  applica(inv)
+  applica(tagsForUser(footprint))
 }
 
 /** Per i cambi che non cancellano (handle, sospensione): raccoglie e invalida. */

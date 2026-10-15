@@ -10,7 +10,11 @@ export const TAG = {
   catalog: 'catalog',
   /** la lista degli eventi: i conteggi dei clear cambiano con gli invii */
   eventsList: 'events-list',
-  /** tutto il contenuto degli utenti: la rete di sicurezza oltre le soglie */
+  /**
+   * tutto il contenuto degli utenti. Lo invalida solo cache:clear in
+   * sviluppo: in produzione toccherebbe ogni pagina evento, tier, carta e
+   * profilo insieme (una scrittura ISR per ogni pagina rivisitata).
+   */
   community: 'community',
 } as const
 
@@ -76,19 +80,18 @@ export function tagsFor(kind: ClearWrite, where: ClearWhere): Invalidazione {
   }
 }
 
-/** Oltre questa soglia si invalida tutto il contenuto degli utenti. */
-export const SOGLIA_TAG_UTENTE = 300
-
 /**
  * Dopo un cambio che tocca tutto quello che un utente ha scritto
- * (cancellazione dell'account, e poi cambio di handle o sospensione).
+ * (cancellazione dell'account, cambio di handle, sospensione): le sue
+ * pagine, e solo quelle, scadono subito, quante che siano. Prima, oltre 300
+ * tag, si faceva scadere tutto 'community': ogni pagina evento, tier, carta
+ * e profilo del sito, da riscrivere per intero alla visita dopo.
  */
-export function tagsForUser(touched: { eventIds: string[]; cardIds: string[]; handles: string[] }): Invalidazione & { all: boolean } {
+export function tagsForUser(touched: { eventIds: string[]; cardIds: string[]; handles: string[] }): Invalidazione {
   const tags = unici([
     ...touched.eventIds.filter((id) => ID.test(id)).map(eventTag),
     ...touched.cardIds.filter((id) => ID.test(id)).map(cardTag),
     ...touched.handles.filter(Boolean).map(profileTag),
   ])
-  if (tags.length > SOGLIA_TAG_UTENTE) return { now: [], soon: [TAG.eventsList], all: true }
-  return { now: tags, soon: [TAG.eventsList], all: false }
+  return { now: tags, soon: [TAG.eventsList] }
 }

@@ -2,6 +2,14 @@ import { sql, sqlOne } from '@/lib/db'
 import { buildJson, type SlotBuild } from '@/lib/clears/build'
 import { VUOTI, type Classe, type FiltriClear, type Ordine, type TipoCarta } from '@/lib/clears/filtri'
 
+// Le letture che finiscono in una pagina in cache (lib/cache/*) hanno un
+// ordine deterministico: ogni ORDER BY, anche dentro un json_agg, finisce
+// con una chiave unica o e' unico per un vincolo dello schema. Con gli
+// stessi dati una rigenerazione deve dare gli stessi byte: se no Vercel la
+// conta come una scrittura ISR nuova. La guardia e' in cache-tags.test.mts,
+// e vale anche per lib/clears.ts, lib/card-page.ts, lib/profiles.ts e
+// lib/tips.ts.
+
 export type Region = 'global' | 'japan'
 export type Status = 'active' | 'upcoming' | 'past'
 // Da dove viene una ricorrenza: il wiki dà solo il giorno di prima uscita,
@@ -230,7 +238,7 @@ export async function getEzaLinks(eventId: string): Promise<{ normal: EventLink 
      join event_game_ref r1 on r1.game_kind = r2.game_kind and r1.related_game_id = r2.game_id
      join event_text et on et.event_id = r1.event_id and et.locale = 'en'
      where r2.event_id = $1::bigint and r2.game_kind = 'z_battle_stage'
-     order by 1`,
+     order by 1, 3, 2`,
     [eventId],
   )
   const normal = righe.find((r) => r.verso === 'normal')
@@ -397,7 +405,7 @@ export async function listClears(
             coalesce((
               select json_agg(json_build_object(
                        'kind', p.kind, 'provider', p.provider, 'url', p.url)
-                     order by p.kind desc, p.url)
+                     order by p.kind desc, p.url, p.id)
               from clear_proof p
               where p.version_id = c.version_id and p.is_reachable is not false
             ), '[]'::json) as proofs,

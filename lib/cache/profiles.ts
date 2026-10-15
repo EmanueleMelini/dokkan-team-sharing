@@ -16,7 +16,8 @@ import { TAG, eventTag, profileTag } from '@/lib/cache/tags'
 // - event:<id> degli eventi in cui l'utente ha clear o commenti: un voto
 //   ('soon') o un commento ('now') li tocca, e i conteggi e i punteggi si
 //   rinfrescano senza che quelle scritture debbano conoscere l'autore;
-// - community, la rete di sicurezza oltre le soglie di afterUserChanged.
+// - community, tutto il contenuto degli utenti (lo invalida solo cache:clear
+//   in sviluppo: afterUserChanged fa scadere i tag uno per uno).
 // Un redirect da un nome lasciato porta anche il tag del nome attuale: un
 // secondo cambio (o una sospensione) lo fa rileggere, senza catene di 308.
 
