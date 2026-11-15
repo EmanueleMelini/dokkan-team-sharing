@@ -12,9 +12,10 @@
 // cache dica ancora quello su cui e' scritto: se la cache cambia, la
 // verifica e' rossa e dice perche', non verde per caso.
 import { execFileSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync, statSync } from 'node:fs'
+import { join } from 'node:path'
 import pg from 'pg'
-import { int, loadTable } from '../import/datamine.mjs'
+import { DM_DIR, int, loadTable } from '../import/datamine.mjs'
 // int() di datamine.mjs restituisce null per un campo vuoto; qui servono
 // numeri da confrontare e ordinare, e un -1 non combacia con nessun id
 const num = (v: unknown): number => int(v) ?? -1
@@ -38,6 +39,19 @@ function tutte<T>(nome: string, righe: T[], ok: (x: T) => boolean): boolean {
 }
 const stesso = (d: unknown, iso: string | null) =>
   iso === null ? d === null : d instanceof Date && d.getTime() === new Date(iso).getTime()
+// Di quando e' la fotografia del datamine in cache: il commit, se non si
+// conosce il download (li scrive fetch-datamine.mjs in _snapshot.json), se
+// no almeno la data dei file, come snapshotInfo() di datamine.mjs.
+function istanteFotografia(): string | null {
+  const p = join(DM_DIR, '_snapshot.json')
+  if (existsSync(p)) {
+    const s = JSON.parse(readFileSync(p, 'utf8'))
+    const t = s.committed_at ?? s.fetched_at
+    if (t) return new Date(t).toISOString()
+  }
+  const m = join(DM_DIR, 'missions.csv')
+  return existsSync(m) ? statSync(m).mtime.toISOString() : null
+}
 
 // ------------------------------------------------------------ il bersaglio
 
@@ -346,17 +360,33 @@ try {
     check('e il numero di eventi non cambia', (await valore(`select count(*)::int from event`)) === quanti)
   })
 
+  // Lo stato com'era all'istante della fotografia, non a now(): la cache
+  // invecchia, e dal 20 ottobre 2026 (l'ultima fine nota nella fotografia del
+  // 2 ottobre) non c'era piu' nessun evento in corso con la fine, cosi' il
+  // controllo era rosso per la data e non per l'import. La regola e' quella
+  // della view event_status (0001) con un istante al posto di now(): la prima
+  // verifica controlla che con now() dia lo stato della view a ogni run, cosi'
+  // se la view cambia regola il test se ne accorge.
   await sezione('lo stato su Global, con gli eventi del gioco', async () => {
+    const quando = istanteFotografia()
+    if (!check('si sa di quando e\' la fotografia del datamine', quando !== null,
+               quando ?? `in ${DM_DIR} niente _snapshot.json ne' missions.csv`) || quando === null) return
+    const statoAl = (t: string) => `case when ${t} < r.starts_at then 'upcoming'
+      when r.ends_at is null or ${t} < r.ends_at then 'active' else 'past' end`
+    const diverse = await valore(`select count(*)::int from event_status es join event_run r on r.id = es.run_id
+                                  where es.status <> ${statoAl('now()')}`)
+    check('la regola dello stato e\' quella della view event_status', diverse === 0, `${diverse} run con uno stato diverso`)
     const stato = await righe(`
-      with u as (
-        select distinct on (es.event_id) es.event_id, es.status, r.ends_at, r.ends_at_known
-        from event_status es join event_run r on r.id = es.run_id
-        join event e on e.id = es.event_id
-        where es.reg = 'global' and e.imported_from = 'datamine'
-        order by es.event_id, case es.status when 'active' then 0 when 'upcoming' then 1 else 2 end,
-                 case when es.status = 'upcoming' then es.starts_at end asc nulls last, es.starts_at desc)
-      select status, (ends_at is null) as aperta, ends_at_known as nota, count(*)::int as n from u group by 1, 2, 3`)
-    console.log(`        ${stato.map((r) => `${r.status}${r.aperta ? (r.nota ? ' permanente' : ' fine non nota') : ' con la fine'}: ${r.n}`).join(', ')}`)
+      with s as (
+        select r.event_id, r.starts_at, r.ends_at, r.ends_at_known, ${statoAl('$1::timestamptz')} as status
+        from event_run r join event e on e.id = r.event_id
+        where r.reg = 'global' and e.imported_from = 'datamine'),
+      u as (
+        select distinct on (event_id) event_id, status, ends_at, ends_at_known from s
+        order by event_id, case status when 'active' then 0 when 'upcoming' then 1 else 2 end,
+                 case when status = 'upcoming' then starts_at end asc nulls last, starts_at desc)
+      select status, (ends_at is null) as aperta, ends_at_known as nota, count(*)::int as n from u group by 1, 2, 3`, [quando])
+    console.log(`        al ${quando.slice(0, 10)}, la fotografia: ${stato.map((r) => `${r.status}${r.aperta ? (r.nota ? ' permanente' : ' fine non nota') : ' con la fine'}: ${r.n}`).join(', ')}`)
     const n = (f: (r: Riga) => boolean) => stato.filter(f).reduce((a, r) => a + r.n, 0)
     check('ci sono eventi del gioco conclusi, in corso con la fine e permanenti',
           n((r) => r.status === 'past') > 0 && n((r) => r.status === 'active' && !r.aperta) > 0
