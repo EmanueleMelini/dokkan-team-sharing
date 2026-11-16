@@ -15,6 +15,7 @@ import { readFileSync } from 'node:fs'
 import pg from 'pg'
 import { loadTable } from '../import/datamine.mjs'
 import { wikiGlobalRelease } from '../import/game-map.mjs'
+import { RULES } from '../import/japan-mirror/rules.mjs'
 
 let fails = 0
 let passes = 0
@@ -169,24 +170,44 @@ try {
       await db.query('rollback')
     }
 
-    const fixture = await righe(`select distinct source from event_run where event_id = 5001`)
+    // Le altre run di 5001 sono dello specchio Japan (0036): le copie delle
+    // sue finestre Global a mano da D, che si copiano come quelle del gioco.
+    const fixture = await righe(`select distinct source from event_run where event_id = 5001 and source <> 'mirror'`)
     check('le run della fixture, scritte senza provenienza, sono manual',
           fixture.length === 1 && fixture[0].source === 'manual', JSON.stringify(fixture))
+    const copie = await righe(`
+      select m.id, exists (select 1 from event_run g where g.event_id = m.event_id and g.reg = 'global' and g.source = 'manual'
+                             and g.starts_at = m.starts_at and g.ends_at is not distinct from m.ends_at) as della_fixture
+      from event_run m where m.event_id = 5001 and m.source = 'mirror'`)
+    tutte('...e le sue copie Japan sono quelle delle sue finestre Global a mano', copie, (m) => m.della_fixture)
     const wikiNote = Number(await valore(`select count(*) from event_run where source = 'wiki' and ends_at_known`))
     check('nessuna run del wiki con la fine nota', wikiNote === 0, `${wikiNote}`)
     const perFonte = await righe(`select source, count(*)::int as n from event_run group by 1 order by 1`)
-    check('ci sono run del gioco, del wiki e a mano',
-          ['game', 'manual', 'wiki'].every((s) => perFonte.some((r) => r.source === s && r.n > 0)), JSON.stringify(perFonte))
+    check('ci sono run del gioco, del wiki, a mano e dello specchio Japan (0036)',
+          ['game', 'manual', 'mirror', 'wiki'].every((s) => perFonte.some((r) => r.source === s && r.n > 0)), JSON.stringify(perFonte))
   })
 
-  await sezione('Japan non si tocca', async () => {
+  // Il datamine e' quello Global: load-windows non tocca Japan. Da D (0036)
+  // le run Japan le copia lo specchio (mirror-japan) dalle finestre Global
+  // del gioco, e chiude all'inizio della copia la run del wiki piu' vecchia.
+  // Le verifiche dello specchio stanno in japan-mirror.test.mts.
+  await sezione('Japan: solo lo specchio, e solo da D', async () => {
     const giapponesi = await righe(`
-      select r.source, r.ends_at, r.ends_at_known from event_run r join event e on e.id = r.event_id
+      select r.source, r.starts_at, r.ends_at, r.ends_at_known,
+             exists (select 1 from event_run m where m.event_id = r.event_id and m.reg = 'japan'
+                       and m.source = 'mirror' and m.starts_at = r.ends_at) as chiusa_da_copia
+      from event_run r join event e on e.id = r.event_id
       where r.reg = 'japan' and e.imported_from = 'wiki'`)
-    tutte('ogni run Japan di un evento del wiki e\' ancora quella del wiki, aperta', giapponesi,
-          (r) => r.source === 'wiki' && r.ends_at === null && r.ends_at_known === false)
+    tutte('ogni run Japan di un evento del wiki e\' del wiki (aperta, o chiusa all\'inizio di una copia) o una copia da D',
+          giapponesi, (r) => (r.source === 'wiki' && r.ends_at_known === false && (r.ends_at === null || r.chiusa_da_copia))
+                          || (r.source === 'mirror' && r.starts_at.getTime() >= Date.parse(RULES.since)))
+    check('ci sono run del wiki ancora aperte, run del wiki chiuse dallo specchio e copie',
+          giapponesi.some((r) => r.source === 'wiki' && r.ends_at === null) && giapponesi.some((r) => r.chiusa_da_copia)
+            && giapponesi.some((r) => r.source === 'mirror'))
     check('nessuna run del gioco su Japan',
           Number(await valore(`select count(*) from event_run where reg = 'japan' and source = 'game'`)) === 0)
+    check('nessuna copia prima di D', Number(await valore(`
+      select count(*) from event_run where source = 'mirror' and starts_at < $1::timestamptz`, [RULES.since])) === 0)
   })
 
   await sezione('il legame con il gioco', async () => {
@@ -542,6 +563,10 @@ try {
     lancia('load-events.mjs')
     lancia('load-windows.mjs')
     check('anche dopo load-events + load-windows', (await foto()) === prima)
+    // e lo specchio Japan dopo (0036): le finestre Global rimesse com'erano
+    // danno le stesse copie
+    lancia('mirror-japan.mjs')
+    check('...e dopo lo specchio Japan', (await foto()) === prima)
   })
 
   await sezione('lo stato su Global', async () => {

@@ -326,9 +326,13 @@ jobs:
             --limits db/prod/limits.json --header "${flags[@]}" \
             --out "$RUNNER_TEMP/diff.md" --json "$RUNNER_TEMP/rehearsal.json" || rc=$?
           cat "$RUNNER_TEMP/diff.md" >> "$GITHUB_STEP_SUMMARY"
-          kept=$(grep -cE '^  tengo ' "$RUNNER_TEMP/rehearsal.log" || true)
+          # una riga per run: load-events e lo specchio possono dire "tengo" per la stessa
+          kept=$(grep -E '^  tengo ' "$RUNNER_TEMP/rehearsal.log" | cut -d: -f1 | sort -u | wc -l | tr -d ' ' || true)
           if [ "${kept:-0}" -gt 0 ]; then
-            echo "- $kept rows the wiki no longer lists were kept because clears or tips use them (see the rehearsal log)." >> "$RUNNER_TEMP/attention.md"
+            echo "- $kept rows were kept because clears or tips use them: wiki rows the wiki no longer lists, Japan copies no Global window wants any more, and Japan wiki runs the clear rule leaves in place (see the rehearsal log)." >> "$RUNNER_TEMP/attention.md"
+          fi
+          if grep -qE '^  attenzione: lo specchio cambia ancora' "$RUNNER_TEMP/rehearsal.log"; then
+            echo "- The Japan mirror was still changing on its last pass: next week's run may change those events again (see the rehearsal log)." >> "$RUNNER_TEMP/attention.md"
           fi
           if [ "$rc" = 3 ]; then
             echo "::error::deletion limits exceeded, production not touched. If the deletions are expected, run again with allow_deletions."

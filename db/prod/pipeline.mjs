@@ -16,6 +16,8 @@ export const PIPELINE = [
   ['db/import/fetch-assets.mjs', ['--offline']],
   ['db/import/load-game-events.mjs', []],
   ['db/import/load-windows.mjs', []],
+  // le date Japan da D copiate dalle finestre Global appena scritte (0036)
+  ['db/import/mirror-japan.mjs', []],
   ['db/import/load-missions.mjs', []],
   ['db/import/load-equipment.mjs', []],
 ]

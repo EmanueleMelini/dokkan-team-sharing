@@ -96,10 +96,12 @@ async function write(cards) {
     on conflict (card_id, locale) do update set name = excluded.name
     where card_text.epithet is null`,
     [col('id'), col('name'), LOCALE])
+  // solo l'uscita Global (source = 'game', 0036): quella Japan la da' lo
+  // specchio (mirror-japan) alle carte uscite dal 2025, o il wiki
   const { rowCount: nr } = await client.query(`
-    insert into card_release (card_id, reg, released_at)
-    select id, 'global', d from unnest($1::bigint[], $2::date[]) as m(id, d)
-    on conflict (card_id, reg) do update set released_at = excluded.released_at`,
+    insert into card_release (card_id, reg, released_at, source)
+    select id, 'global', d, 'game' from unnest($1::bigint[], $2::date[]) as m(id, d)
+    on conflict (card_id, reg) do update set released_at = excluded.released_at, source = excluded.source`,
     [col('id'), col('global_release')])
   await client.query('commit')
   console.log(`\n  carte scritte: ${nc}, testi: ${nt}, date di uscita: ${nr}`)

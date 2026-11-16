@@ -3,7 +3,8 @@
 // confronto fra fotografie e i limiti, i controlli sulle sorgenti, il
 // commit del datamine, la scelta delle immagini, il mirror, le maschere dei
 // log; poi sul database di test lo snapshot vero, il confronto dopo un
-// import che non deve toccare i dati degli utenti, migrate --check,
+// import che non deve toccare i dati degli utenti, il primo giro dello
+// specchio Japan (0036) dentro i limiti, migrate --check,
 // import_run (e i giri delle sole immagini), le immagini che mancano anche
 // alle carte senza pagina, la provenienza degli asset (0033), e la forma
 // dei due workflow.
@@ -443,7 +444,7 @@ try {
   const clearId = (await one<{ id: string }>(SUBMIT, [autore, d.run, d.tier, JSON.stringify(payload(d.cards))])).id
   check('un clear vero dall\'API di scrittura', !!clearId)
   const u1 = await takeSnapshot(c)
-  for (const s of ['load-events', 'load-game-events', 'load-missions']) {
+  for (const s of ['load-events', 'load-game-events', 'mirror-japan', 'load-missions']) {
     const r = node(`db/import/${s}.mjs`)
     check(`${s} dalla cache`, r.status === 0, r.stderr.slice(-200))
   }
@@ -460,6 +461,44 @@ try {
   await db.query('delete from app_user where email = $1', [EMAIL])
   check('pulizia: l\'utente di prova non c\'e\' piu\'', (await one<{ n: number }>(
     'select count(*)::int as n from app_user where email = $1', [EMAIL])).n === 0)
+}
+
+// Lo specchio Japan (0036): il primo giro in produzione aggiunge le copie
+// e chiude le run Japan del wiki piu' vecchie, e deve passare i limiti di
+// limits.json senza allow_deletions. Si mette in scena com'era prima (un D
+// lontano: nessuna copia, le run del wiki riaperte, nessuna uscita Japan
+// copiata), poi il primo giro vero, fra due fotografie. Al contrario, un D
+// spostato per sbaglio che toglie tutte le copie deve fermarsi sul 5% di
+// event_run.
+console.log('lo specchio Japan: il primo giro nei limiti')
+{
+  const dir = mkdtempSync(join(tmpdir(), 'dokkan-weekly-mirror-'))
+  const lontano = join(dir, 'regole.json')
+  writeFileSync(lontano, JSON.stringify({ since: '2100-01-01T00:00:00Z' }))
+  const copie = async () => (await one<{ n: number }>(`select count(*)::int as n from event_run where source = 'mirror'`)).n
+  try {
+    const via = node('db/import/mirror-japan.mjs', ['--rules', lontano])
+    check('com\'era prima: nessuna copia', via.status === 0 && await copie() === 0, via.stderr.slice(-200))
+    const prima = await takeSnapshot(c)
+    const primo = node('db/import/mirror-japan.mjs')
+    const dopo = await takeSnapshot(c)
+    const r = cmp(prima, dopo, LIMITS)
+    const er = r.tables.find((t: Row) => t.table === 'event_run')
+    const cr = r.tables.find((t: Row) => t.table === 'card_release')
+    check('il primo giro dello specchio passa i limiti, senza allow_deletions', primo.status === 0 && r.ok,
+      r.violations.map((v) => `${v.table} ${v.rule}`).join('; ') || primo.stderr.slice(-200))
+    check('event_run: piu\' di 200 copie aggiunte, nessuna riga tolta, le run del wiki chiuse cambiate',
+      !!er && er.added > 200 && er.removed === 0 && er.changed > 50 && er.added === await copie(),
+      `prima ${er?.before}, dopo ${er?.after}: +${er?.added} -${er?.removed} ~${er?.changed}`)
+    check('card_release: piu\' di 40 uscite Japan aggiunte, nessuna tolta', !!cr && cr.added > 40 && cr.removed === 0,
+      `prima ${cr?.before}, dopo ${cr?.after}: +${cr?.added} -${cr?.removed} ~${cr?.changed}`)
+    const indietro = cmp(dopo, prima, LIMITS)
+    check('togliere tutte le copie supera il limite di event_run (serve allow_deletions)',
+      !indietro.ok && viol(indietro, 'event_run').length === 1 && cmp(dopo, prima, LIMITS, { allowDeletions: true }).ok)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+    if (await copie() === 0) node('db/import/mirror-japan.mjs')
+  }
 }
 
 console.log('migrate --check')

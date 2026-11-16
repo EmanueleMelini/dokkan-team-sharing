@@ -39,6 +39,7 @@
 #   -> finestre degli eventi dal
 #   gioco (load-windows) -> eventi creati dal gioco (load-game-events) ->
 #   stage delle riedizioni -> classificazione (story, SBR, archivi) ->
+#   specchio Japan (mirror-japan, 0036: le date Japan da Global dal 2025) ->
 #   missioni dal gioco (load-missions) -> aggiornamento settimanale e giro
 #   giornaliero delle immagini (weekly-data, daily-images, 0033, 0034)
 #
@@ -127,6 +128,10 @@ passo "import eventi (cache)" prepara node db/import/load-events.mjs
 passo "import datamine (cache)" prepara node db/import/load-datamine.mjs
 passo "import eventi dal gioco (cache)" prepara node db/import/load-game-events.mjs
 passo "import finestre (cache)" prepara node db/import/load-windows.mjs
+# Le date Japan da D copiate dalle finestre Global appena scritte, e le
+# uscite Japan delle carte uscite su Global da D (0036): come in PIPELINE,
+# dopo le finestre e prima delle missioni.
+passo "specchio Japan (cache)" prepara node db/import/mirror-japan.mjs
 passo "import missioni (cache)" prepara node db/import/load-missions.mjs
 # Le Skill Orb e le abilita' del Hidden Potential per le build (0018).
 passo "import equipaggiamento (cache)" prepara node db/import/load-equipment.mjs
@@ -235,7 +240,11 @@ passo "versione del sito" verifica node_ts db/test/versione.test.mts
 # components/versione): quale versione mostra un URL e quando il cambio
 # porta al gemello, il riallineamento con l'account una volta per scheda,
 # il redirect di un'azione come lo riconosce Next, i testi degli avvisi e
-# i blocchi della carta, i contrasti nei temi, e le guardie sui file (la
+# i blocchi della carta, le date dello specchio Japan (0036: l'istante di
+# Global con l'ora UTC e "Same dates as Global" solo per una copia ancora
+# uguale a Global, lib/stato-evento.ts; la nota della lista Japan) e le
+# voci del selettore delle run del builder, i contrasti nei temi, e le
+# guardie sui file (la
 # variante japan:, il controllo a segmenti, il burger, l'header accanto a
 # Events, il tag JP, Settings, gli avvisi statici, i chip Version tolti,
 # "Japan version"). Funzioni pure e file, niente database.
@@ -360,6 +369,30 @@ passo "stage delle riedizioni" verifica node_ts db/test/rerun-stages.test.mts
 # archivi delle edizioni (legami per quest): rilancia load-events e
 # load-windows, e ritocca una run e un clear (rimettendoli a posto).
 passo "classificazione" verifica node_ts db/test/classification.test.mts
+# Lo specchio Japan (0036): prima il piano, funzioni pure (le regole di
+# db/import/japan-mirror su run finte, ogni scrittura rifatta col vincolo
+# di event_run, e da ogni data del wiki a ogni altra lo stesso risultato
+# di un import da zero), poi sul database: i vincoli e il riempimento della
+# 0036, ogni finestra Global da D (del gioco o a mano) con la sua copia
+# identica al microsecondo, le uscite Japan
+# delle carte e la loro precedenza (anche il giorno giapponese di una
+# carta del gioco uscita dalle 15:00 UTC), una regola che cambia (la run
+# del wiki che si riapre), la run del wiki adottata e restituita con lo
+# stesso id, la data del wiki che vince in un giro solo (attraverso
+# load-events, anche su una copia aperta e su una copia con un clear), la
+# run a mano che vince (set-event-window --reg japan), il clear che tiene
+# la sua copia ("  tengo la run"), lo scambio che tiene i clear nella loro
+# corsa, la data del wiki al giorno di una copia che c'e' gia' (una run
+# sola), la data che torna prima di D (dopo un'adozione, e dopo un
+# conflitto vinto dal wiki con la copia tenuta per un clear), una data
+# Global corretta con set-event-window --reg global, e un secondo giro
+# (anche dopo load-events + load-windows) che non cambia niente, id
+# compresi. Rilancia mirror-japan, load-events, load-windows e
+# set-event-window; ritocca run Japan, uscite di una carta e qualche clear,
+# e le rimette equivalenti. Prima delle missioni: delle run Global ne
+# ritocca una sola, e la rimette com'era sul posto (stesso id).
+passo "specchio Japan (piano)" verifica node db/test/japan-mirror-plan.test.mjs
+passo "specchio Japan" verifica node_ts db/test/japan-mirror.test.mts
 # Per ultima davvero: le suite prima ritoccano le run, e le missioni ci
 # puntano. Rilancia load-missions, poi confronta un evento con i CSV,
 # controlla corse, premi e nomi, e che un secondo giro non cambi niente.
@@ -371,7 +404,8 @@ passo "missioni" verifica node_ts db/test/missions.test.mts
 # guardia della cache di Actions (cache-check.mjs: solo fonti pubbliche); poi
 # snapshot.mjs vero (un dry-run non scrive), un clear vero e load-events,
 # load-game-events e load-missions rilanciati dalla cache senza che i dati
-# degli utenti cambino, migrate --check, import_run (i giri delle sole
+# degli utenti cambino, il primo giro dello specchio Japan (0036) dentro i
+# limiti di limits.json, migrate --check, import_run (i giri delle sole
 # immagini non sono "l'ultimo import"), le immagini mancanti anche senza
 # pagina, i vincoli della provenienza (0033, in transazioni annullate) e la
 # forma dei due workflow (permessi job per job, i passi Decide eseguiti

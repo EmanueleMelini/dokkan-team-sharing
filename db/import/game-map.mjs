@@ -376,17 +376,20 @@ function mapEza(events, pages, dm) {
   return { refs, unmatched }
 }
 
-// La prima uscita Global secondo il wiki, letta come la legge load-events
-// (che la scrive nella run del wiki): serve a load-windows anche dopo che
-// quella run e' diventata del gioco, e la data non c'e' piu'.
+// La prima uscita secondo il wiki, letta come la legge load-events (che la
+// scrive nella run del wiki): serve a load-windows (Global) e allo specchio
+// Japan (mirror-japan) anche dopo che quella run e' diventata del gioco o
+// dello specchio, e la data non c'e' piu'.
 const MONTHS = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 }
-export function wikiGlobalRelease(w) {
-  const v = (field(w ?? '', 'GLBdate') ?? '').replace(/\}\}.*$/, '').replace(/\|\s*[A-Za-z][\w ]*=.*$/, '')
+function wikiRelease(w, key) {
+  const v = (field(w ?? '', key) ?? '').replace(/\}\}.*$/, '').replace(/\|\s*[A-Za-z][\w ]*=.*$/, '')
     .replace(/^prior to\s+/i, '').trim()
   const m = v.match(/^(\d{1,2})\s+([A-Za-z]+)\.?\s+(\d{4})$/)
   const mo = m && MONTHS[m[2].slice(0, 3).toLowerCase()]
   return mo ? new Date(Date.UTC(Number(m[3]), mo - 1, Number(m[1]))) : null
 }
+export const wikiGlobalRelease = (w) => wikiRelease(w, 'GLBdate')
+export const wikiJapanRelease = (w) => wikiRelease(w, 'JPdate')
 
 /**
  * events: [{ id, kind, wiki_title, name, stages: [nomi degli stage] }]

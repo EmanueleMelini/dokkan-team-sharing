@@ -32,7 +32,9 @@ import { heldByGame } from './game-events/wiki-guard.mjs'
 import { makeRoom } from './game-events/write-rerun.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
-const CACHE = join(HERE, '.cache', 'wiki-events.json')
+// WIKI_EVENTS_CACHE solo per i test, come WIKI_CARDS_CACHE di load-cards:
+// japan-mirror.test.mts gli passa una copia con una data Japan cambiata
+const CACHE = process.env.WIKI_EVENTS_CACHE ?? join(HERE, '.cache', 'wiki-events.json')
 const DRY = process.argv.includes('--dry-run')
 const LOCALE = 'en'
 
@@ -399,14 +401,43 @@ try {
   // quelle ha preso il posto della run del wiki, la run non si ricrea: si
   // sovrapporrebbe, ed e' proprio quella che e' stata tolta o adottata. Una
   // del gioco basta da sola: puo' aver smentito la data del wiki, e allora
-  // non si sovrappone a niente.
+  // non si sovrappone a niente. Su Japan la run del wiki la adotta lo
+  // specchio (mirror-japan, source 'mirror') quando una finestra Global
+  // inizia entro due giorni dalla data: quella copia la blocca anche se
+  // finisce prima della data, come la blocca la sovrapposizione. Una copia
+  // lontana dalla data no: allora il wiki dice un'altra cosa, la sua run
+  // entra (se non si sovrappone a niente), e lo specchio, che legge la
+  // stessa data, non copia le finestre di prima e lo dice come conflitto.
+  // Quando qui la run non entra o non si sposta (la copia di prima copre
+  // la data, o la chiude prima, o si sovrappone a [data, infinito) perche'
+  // la data e' tornata indietro, anche prima di D), ce la mette lo specchio
+  // nello stesso giro, chiusa all'inizio della run Japan che segue: il
+  // risultato e' quello di un import da zero. E quando qui la run si sposta
+  // al giorno di una copia che c'e' gia' (e la copia la chiude poche ore
+  // dopo), lo specchio le riunisce: la run del wiki prende la finestra.
+  // Una run Japan del wiki con dei clear qui non si sposta. La regola dei
+  // clear (una run del wiki si sposta o si chiude solo se i clear della sua
+  // corsa restano dentro la corsa nuova) vuole la corsa vera, e la fine la
+  // decide lo specchio, che la chiude all'inizio della prima copia dopo
+  // (707351: spostata dal 20 Dec 2025 al 31 May 2021 restava aperta, poi lo
+  // specchio la chiudeva al 2025-11-18 e il clear del 2026 finiva fuori).
+  // E un clear scelto nel builder su una run chiusa (fuori dalla sua corsa)
+  // ci finirebbe dentro: lo specchio lo prenderebbe per un clear della
+  // corsa. La sposta lo specchio, nello stesso giro e dalla corsa di prima,
+  // quando la regola lo permette; se no resta dov'e', alla data ne nasce una
+  // nuova se c'e' posto, e lo specchio lo dice a ogni giro ("  tengo la run").
+  // Le run Global del wiki no: i clear Global seguono le finestre del gioco
+  // (load-windows).
   const ids = e.map((x) => x.id)
   const runs = load.flatMap((x) => x.releases.map((r) => ({ id: x.event.id, ...r })))
   const runArgs = [runs.map(x=>x.id), runs.map(x=>x.reg), runs.map(x=>x.released_at)]
-  const { rowCount: runMoved } = await client.query(`
-    update event_run r set starts_at = d.starts_at
-    from unnest($1::bigint[], $2::region[], $3::timestamptz[]) as d(event_id, reg, starts_at)
-    where r.event_id = d.event_id and r.reg = d.reg and r.source = 'wiki'
+  const { rows: daSpostare } = await client.query(`
+    select r.id, d.starts_at,
+           (r.reg = 'japan' and exists (select 1 from clear c where c.run_id = r.id)) as ferma
+    from event_run r
+    join unnest($1::bigint[], $2::region[], $3::timestamptz[]) as d(event_id, reg, starts_at)
+      on r.event_id = d.event_id and r.reg = d.reg
+    where r.source = 'wiki'
       and r.starts_at <> d.starts_at
       -- una run del wiki chiusa dal gioco ha ends_at: non si sposta oltre
       and (r.ends_at is null or r.ends_at > d.starts_at)
@@ -414,6 +445,12 @@ try {
         where o.event_id = r.event_id and o.reg = r.reg and o.id <> r.id
           and tstzrange(o.starts_at, coalesce(o.ends_at, 'infinity'))
               && tstzrange(d.starts_at, coalesce(r.ends_at, 'infinity')))`, runArgs)
+  const sposta = daSpostare.filter((r) => !r.ferma)
+  const runFerme = daSpostare.length - sposta.length
+  const { rowCount: runMoved } = await client.query(`
+    update event_run r set starts_at = d.starts_at
+    from unnest($1::bigint[], $2::timestamptz[]) as d(id, starts_at)
+    where r.id = d.id`, [sposta.map((r) => r.id), sposta.map((r) => r.starts_at)])
   const { rowCount: runNew } = await client.query(`
     insert into event_run (event_id, reg, starts_at, ends_at, ends_at_known, source)
     select d.event_id, d.reg, d.starts_at, null::timestamptz, false, 'wiki'
@@ -421,6 +458,8 @@ try {
     where not exists (select 1 from event_run r
       where r.event_id = d.event_id and r.reg = d.reg
         and (r.source in ('wiki', 'game')
+             or (r.source = 'mirror' and r.starts_at between d.starts_at - interval '2 days'
+                                                         and d.starts_at + interval '2 days')
              or tstzrange(r.starts_at, coalesce(r.ends_at, 'infinity'))
                 && tstzrange(d.starts_at, 'infinity')))`, runArgs)
   // una run del wiki che il wiki non da' piu' se ne va, a meno che non
@@ -439,7 +478,8 @@ try {
     console.log(`  tengo la run ${r.id} (evento ${r.event_id}, ${r.reg}): il wiki non la da' piu' ma ci sono dei clear`)
   }
   console.log(`  ricorrenze (prima uscita, fine non nota): ${runs.length}` +
-              `   nuove ${runNew}, spostate ${runMoved}, tolte ${runOld.length - runOld.filter(used).length}`)
+              `   nuove ${runNew}, spostate ${runMoved}, tolte ${runOld.length - runOld.filter(used).length}` +
+              (runFerme ? `, lasciate allo specchio (Japan, con dei clear) ${runFerme}` : ''))
 
   // Gli stage, per (evento, seq): quelli che ci sono gia' restano come sono.
   // Gli stage che load-game-events aggiunge dalle riedizioni (game_quest_id,

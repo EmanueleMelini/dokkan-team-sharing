@@ -267,12 +267,14 @@ try {
   }
   console.log(`  skill scritte: ${sk.length}`)
 
+  // source = 'wiki' (0036): un'uscita Japan copiata dallo specchio
+  // (mirror-japan) diventa del wiki il giorno che il wiki dice la sua data
   const rel = cards.flatMap((c) => c.releases.map((r) => ({ id: c.card.id, ...r })))
   for (const part of chunks(rel, 1000)) {
     await client.query(`
-      insert into card_release (card_id, reg, released_at)
-      select * from unnest($1::bigint[], $2::region[], $3::date[])
-      on conflict (card_id, reg) do update set released_at = excluded.released_at`,
+      insert into card_release (card_id, reg, released_at, source)
+      select d.*, 'wiki' from unnest($1::bigint[], $2::region[], $3::date[]) as d(card_id, reg, released_at)
+      on conflict (card_id, reg) do update set released_at = excluded.released_at, source = excluded.source`,
       [part.map(x=>x.id), part.map(x=>x.reg), part.map(x=>x.released_at)])
   }
   console.log(`  date di uscita: ${rel.length}`)

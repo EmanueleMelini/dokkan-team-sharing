@@ -107,12 +107,13 @@ npm run dev          # http://localhost:3000
 `load-game-cards` (le carte che il wiki non ha ancora, dal gioco) e
 `load-datamine` (che corregge e arricchisce tutte e due), `load-game-events` (gli eventi che il wiki
 non ha, dal gioco) prima di `load-windows` (che dà le finestre anche a
-loro), `load-missions` dopo `load-windows` (attacca ogni missione a una
-run), e `fetch-assets` per ultimo. `db:import` e `db:refresh` li mettono in
-fila:
+loro), `mirror-japan` subito dopo `load-windows` (copia su Japan le
+finestre Global appena scritte, sezione "Il calendario Japan: lo specchio
+di Global"), `load-missions` dopo (attacca ogni missione a una run), e
+`fetch-assets` per ultimo. `db:import` e `db:refresh` li mettono in fila:
 
 ```
-load-cards → load-game-cards → load-events → load-datamine → load-game-events → load-windows → load-missions → load-equipment → fetch-assets
+load-cards → load-game-cards → load-events → load-datamine → load-game-events → load-windows → mirror-japan → load-missions → load-equipment → fetch-assets
 ```
 
 Il ciclo completo dura **pochi secondi**: le immagini sono già sul disco e
@@ -341,6 +342,7 @@ components/
   scelta/                     i menu a scelta: <Scelta> (scelta.tsx), il <select> del server (scelta-nativa.tsx), il combobox di Headless UI (scelta-elenco.tsx, chunk suo), le classi (stile.ts)
 lib/
   queries.ts                  le letture delle pagine evento (pure): eventi, stage, clear, filtri, faccette
+  date.ts, stato-evento.ts    le date in UTC (il giorno, e l'ora quando la fonte la sa) e lo stato di una run in parole (puri): la riga della pagina evento con la nota dello specchio Japan, le voci del selettore delle run del builder
   clears.ts, clears/          il builder e il clear: letture, Server Action, validatori, frasi d'errore, filtri
   tips.ts, tips/              le tip: letture (pure), Server Action, validatori, frasi d'errore
   card-page.ts, card-art.ts   la pagina della carta (pura) e la scelta dell'artwork
@@ -361,7 +363,7 @@ lib/
   db.ts, db-config.ts         la pool (una per processo) e le sue impostazioni: dimensioni, TLS
   cron.ts                     l'autenticazione delle rotte di Vercel Cron
 db/
-  migrations/                 NNNN_*.sql, applicate in ordine, mai modificate (0001-0035, elenco sotto)
+  migrations/                 NNNN_*.sql, applicate in ordine, mai modificate (0001-0036, elenco sotto)
   migrate.mjs                 runner: applica le pendenti, una transazione ciascuna (--check per sapere se e' indietro)
   reset.mjs                   ricostruisce un database da zero (--fixture per i test)
   env.mjs                     la sorgente unica di DATABASE_URL per gli script
@@ -375,6 +377,7 @@ db/
     load-datamine.mjs         correzioni e arricchimenti dal gioco
     load-game-events.mjs, game-events/   gli eventi che il wiki non ha, e gli stage delle riedizioni
     load-windows.mjs, set-event-window.mjs, quest-refs.mjs   le finestre Global dal gioco
+    mirror-japan.mjs, japan-mirror/   le date Japan dal 2025, copiate da Global (le regole e il piano, puri)
     load-missions.mjs, missions/   le missioni Global e i loro premi
     load-equipment.mjs, equipment-limits.mjs   le Skill Orb e le loro regole
     fetch-assets.mjs          le immagini (--offline: solo dal disco; --missing: solo quelle senza riga; --plan: solo il piano)
@@ -441,6 +444,7 @@ Le migrazioni che contano per il sito, oltre allo schema dei dati (0001-0013, 00
 | `0033_asset_source.sql` | `asset.source` e `source_url`: da dove viene ogni immagine |
 | `0034_thumb_frame.sql` | `asset.frame` e `asset_bare()`: le miniature senza cornice (le LR del wiki), che il sito incornicia |
 | `0035_set_region.sql` | `set_region`: la versione del sito (`app_user.reg`) salvata sull'account dall'interruttore |
+| `0036_japan_mirror.sql` | la provenienza `mirror`: le date Japan dal 2025 copiate da Global (`event_run`), e `card_release.source` |
 
 ### Sulle migrazioni
 
@@ -463,7 +467,10 @@ fallirebbe a ogni scrittura (la 0033, `asset.source` not null senza
 default). Ma conta solo dove il codice di prima scrive davvero: la 0033
 può precedere il codice finché nessun giro applicato del codice di prima
 scrive `asset` (sezione della 0033). Quando conta, lo dice la sezione
-della migrazione.
+della migrazione. La 0036 va online **prima** del codice che scrive
+`mirror`: il codice di prima la regge (una colonna con il default, vincoli
+che i suoi dati rispettano), e il codice nuovo senza di lei si ferma a
+`check-schema` (sezione "Il calendario Japan", "Il rilascio").
 
 ## Due fonti, e nessuna sostituisce l'altra
 
@@ -1397,8 +1404,11 @@ nostro modello, significa "permanente" — vero per gli eventi story e le
 EZA, falso per quelli a tempo. Invece di far finta,
 `event_run.ends_at_known` vale `false` su queste righe: la view
 `event_status` continua a dire `active` e l'interfaccia può aggiungere
-"fine non nota" invece di mentire. **Attenzione a questo prima di mostrare
-la lista degli attivi**: oggi risultano attivi tutti gli eventi mai usciti.
+"fine non nota" invece di mentire. Le finestre vere sono arrivate dopo:
+su Global dal gioco (sezione "Il calendario: le finestre Global vengono
+dal gioco"), su Japan dal 2025 dallo specchio di Global (sezione "Il
+calendario Japan"). Restano "fine non nota" le run del wiki che nessuna
+finestra ha chiuso, e la lista degli attivi le conta ancora.
 
 ### E una cosa che gli eventi non hanno
 
@@ -1517,7 +1527,9 @@ state spostate sul posto, con lo stesso id. Le adozioni e le chiusure di
 
 **Chi vince.** `event_run.source` (migrazione 0010) dice da dove viene una
 run: `wiki`, `game` o `manual`, e vince in quest'ordine `manual` > `game` >
-`wiki`. Ogni import tocca solo le sue. La run del wiki della **stessa
+`wiki`. Ogni import tocca solo le sue. Dalla 0036 c'è anche `mirror`, solo
+su Japan: le copie delle finestre Global del gioco e di quelle a mano
+(sezione "Il calendario Japan"), con le stesse regole verso `manual` e `wiki`. La run del wiki della **stessa
 uscita** (entro due giorni) diventa quella del gioco **sul posto**, con lo
 stesso id; una run più vecchia che si sovrappone si **chiude** all'inizio
 della finestra con la fine non nota ("finita non dopo"); una finestra che
@@ -1529,8 +1541,11 @@ la corsa del gioco con lo stesso id. È il caso dei tre clear dimostrativi su
 728100, di ottobre 2026: la loro run 1148 ora è la permanenza dal
 24/06/2025, e il tratto del wiki prima di quella data è una run nuova.
 
-`npm run db:window` resta il tappo per quello che il gioco non dà (Japan,
-gli eventi non legati), e vince sul gioco. **Le date vanno scritte con il
+`npm run db:window` resta il tappo per quello che il gioco non dà (Japan
+prima del 2025 e gli eventi solo giapponesi, gli eventi non legati), e
+vince sul gioco e sullo specchio. Una finestra Global a mano da D vale
+anche per Japan: lo specchio la copia come una del gioco (sezione "Il
+calendario Japan"). **Le date vanno scritte con il
 fuso** (`--dal 2026-09-05T05:00Z`): senza, valgono nel fuso della sessione.
 Una corsa precedente che si accavalla (del gioco, o del wiki oltre i due
 giorni di tolleranza) si chiude al `--dal` con la fine non nota, invece di
@@ -1580,8 +1595,9 @@ non nota" e non tacerlo:
   l'ultimo piano aggiunto, il 09/09/2026. Al contrario, una
   riapertura che parte dove la corsa prima finisce si fonde con lei: Team
   Bardock (698372) è una corsa sola dal 26/08/2021.
-- **Japan** non si tocca: il datamine è quello Global. Le 590 run Japan sono
-  ancora del wiki, tutte attive.
+- **Japan** non lo tocca `load-windows`: il datamine è quello Global. Dal
+  2025 le date Japan le copia lo specchio (sezione che segue); prima restano
+  le 590 run del wiki, attive con la fine non nota.
 - **La storia è corta.** Ogni fotografia sovrascrive la corsa precedente di
   un'area; quella attuale ha conservato 34 corse passate oltre all'ultima di
   ogni evento (l'area 503 ha ancora dicembre 2024 accanto a ottobre 2026), e
@@ -1594,6 +1610,440 @@ non nota" e non tacerlo:
 - **Gli eventi più nuovi il wiki non li ha**: le sue pagine di eventi si
   fermano a gennaio 2025. Li crea `load-game-events` dal gioco, nella
   sezione che segue.
+
+## Il calendario Japan: lo specchio di Global (migrazione 0036)
+
+Il wiki era l'unica fonte delle date Japan (JPdate, `load-events`) e ha
+smesso di creare pagine evento a gennaio 2025: la produzione ha 48 run
+Japan del 2024, 4 del 2025 e nessuna del 2026. Da allora le due versioni
+escono con lo stesso calendario. La ricerca di novembre 2026 (sul wiki, sul
+datamine Global e su fonti giapponesi) lo dice in tre modi: il contenuto
+nuovo esce lo stesso giorno da fine agosto 2024; Global ha finito di
+recuperare il contenuto giapponese arretrato il 2024-12-12; da gennaio 2025
+carte, EZA ed eventi coincidono (quelli di ottobre-novembre 2026 spesso al
+minuto) e 146 banner giapponesi su 166 hanno il gemello Global con inizio e
+fine identici. Le poche eccezioni dopo il 2024 che il wiki mostrava erano
+errori del suo campo Global, smentiti dal datamine.
+
+Quindi `npm run db:mirror-japan` (`db/import/mirror-japan.mjs`), dentro
+`db:import`, `db:refresh`, `db:test` e la pipeline di produzione, subito
+dopo `load-windows`, copia su Japan ogni run Global del gioco, o a mano
+(`set-event-window --reg global`), che inizia da
+**D = 2025-01-01 00:00 JST** (le 15:00 UTC del 31 dicembre), di tutti gli
+eventi: stesso inizio, stessa fine, stessa fine nota, al microsecondo (lo
+specchio legge gli istanti come testo, perché una `Date` di JS si ferma al
+millisecondo e le run a mano scritte con `now()` hanno i microsecondi). D lascia fuori il
+recupero di Global del 2024 e la rimessa in lista di 128 EZA del
+2024-12-27 alle 02:00 UTC, fatti di Global che copiati darebbero a Japan
+date sbagliate. Le regole stanno in `db/import/japan-mirror/rules.mjs`
+(D, e le eccezioni scritte a mano col loro motivo: `globalOnly` per un
+evento solo di Global, `skipWindows` per una finestra sola, riconosciuta
+dall'inizio Global, `globalOnlyCards` per le carte); il piano in
+`plan.mjs`, puro e provato senza database. Oggi le eccezioni sono vuote:
+nei dati nessun evento è di sicuro solo Global, e i nomi che lo
+farebbero pensare ("10th Anniv.!", "11th Anniversary!") sono gli
+anniversari giapponesi, usciti su Global nello stesso istante.
+`--dry-run --verbose` elenca gli eventi che prendono la prima run Japan:
+è la lista da rivedere prima di aggiungerne una, e `--rules file.json`
+prova un'eccezione prima di scriverla.
+
+**Una provenienza nuova.** Le copie hanno `source = 'mirror'` (i vincoli
+`run_mirror_japan` e `run_game_global`: le copie solo su Japan, il gioco
+solo su Global), così si ricalcolano a ogni giro senza toccare le run del
+datamine. Una copia è `mirror` anche quando viene da una run Global a mano:
+nessun vincolo lo impedisce (`manual` va in tutte e due le versioni), e una
+run Japan `manual` vuol dire un'altra cosa, la data scritta per Japan, che
+vince sullo specchio. Le regole sono quelle di `load-windows`, su Japan:
+
+- una run Japan a mano vince sempre: la finestra che la tocca (si
+  sovrappone, o inizia entro due giorni) si salta, e la copia che quella
+  finestra aveva già resta com'è, anche chiusa da `set-event-window`.
+  `set-event-window --reg japan` tratta una copia come la run del wiki: a
+  meno di due giorni è la stessa uscita e diventa la run a mano sul posto
+  (una data giapponese di qualche ora dopo quella Global), oltre si chiude
+  al `--dal`;
+- una run Global a mano da D è una finestra come quelle del gioco:
+  `set-event-window --reg global` che corregge una data (la run del gioco
+  diventa a mano sul posto, o si chiude al `--dal` e la segue la run a
+  mano) corregge anche Japan al giro dopo, con le stesse copie (la prima
+  chiusa al `--dal` con la fine non nota, poi la copia della run a mano).
+  Prima lo specchio guardava solo il gioco: la copia si toglieva o restava
+  tagliata, e la run del wiki chiusa da lei si riapriva senza fine. Per
+  togliere a Japan una finestra Global ci sono `globalOnly` e `skipWindows`;
+- la copia che c'è già si riconosce dall'evento e dall'inizio (entro due
+  giorni, o sovrapposta), mai dall'id della run Global, che `load-windows`
+  scambia: si aggiorna sul posto. Le copie entro due giorni vanno alle
+  finestre tutte insieme e nel loro ordine (il maggior numero di coppie,
+  poi le più vicine): finestra per finestra, due `set-event-window --reg
+  global` a poche ore potevano incrociare due copie (una avanti sopra
+  l'altra che torna indietro, che nessun ordine di scritture fa), e una
+  finestra poteva prendere la copia esatta di quella dopo;
+- la run del wiki della stessa uscita (entro due giorni) diventa la copia
+  sul posto, con il suo id; una più vecchia si chiude all'inizio della
+  copia con la fine non nota. `load-events` non la ricrea: una copia entro
+  due giorni dalla data del wiki la blocca come una run del gioco. La
+  stessa uscita la dice la data Japan del wiki, non dove sta la run:
+  quando la data arriva al giorno di una copia che c'è già (88853, da 1 Apr
+  2017 a 16 Oct 2025), `load-events` sposta la run del wiki alla data e la
+  copia la chiude poche ore dopo; prima restava così per sempre, un
+  pezzetto di cinque ore accanto alla copia, dove un import da zero ha una
+  run sola. Ora lo specchio le riunisce: la run del wiki prende la finestra
+  con il suo id, la copia si toglie (il giro lo dice: "di cui al posto della
+  copia che c'era"). Anche quando `load-events` non l'ha potuta spostare
+  (la data cade dentro la copia). La copia con dei clear non si può
+  togliere: allora resta lei, e si toglie la run del wiki, senza clear
+  ("del wiki tolte, la copia ha dei clear"; `mirror-japan` cancella una run
+  del wiki solo senza clear e senza missioni). Con dei clear nella corsa
+  della run del wiki la riunione c'è solo se ci stanno tutti dentro la
+  finestra (la regola dei clear, più sotto); se no restano tutte e due, con
+  una riga `  tengo la run …`;
+- una data Japan del wiki da D in poi vince: le finestre che iniziano più
+  di due giorni prima non si copiano, il giro lo dice come conflitto (a
+  ogni giro, finché qualcuno non decide). Oggi nella cache non succede;
+- la run del wiki sta alla data Japan del wiki già dopo lo stesso giro,
+  qualunque sia la data, anche prima di D (un errore corretto, una
+  modifica annullata): il risultato è quello di un import da zero, la run
+  del wiki alla data chiusa all'inizio della run Japan che segue, con la
+  fine non nota, più le copie. `load-events` gira prima e da solo non
+  sempre ce la mette: una copia si sovrappone a [data, infinito), e una run
+  del wiki chiusa da una copia non si sposta oltre la sua fine. Lo specchio
+  sposta lì la run del wiki che c'è; se non c'è, la diventa la copia tolta
+  (con il suo id), o ne nasce una. Anche quando la run del wiki inizia
+  dentro una finestra e la data è prima (una copia con dei clear o una run
+  a mano fra le due date): va alla data nello stesso giro, e la finestra
+  si copia; prima la bloccava come un conflitto, e per una settimana una
+  copia permanente risultava conclusa. E quando la run del wiki riaperta
+  arriva fino a una run della stessa uscita (una run a mano, una copia),
+  parte dalla data, come `load-events` farebbe la settimana dopo. Una run
+  del wiki con dei clear la sposta solo lo specchio, e solo con la regola
+  dei clear (più sotto): se no resta dov'è, alla data ne nasce una nuova se
+  c'è posto, con una riga `  tengo la run …` a ogni giro (707351: la data
+  tornata al 2021 portava indietro di anni una run aperta con un clear del
+  2026, poi chiusa nel 2025 con il clear fuori). Prima guardava solo le date da D, e due
+  casi restavano rotti per sempre: una data che vince (707351, una prova
+  al 20 Dec 2025) e poi torna a quella vera (31 May 2021) con la copia
+  ancora lì lasciava la run del wiki aperta al 2025, cioè l'evento in
+  corso su Japan; e dopo un'adozione (88853) la data vera del 2017 non
+  ridava più la run del 2017. Ora la copia adottata resta la copia (con
+  il suo id, e i clear della sua corsa) e la run del wiki rinasce. Una
+  copia con dei clear che copre la data si chiude lì, con la fine non
+  nota, e se i clear stanno tutti dopo la data la sua riga diventa la run
+  del wiki. Una run a mano sulla data vince anche qui. Il test del piano
+  lo prova da ogni data a ogni altra (anche senza data): il giro dopo è
+  sempre un import da zero, e quello dopo ancora non cambia niente;
+- una copia che nessuna finestra vuole più (una regola nuova, la run Global
+  sparita) si toglie, tranne quando ha dei clear: allora resta, con una
+  riga `  tengo la run …` che il giro settimanale conta. Se era la run del
+  wiki adottata torna run del wiki (la sua data, la fine non nota), con
+  lo stesso id: una sola, la più vicina alla data, e solo se non c'è già
+  un'altra run del wiki o un'altra run della stessa uscita (con due
+  finestre vicine alla data, sparita la seconda, la sua copia tornava run
+  del wiki davanti alla copia vera, e il giro dopo la riunione toglieva la
+  copia vera). Una run del wiki chiusa (fine non nota) finisce dove comincia
+  la prossima run: si riapre dove non comincia più niente, si accorcia se
+  prima ne comincia un'altra;
+- le scritture di un evento vanno ognuna quando il suo posto è libero
+  (`run_no_overlap` non è differibile): l'ordine solito, e se una non ci
+  sta ancora la prima che ci sta;
+- **la regola dei clear**, solo per le run Japan del wiki: una run del
+  wiki si sposta, si adotta (o prende una finestra), si accorcia o si
+  chiude solo se i clear che stanno dentro la sua corsa restano tutti
+  dentro la corsa nuova, o se lo scambio qui sotto li porta con la sua riga
+  in una copia. Se no il piano si rifà con quella mossa vietata alla run, e
+  la run resta com'è: non va alla data del wiki (alla data ne nasce una
+  nuova, se c'è posto), non la adotta la finestra, o non si chiude (la
+  finestra che la chiuderebbe è un conflitto, detto a ogni giro); in tutti
+  i casi una riga `  tengo la run …` a ogni giro, e nessuna correzione
+  automatica: la sistema qualcuno a mano. **Una copia invece segue sempre
+  la sua finestra Global** (inizio, fine, fine nota), come `load-windows`
+  aggiorna una run Global del gioco anche con dei clear sopra: i clear che
+  così restano fuori dalla loro run (la finestra si sposta, si accorcia, o
+  il wiki la vince e la copia si chiude alla sua data) li conta il giro
+  ("clear Japan scritti fuori dalla loro run"), da rivedere a mano come su
+  Global, e il loro `run_id` non cambia. Lo scambio qui sotto vale anche
+  per una copia accorciata con la fine non nota, se una copia senza clear
+  li contiene tutti. Per un giro la regola valeva anche per le copie: una
+  copia con un clear nel pezzo che la finestra nuova tagliava teneva le
+  date Global vecchie, la finestra era un conflitto contro di lei (o una
+  copia nuova accanto, con lei chiusa), e Japan mostrava date che Global
+  non ha. `load-events` non sposta una run Japan del wiki con dei
+  clear: non sa dove la chiuderà lo specchio (707351: spostata dal 20 Dec
+  2025 al 31 May 2021 restava aperta e conteneva il clear del 2026, poi lo
+  specchio la chiudeva al 2025-11-18 e il clear finiva fuori), e un clear
+  scelto nel builder su una run chiusa ci finirebbe dentro. La sposta lo
+  specchio, nello stesso giro, se la regola lo permette (anche indietro,
+  entro due giorni, dove il passo che mette la run alla data non c'è). I
+  clear già fuori dalla loro corsa (un clear di oggi attaccato nel builder,
+  "When you cleared it", a una run chiusa da anni) non fermano niente, e la
+  loro run non si scambia mai: resta la corsa scelta, e il giro li conta
+  ("clear Japan scritti fuori dalla loro run");
+- una copia con dei clear che comincia dentro una finestra (e la
+  bloccava) la prende lei, al posto della copia senza clear che la
+  finestra aveva scelto (la più vicina), che si toglie ("copie con clear
+  che riprendono la finestra"), anche se così un suo clear resta fuori (la
+  copia segue la finestra, e il giro lo conta). Succede quando una correzione
+  `set-event-window --reg global` con il `--dal` dentro una finestra in
+  corso si annulla (il `--dal` di nuovo all'inizio: la run del gioco torna
+  intera, a mano, e la run a mano di prima si toglie): la riga dei clear
+  era andata, con lo scambio, alla copia della run a mano, e la finestra
+  rimessa intera prendeva il pezzetto senza clear chiuso al `--dal`;
+  restavano tutte e due per sempre, con un conflitto, dove un import da
+  zero ha una copia sola;
+- i clear Japan restano nella loro corsa: lo scambio di righe del passo 4
+  di `load-windows`, su Japan, ma solo per le righe che il piano ha appena
+  chiuso o accorciato lasciando fuori dei clear della loro corsa, senza
+  clear già fuori, e solo se i clear stanno tutti dentro una copia senza
+  clear (anche non quella subito dopo): la riga prende la finestra della
+  copia con il suo id, e il suo tratto di prima rientra come riga nuova
+  della sua provenienza. Non rientra il tratto della run del wiki della
+  stessa uscita della copia che la chiudeva (un import da zero ha una run
+  sola, quella adottata), né quello di una run del wiki di un evento di cui
+  il wiki non dà più la data Japan (`load-events` lo toglierebbe la
+  settimana dopo). Serve al primo giro (i clear Japan stanno sulle run del
+  wiki aperte, e quelli di una replica dopo la prima stanno nella sua
+  copia) e dopo `set-event-window --reg global` con il `--dal` dentro una
+  finestra in corso (la copia con i clear va alla finestra chiusa al
+  `--dal`, e i clear scritti dopo stanno nella copia della run a mano;
+  `set-event-window` lo dice già quando scrive). Prima lo scambio guardava a
+  ogni giro ogni run chiusa con la fine non nota: un clear di oggi
+  attaccato nel builder alla run del wiki del 2020 di 612048 portava quella
+  riga nella copia in corso, la run del 2020 tornava con un id nuovo e
+  senza il clear, e il giro non lo diceva più. Gli istanti passano come
+  testo con i microsecondi, come per il piano: una `Date` di JS li perdeva,
+  e la copia di una run a mano scritta con `now()` non era più uguale a
+  Global. Uno scambio può liberarne un altro: si ripetono finché ce n'è;
+- una run del wiki senza clear che non è quella della data del wiki si
+  toglie, quando un'altra run del wiki è alla data (entro due giorni) o è
+  quella che la finestra della stessa uscita ha adottato: un import da zero
+  ne ha una sola, e `load-events` toglie allo stesso modo le run che il
+  wiki non dà più ("del wiki tolte, un'altra è alla data"). È la run
+  lasciata ferma dalla regola dei clear mentre alla data ne nasceva una
+  nuova (707351), a cui poi i clear sono stati tolti o spostati a mano:
+  `load-events` non la tocca (la run alla data gli basta), e restava aperta
+  per sempre, l'evento in corso su Japan, senza nessuna riga che lo
+  dicesse. Finché ha dei clear resta, con la sua riga `  tengo la run …`.
+  Con due run del wiki, poi, le finestre della stessa uscita le prendono
+  nel loro ordine: due finestre a poche ore prendevano le due run
+  incrociate, che nessun ordine di scritture sa scrivere, e l'evento
+  restava fermo ogni settimana ("piano non applicabile").
+
+Un evento il cui piano finirebbe in una sovrapposizione (anche solo in
+mezzo, perché `run_no_overlap` non è differibile) prima si ripianifica con
+i divieti della regola dei clear (possono togliere proprio la mossa che lo
+rompeva), poi con le finestre delle due run che si sovrappongono in
+conflitto, come `load-windows` ferma una finestra con una run del gioco che
+non sa sistemare: una finestra bloccata da una run del wiki ferma per i
+clear lascia la sua copia dov'era, e la copia della finestra prima, un'ora
+prima, ci si allungava sopra. Prima l'evento restava fermo ogni settimana
+("piano non applicabile"), anche per tutte le altre sue finestre. Se
+nemmeno così il piano si scrive, l'evento non si tocca, e il giro lo dice.
+
+**I passi.** Il piano di un evento arriva allo stato fermo quasi sempre in
+una volta, ma non sempre: gli scambi li fa `mirror-japan` dopo il piano (il
+tratto della run del wiki che rientra lo adotta la finestra della stessa
+uscita solo al piano dopo), e una run del wiki ferma per i clear che blocca
+una finestra e che lo stesso piano poi chiude la libera solo al piano dopo.
+Quei casi finivano il lavoro la settimana dopo: il giro non era
+idempotente (28 settimane su 24000 nella simulazione, con i clear), e per
+una settimana Japan diceva un'altra cosa. Ora, nella stessa transazione,
+gli eventi che un passo ha toccato si rileggono e si ripianificano, al più
+tre passi in tutto; il riepilogo somma le scritture dei passi e dice quanti
+ne sono serviti, conflitti e righe `  tengo` sono quelli dell'ultimo piano
+di ogni evento, e se al terzo passo qualcosa cambia ancora lo dice
+(`  attenzione: lo specchio cambia ancora …`, che il giro settimanale
+riporta fra le cose da guardare). Con `--dry-run` tutti i passi si
+annullano insieme alla fine, dopo aver stampato quello che farebbero.
+
+**Le carte.** Il picker del builder di un clear Japan cerca le carte uscite
+su Japan (`card_release` per regione), e le carte che solo il gioco
+conosce (`load-game-cards`) avevano solo l'uscita Global: su `dokkan_dev`
+45 delle 125 uscite Global del 2026. Lo stesso giro dà alle carte uscite su
+Global da D (il giorno giapponese, le date sono giorni) senza una data
+Japan quella Global. Sta qui e non in uno script a parte perché la regola
+è la stessa e una transazione sola non lascia le run copiate senza le
+carte; le carte sono già tutte caricate. Anche `card_release` ha ora
+`source` (`wiki` per `load-cards`, `game` per `load-game-cards`, solo
+Global, `mirror` solo Japan, `manual` per difetto): una data Japan del wiki
+o scritta a mano non si tocca mai, e il giorno che il wiki la dice
+`load-cards` prende la riga della copia. La data copiata è lo stesso giorno
+sul calendario giapponese: per una carta del wiki il giorno Global, per
+una carta che solo il gioco conosce il giorno giapponese di `open_at` del
+datamine (`load-game-cards` scrive il giorno UTC, e dalle 15:00 UTC a
+Tokyo è già il giorno dopo: il lotto del decimo anniversario giapponese
+esce su Global il 2025-01-28 alle 21:00 UTC, e il wiki dà JP 29 Jan 2025).
+Oggi le 46 carte copiate escono tutte prima delle 15:00 UTC; il giro dice
+le altre ("il giorno dopo Global").
+
+**Il risultato** sulle cache di oggi (quelle di `dokkan_dev`, contate su
+`dokkan_test`): 265 finestre Global da D su 254 eventi, 265 copie, 178
+eventi alla prima run Japan, 76 run del wiki chiuse all'inizio di una
+replica (nessuna della stessa uscita: le run Japan del 2025 sono di
+gennaio, e le loro finestre Global sono la rimessa in lista di giugno 2025
+o la replica di gennaio 2026), 46 uscite Japan di carte. Su Japan, una
+ricorrenza per evento: prima 591 eventi tutti attivi (uno con la fine
+nota), dopo 769, 675 attivi (79 con la fine nota) e 94 conclusi. Su
+`dokkan_test` ci sono in più quattro finestre Global a mano di 5001 (la
+fixture e i passi dello schema e dell'API di scrittura): 269 finestre su
+255 eventi, due copiate (al microsecondo) e due saltate, perché toccano le
+run Japan a mano dello stesso evento. Su
+`dokkan_dev` non ci sono run a mano. Un
+secondo giro non cambia niente, anche dopo `load-events` e `load-windows`.
+Nel confronto settimanale il primo giro aggiunge le copie e cambia le run
+del wiki chiuse (`event_run` ha la chiave evento, regione, inizio), e non
+toglie niente: passa i limiti senza `allow_deletions`. Un D spostato per
+sbaglio, che toglierebbe tutte le copie, si ferma sul 5% di `event_run`.
+
+**Dove sbaglia ancora**: le copie ereditano le finestre di Global, che
+vengono dalle missioni (un evento aperto prima della sua Burst Mode parte
+dalla Burst Mode, in tutte e due le versioni), le stesse lacune e le
+stesse rimesse in lista (giugno 2025, dicembre 2025, agosto 2026) come
+"permanente da". Gli eventi solo Japan mancano, perché il datamine è
+Global. E l'istante è quello di Global: quasi sempre è anche quello
+giapponese, ma non è un dato giapponese. Le chiusure "a fine giornata" di
+solito coincidono (le 15:00 UTC esclusive sono le 23:59:59 di Tokyo); le
+poche a mezzanotte UTC (6 copie con la fine nota, come 721973) finiscono su
+Global nove ore dopo Japan.
+
+### Nel sito
+
+Le copie si vedono come le altre run Japan. Cosa cambia:
+
+- **L'istante di Global, con "UTC".** La pagina evento Japan scrive una
+  copia come la pagina Global, con l'ora e "UTC" (`quando` in
+  `lib/date.ts`), e lo stato è quello di Global. Il giorno da solo sarebbe
+  quello UTC senza dirlo: una finestra che parte dalle 15:00 UTC a Tokyo è
+  già il giorno dopo (8 copie partono il 2025-01-28 alle 21:00 UTC), e una
+  fine esclusiva a mezzanotte UTC sembrerebbe il giorno dopo. Le date del
+  wiki restano solo il giorno.
+- **"Same dates as Global".** In una riga sua sotto lo stato ("Ongoing until
+  November 19, 2026"), nello stesso `tenue` del dettaglio (`STESSE_DATE`
+  in `lib/stato-evento.ts`, dove sta ora anche `statoEvento`, puro e
+  provato senza database). In coda allo stato, a 320 px andava a capo con
+  il separatore in testa. Solo quando è vero alla lettera: `getEvent`
+  calcola `same_as_global`, vero per una copia uguale a una run Global del
+  gioco o a mano (stesso inizio, stessa fine con `is not distinct from`,
+  stessa fine nota). Una copia può non esserlo più di proposito (chiusa al
+  `--dal` da `set-event-window --reg japan`, o tenuta per i clear dopo che
+  la sua finestra Global se n'è andata): resta `mirror`, ma senza la nota.
+  Le run del wiki e quelle a mano non l'hanno.
+- **Le note sulle date.** Sulla lista Japan filtrata per stato: "Japan dates
+  from 2025 on are the same as Global's. When the game doesn't record an
+  end, or for older events where the wiki records only when an event first
+  came out, the event is listed as ongoing, so Ongoing also includes some
+  events that may have closed." (prima diceva che nessun evento Japan
+  risultava concluso, e con le run del wiki chiuse dalle copie non è più
+  vero; poi che solo le date vecchie del wiki restavano in corso, ma le
+  copie ereditano anche le fini che Global non conosce: su `dokkan_test` 82
+  eventi Japan sono in corso con una copia senza la fine nota). La stessa
+  avvertenza della nota Global, entro i 260 caratteri. Un evento senza date Japan: "It may not be out in this version
+  yet, or it's an older event the wiki doesn't list." (`senzaDate`): uno
+  uscito dal 2025 le avrebbe.
+- **Il builder.** Nel selettore delle run ("When you cleared it") una run
+  senza la fine nota è "Started <giorno>, end date unknown", non più
+  "Running now, since <giorno>": una run del wiki può essere finita da anni,
+  e una chiusa all'inizio di una replica ha solo un limite (`etichettaRun`,
+  con `ends_at_known` da `listStartedRuns`). Vale anche su Global. Il
+  selettore è stretto e scrive solo il giorno, quello UTC come in tutto il
+  sito: per una copia è il giorno che la pagina scrive accanto all'ora e a
+  "UTC", e la stessa voce della run Global.
+- **Le carte.** Il picker di un clear Japan propone le carte con l'uscita
+  Japan copiata, e la loro pagina ha il blocco dei clear Japan. La data
+  Japan copiata sta accanto a quella Global, lo stesso giorno, senza nota
+  (direbbe due volte la stessa cosa). A chi è su Japan una carta senza
+  uscita Japan (più vecchia di D e senza la data del wiki, o solo Global)
+  dice "No Japan release date for this card yet.".
+
+Le prove: `versione-ui.test.mts` (le parole, senza database, anche la nota
+che non c'è su una copia che non è più uguale a Global) e
+`queries.test.mts` (un evento copiato letto con `getEvent`, con
+`same_as_global` vero, falso sulla copia chiusa al `--dal` o con un'altra
+fine, vero sulla copia di una run Global a mano; il selettore su una run
+del wiki chiusa da una copia, una carta copiata con `getCard` e
+`searchCards`).
+
+### Aggiungere un'eccezione
+
+Quando si sa (da una fonte giapponese, non da un'impressione) che un evento,
+una sua finestra o una carta su Japan non c'è o è uscita in un altro
+momento:
+
+1. **Trova la finestra.** L'evento è il suo id nel sito (`/events/<id>`);
+   per una finestra sola serve il suo inizio Global:
+   `select id, starts_at, ends_at from event_run where event_id = <id> and
+   reg = 'global' and source = 'game' order by starts_at`.
+2. **Prova senza scrivere.** Un JSON con le sole chiavi da cambiare (le altre
+   restano quelle di `rules.mjs`), per esempio
+   `{"globalOnly": [{"event": <id>, "why": "Collaborazione solo Global: l'annuncio giapponese non c'e'"}]}`,
+   poi `npm run db:mirror-japan -- --dry-run --rules regola.json`: dice
+   quante copie toglierebbe, quali run del wiki riaprirebbe e quali copie
+   resterebbero per i clear (`  tengo la run`).
+3. **Scrivila in `db/import/japan-mirror/rules.mjs`**, nell'elenco giusto:
+   `globalOnly` (`{ event, why }`, tutto l'evento), `skipWindows`
+   (`{ event, start, why }`, una finestra, con `start` l'inizio Global con
+   il fuso, entro i due giorni) o `globalOnlyCards` (`{ card, why }`). Il
+   motivo è obbligatorio e dice da dove si sa: un motivo mancante o di meno
+   di dieci caratteri, un id doppio o un istante senza fuso fermano il giro
+   prima di scrivere (`checkRules`).
+4. **In locale** `npm run db:mirror-japan` e `npm run db:test`: la suite
+   dello specchio toglie le eccezioni dal conto e controlla che le loro
+   finestre non abbiano copie. **In produzione**, dopo il merge su `main`,
+   la applica il primo giro settimanale con dati nuovi: il passo Decide
+   salta la settimana se il commit del datamine e il contenuto del wiki
+   sono gli stessi dell'ultimo import (`db/prod/last-run.mjs`), anche se
+   le regole sono cambiate. Per applicarla subito, un giro a mano del
+   workflow settimanale (Run workflow) con `force` e senza `dry_run`. Le
+   copie tolte contano nei limiti delle cancellazioni (5% di `event_run`,
+   `db/prod/limits.json`): un evento con molte finestre può volere
+   `allow_deletions`. Una copia con dei clear Japan resta (la riga
+   `  tengo la run` nel riepilogo) finché i clear non si spostano a mano.
+
+Una data Japan precisa per una finestra che lo specchio copia male non è
+un'eccezione: è `npm run db:window -- --evento <id> --reg japan --dal …
+--al …` con il fuso (la run a mano vince, e lo specchio non la tocca più).
+Una data Global sbagliata si corregge con `--reg global`, e da D la
+correzione vale anche per Japan al giro dopo (la copia segue la run a mano).
+
+### Il rilascio
+
+L'ordine conta, perché il settimanale gira da `main` con `WEEKLY_APPLY=true`
+e il sito va online solo da `release`:
+
+1. **Prima la 0036**: `npm run prod:migrate -- --yes`, prima che il codice
+   che scrive `mirror` arrivi su `main`. Il codice di prima la regge: le
+   righe nuove di `card_release` prendono `manual` (il primo giro del codice
+   nuovo le rimette `wiki` o `game`), e i vincoli nuovi li rispetta. Al
+   contrario, il codice nuovo senza la 0036 si ferma da solo (`migrate
+   --check` nel giro di prova, `check-schema` in `prod:update`): salta il
+   giro settimanale, e anche quello giornaliero delle immagini
+   (`daily-images.yml` fa lo stesso `migrate --check`, poi `update.mjs
+   --images-only` passa da `check-schema`), ogni giorno con immagini da
+   scaricare finché `prod:migrate` non gira. La migrazione fallisce intera
+   se in produzione c'è una run Japan con `source = 'game'`
+   (`run_game_global`): nessun import ne scrive, ma prima va controllato
+   che
+   `select count(*) from event_run where reg = 'japan' and source = 'game'`
+   dia 0.
+2. **Poi il codice di `db/` su `main`** (lo specchio, la pipeline, il
+   workflow). Il primo giro applicato aggiunge le copie, chiude le run del
+   wiki di una replica e dà le uscite Japan alle carte, senza togliere
+   niente: sulle cache di oggi resta nei limiti di `limits.json` senza
+   `allow_deletions`, e il rinfresco manda `catalog` ed `events-list`. Nel
+   log del giro di prova vanno guardati gli eventi alla prima run Japan (la
+   lista da rivedere per `globalOnly`), le righe `  tengo la run` e la riga
+   "clear Japan scritti fuori dalla loro run". I clear Japan di oggi stanno
+   sulle run del wiki aperte, e lo scambio li porta nella copia della
+   replica in cui sono stati scritti. Una run del wiki con i clear divisi fra
+   due repliche (nessuna copia li contiene tutti) resta aperta, le finestre
+   che la chiuderebbero sono conflitti, e c'è la sua riga `  tengo la run`:
+   i clear vanno spostati a mano. La riga dei clear fuori conta solo quelli
+   già fuori (attaccati nel builder a una run chiusa).
+3. **Poi l'interfaccia, con un deploy pianificato da `release`** (`git
+   push origin main:release`, sezione "Il rilascio" delle scritture ISR:
+   ogni deploy riparte con la cache vuota), dopo il primo giro applicato:
+   le sue note dicono che le date Japan dal 2025 sono quelle di Global, e
+   senza le copie non sarebbe vero. Nel frattempo il sito di prima regge le
+   copie: le mostra come run con l'ora UTC e senza la nota, e il picker
+   Japan propone già le carte copiate (legge `card_release` per regione).
 
 ## Gli eventi che il wiki non ha: dal gioco
 
@@ -2132,7 +2582,12 @@ Le verifiche sono `db/test/submit.test.mts` (gli ingressi SQL) e
   640px) su `/api/cards`, con frecce, Enter ed Escape. Propone le carte
   uscite nella versione del clear (`reg` di `/api/cards`, Global per
   difetto, 400 per un valore sconosciuto): le carte solo giapponesi si
-  usano nei clear Japan. Il builder manda `reg` solo per Japan, così le
+  usano nei clear Japan, e dal 2025 ci sono anche quelle uscite su Global
+  senza una data Japan del wiki (l'uscita Japan dello specchio, sezione "Il
+  calendario Japan"). La ricorrenza ("When you cleared it") si sceglie per
+  giorno: "Running now, since …", "… to …", o "Started …, end date
+  unknown" per una run senza la fine nota (`etichettaRun` in
+  `lib/stato-evento.ts`). Il builder manda `reg` solo per Japan, così le
   ricerche di Global restano gli stessi URL, e le stesse voci della CDN.
   La regione la dice sempre l'URL (`submitHref` la mette anche per
   Global), non la versione scelta nel sito: si apre il builder delle run
@@ -2363,7 +2818,7 @@ Verbi SQL: `post_tip`, `edit_tip`, `delete_tip`, `vote_tip`; i rifiuti hanno un 
 
 `/cards/<id>` è pubblica e in cache come le pagine evento: non legge mai la sessione. Le letture stanno in `lib/card-page.ts` (pure, provate da `db/test/card-page-ui.test.mts`), la cache in `lib/cache/cards.ts`: la carta con il tag `card:<id>` e `catalog`, i clear che la usano con `card:<id>` e `community`, che le scritture sui clear invalidano già. Al build si prerenderizzano al massimo 100 carte (le più usate nei clear); le altre nascono alla prima visita e poi restano in cache. L'id della forma Z (quello della base più uno) porta alla base con un 308; un id che non è una carta è un 404 vero.
 
-La pagina è una sola per le due versioni (sezione "Versione Global/Japan"). Una carta uscita in tutte e due ha due blocchi di clear, quelli di Global e quelli di Japan: la pagina li legge entrambi, e il CSS mostra quello della versione di chi guarda (`japan:hidden` e `hidden japan:block`). Una carta uscita in una versione sola ha un blocco solo, sempre visibile. Con due blocchi, quello vuoto dice di quale versione parla ("No Japan clears use this card yet.") e, se l'altra ha dei clear, lo dice col link al migliore ("On Global it's in 4 clears, the top one in …"): chi guarda ne vede uno solo, e "nessun clear" della sua versione non è vero per la carta. Le carte uscite solo in Giappone si aprono lo stesso, con "Not released on Global yet." (a chi è su Global) e i clear della versione giapponese; a chi è su Japan, una carta uscita solo su Global dice "No Japan release date on the wiki yet.". I link ai clear dei blocchi dicono la versione (`?region=global`, o il percorso `/japan`), i link agli eventi EZA no: seguono la versione di chi guarda.
+La pagina è una sola per le due versioni (sezione "Versione Global/Japan"). Una carta uscita in tutte e due ha due blocchi di clear, quelli di Global e quelli di Japan: la pagina li legge entrambi, e il CSS mostra quello della versione di chi guarda (`japan:hidden` e `hidden japan:block`). Una carta uscita in una versione sola ha un blocco solo, sempre visibile. Con due blocchi, quello vuoto dice di quale versione parla ("No Japan clears use this card yet.") e, se l'altra ha dei clear, lo dice col link al migliore ("On Global it's in 4 clears, the top one in …"): chi guarda ne vede uno solo, e "nessun clear" della sua versione non è vero per la carta. Le carte uscite solo in Giappone si aprono lo stesso, con "Not released on Global yet." (a chi è su Global) e i clear della versione giapponese; a chi è su Japan, una carta senza uscita Japan dice "No Japan release date for this card yet.". Dal 2025 le carte uscite su Global hanno l'uscita Japan dello specchio, lo stesso giorno (sezione "Il calendario Japan"): hanno il blocco Japan come le altre, e senza restano le carte più vecchie che il wiki non data e quelle solo Global. I link ai clear dei blocchi dicono la versione (`?region=global`, o il percorso `/japan`), i link agli eventi EZA no: seguono la versione di chi guarda.
 
 La pagina mostra le skill per livello (Base, EZA, Super EZA) e si apre sul livello più alto che la carta ha. Una sezione che il wiki non riscrive per l'EZA prende il testo del livello sotto, segnato "Unchanged from EZA". Seguono link skill con l'effetto, categorie, la catena del Dokkan Awakening, i 10 clear migliori che usano la carta (prova, voti, i più recenti) con "Used in N clears". Ogni clear porta alla pagina del suo tier dove si vede davvero: la pagina si calcola con lo stesso `ORDINE_CLEAR` della lista. In fondo c'è il link alla pagina del wiki da cui vengono i testi (CC BY-SA).
 
@@ -2486,7 +2941,7 @@ Guardare l'altra versione da un link marcato vale una pagina: il primo link senz
 - **L'aspetto.** Un controllo a segmenti, lo stesso nei tre posti con tre misure: un binario (lo sfondo della pagina, bordo `linea`) con due segmenti larghi uguali, alti 24 px nell'header (il bersaglio minimo di WCAG 2.5.8), 44 px nel burger, 32 px in Settings. Quello scelto ha il pieno di inchiostro, come i chip dei tier e dei filtri; l'altro è `tenue` nell'header (come "Events" accanto) e `testo` nel burger e in Settings. Le due opzioni hanno lo stesso peso, quindi scegliere non cambia la larghezza. All'hover e alla pressione cambia solo l'opzione non scelta (`superficie-2`, poi `linea`); mentre il cambio gira, quella scelta ha il velo dei link che caricano (come `AttesaLink`), sempre presente, che cambia solo opacità. L'anello del focus è quello del sito, attaccato al segmento (`.segmento`, offset 0 in `app/globals.css`): sta nei 2 px fra i segmenti invece di coprire quello accanto. Un errore ha l'icona, e non sposta niente neanche quando arriva tardi (la rete risponde dopo secondi, fuori dalla finestra in cui il browser conta lo spostamento come risposta al tocco): nell'header un riquadro sotto il controllo, che se ne va cambiando pagina, con Esc o con un tocco fuori (l'header sta nel layout e non si smonta: senza, l'errore di una pagina seguirebbe chi guarda su tutte le altre); nel burger prende la cella dell'etichetta, che si nasconde finché c'è (`invisible`: il gruppo si chiama ancora "Game version"), alta quanto il controllo, così Events e le altre voci restano dove il dito le cerca (a 320 px la cella è larga 120 px e il testo va su tre righe bilanciate, 45 px su 50); in Settings al posto dell'esito, nella stessa riga riservata. Il testo è breve apposta ("Couldn't change the version. Try again.", `ERRORE_VERSIONE` in `lib/versione/interruttore.ts`): in Settings a 320 px ci sta in una riga. **Con i colori forzati** (il contrasto elevato di Windows) il browser toglie i colori dei temi, e con lo stesso peso le due opzioni sarebbero uguali: quella scelta prende il pieno di sistema delle selezioni (`Highlight` e `HighlightText`, i colori che chi guarda ha scelto) con `forced-color-adjust: none`, perché altrimenti Chrome mette dietro al testo il suo riquadro del colore della pagina e su `Highlight` il testo sparisce; anche questo col CSS e la sua `japan:`, giusto prima dell'idratazione. L'anello che il browser dà alle opzioni è dello stesso colore: su quella scelta va dentro il segmento, in `HighlightText` (`app/globals.css`).
 - **Accessibilità.** Un `role="group"` col nome "Game version" (un'etichetta visibile nel burger e in Settings, solo per i lettori di schermo nell'header) e due bottoni, quello scelto `aria-pressed`. Non un radio group: un radio vuole `aria-checked`, che l'HTML in cache (uguale per tutti) non può dire, mentre `aria-pressed` si lascia fuori finché la versione non si sa (dopo l'idratazione). Tutte e due le opzioni sono nel giro del Tab; si sceglie con Spazio, Invio o il click, e l'opzione già scelta non fa niente. Mentre l'azione gira, e finché la pagina del gemello non è arrivata, il gruppo è `aria-busy` e le opzioni `aria-disabled` (non `disabled`: il focus resta). Un cambio senza navigazione dall'header, dal burger o da "Use … everywhere" lo dice una regione live sola, nel layout ("Japan version on"), che resta anche quando il burger si chiude o l'avviso sparisce; Settings invece lo dice nella sua riga `role="status"`, visibile ("Japan version on. Saved to your account.", o "Saved on this device."): accanto al controllo dai 640 px; sul telefono lì non ci sta e va sotto, in una riga che resta riservata anche vuota (`min-h-[1lh]`), perché scegliere svuota l'esito e poi lo riempie e la pagina sotto non deve saltare; la navigazione la annuncia Next; un errore è un `role="alert"`, e finché c'è descrive il gruppo (`aria-describedby`). Nel burger un tocco sulla riga non chiude il pannello; quando porta al gemello si chiude e il focus torna al bottone. Il focus è quello del sito (`:focus-visible`), attaccato al segmento. Solo token dei temi: il pieno dell'opzione scelta è quello dei chip dei tier e dei filtri (`bg-inchiostro text-sfondo`), mentre il controllo, a segmenti su un binario, è suo (l'opzione non scelta non ha un bordo). Valgono in tutti gli 11 temi, High contrast compreso, e il test prova i contrasti di ogni coppia (4.5:1 per i testi, 3:1 per il pieno sul binario e per l'anello).
 - **Gli avvisi** (`components/versione/avviso-versione.tsx`, componenti del server, statici): su una pagina Japan, a chi è su Global, "This is the Japan version. Your site is set to Global." con il link alla stessa pagina in Global e "Use Japan everywhere" (`usa-versione.tsx`, un'isola); su una pagina Global, a chi è su Japan, lo specchio. Hanno la forma del banner della sospensione: l'icona (un globo, in oro), la prima frase in inchiostro, e sotto le due strade, il link con la freccia (porta altrove) e "Use … everywhere" con l'aspetto di un piccolo bottone (cambia la scelta del sito), col velo mentre gira. Se il cambio non riesce lo dice il bottone stesso, nel suo posto: l'icona e "Try again" (`RIPROVA_VERSIONE`), in `str`, al posto di "Use … everywhere". Le due etichette stanno nella stessa cella e quella nascosta tiene la larghezza, quindi l'avviso non cresce e la pagina sotto non scende (una riga in più per l'errore, arrivato tardi, la spingeva giù di 27-47 px); il testo intero è un `role="alert"` per i lettori di schermo, che descrive il bottone finché c'è. Stanno sulle liste degli eventi e sulle pagine evento. Il link di una pagina Japan è l'URL Global senza marca: lo vede solo chi è su Global, che non viene rimandato. Su una pagina evento il link c'è solo se di là l'evento ha una run: l'avviso è nell'HTML per tutti (lo nasconde il CSS), e un link al gemello di un evento di una versione sola darebbe ai motori una pagina senza date. "Use … everywhere" nasconde l'avviso in cui sta: prima, se il focus è lì, lo porta al titolo della pagina (`tabindex="-1"`), che altrimenti finirebbe in cima al documento (WCAG 2.4.3). L'occhiello "Japan version" sta sulla lista Japan e sulla pagina evento (prima "Japanese version"), e il titolo di una pagina evento Japan finisce con "(Japan)".
-- **Un evento in una versione sola** non è mai un 404 né una pagina vuota: getEvent lo trova anche senza run, gli stage e le tip non hanno regione, e `/p/<n>` si perde nei redirect. Senza run in questa versione la pagina lo dice al posto dello stato, con la sua forma (l'etichetta, poi il dettaglio in `tenue`): "**No Japan dates** It may not be out in this version yet, or the wiki doesn't list it.", e solo se di là l'evento ha una run aggiunge sotto, con la freccia, il link esplicito "Global version of this event" (l'altra versione si legge in cache, con le altre letture della pagina; la stessa condizione vale per il link dell'avviso). Quel link lo vede solo chi non vede l'avviso, col meccanismo dell'avviso rovesciato (`classeVersione(reg)`, solo CSS): chi è sull'altra versione ha già nell'avviso il link di là, e due link con lo stesso scopo a pochi pixel sarebbero rumore. Le liste filtrano per versione, quindi non portano mai a queste pagine.
+- **Un evento in una versione sola** non è mai un 404 né una pagina vuota: getEvent lo trova anche senza run, gli stage e le tip non hanno regione, e `/p/<n>` si perde nei redirect. Senza run in questa versione la pagina lo dice al posto dello stato, con la sua forma (l'etichetta, poi il dettaglio in `tenue`): "**No Japan dates** It may not be out in this version yet, or it's an older event the wiki doesn't list." (dal 2025 Japan ha le date di Global, sezione "Il calendario Japan": un evento uscito da allora le ha), e solo se di là l'evento ha una run aggiunge sotto, con la freccia, il link esplicito "Global version of this event" (l'altra versione si legge in cache, con le altre letture della pagina; la stessa condizione vale per il link dell'avviso). Quel link lo vede solo chi non vede l'avviso, col meccanismo dell'avviso rovesciato (`classeVersione(reg)`, solo CSS): chi è sull'altra versione ha già nell'avviso il link di là, e due link con lo stesso scopo a pochi pixel sarebbero rumore. Le liste filtrano per versione, quindi non portano mai a queste pagine.
 - **Accesso, uscita, due dispositivi.** All'accesso di un account completo vince l'account, come per il tema: l'hook `after` di better-auth (`lib/auth/config.ts`) scrive `dts_version` da `app_user.reg`, o lo toglie per Global. Solo agli accessi veri (`ACCESSI`: il magic link, il ritorno OAuth, `/sign-in/social`): better-auth dà una sessione nuova anche quando la rinnova (una volta al giorno, `updateAge`, da `/get-session` e quindi da `/api/me` e dalle azioni) e in `/update-user`, e lì una risposta partita prima di un cambio lo disfarebbe. Un account nuovo o senza handle tiene la scelta del dispositivo, che `/welcome` propone; il form la scrive nel cookie e torna al `next` già risolto per quella versione. L'uscita e la cancellazione dell'account la lasciano: è del dispositivo. Su un secondo dispositivo con una sessione già aperta, `ViewerProvider` confronta `user.reg` di `/api/me` con `data-reg` e, se diversi, rimette quella dell'account con `setVersionAction`: una volta per scheda (un flag e `sessionStorage`, dentro try/catch), mai mentre un cambio è in corso, e spostando la pagina solo se era arrivata da un link senza versione (un link marcato vince anche qui). Una scelta fatta nella scheda vale come riallineamento. `/api/me` non scrive mai il cookie: una risposta vecchia non disfa un cambio appena fatto, e dopo un cambio il provider aggiorna la sua copia dell'utente. Le altre schede rileggono il cookie quando tornano visibili (`visibilitychange`, `pageshow`): se è cambiato, `SeguiVersione` chiama `router.refresh()`, che butta la cache del router (i prefetch della versione di prima, che un link senza versione mostrerebbe senza chiedere niente al server, per 60 s su una pagina evento e 300 s su `/events`), e una pagina arrivata da un link senza versione va al gemello già risolto, come col riallineamento; una pagina marcata resta, e l'avviso la spiega. Una pagina con un testo scritto e non inviato (un commento o una tip a metà, una ricerca) resta com'è, senza refresh (che col 307 la porterebbe di là): l'avviso la spiega, e la bozza non si perde.
 - **Senza JavaScript** la modalità Japan funziona (cookie e redirect), l'interruttore no, come il selettore del tema.
 
@@ -2494,9 +2949,9 @@ Guardare l'altra versione da un link marcato vale una pagina: il primo link senz
 
 **La lingua, dopo.** Oggi l'inglese per tutte e due (`localeDi`, `lib/versione/versione.ts`). Quando ci saranno testi giapponesi: la versione Japan li userà sui percorsi `/japan`, che già la separano nella cache; `setVersionAction` diventerà `set_version(utente, regione, lingua)` e scriverà anche `app_user.locale`; le pagine con un URL solo (carte, profili) prenderanno un segmento della lingua con lo stesso meccanismo dei redirect (per esempio `/cards/<id>` → `/ja/cards/<id>` con lo stesso cookie); `<html lang>` vorrà un layout per versione o lo script del `<head>`. Mai testi diversi sotto lo stesso URL scelti dal cookie: le pagine in cache diventerebbero diverse per chi guarda. Un cookie della lingua a parte servirà solo se la lingua diventerà indipendente dalla versione.
 
-**I file.** `lib/versione/versione.ts` (puro: il cookie, `seguiVersione`, `gemello`, lo script del `<head>`, `localeDi`), `client.ts` (`data-reg` nel browser, `useVersione`, la regione live, il riallineamento una volta per scheda), `server.ts` (`versioneRichiesta`), `cambio.ts` (il cambio, senza Next), `interruttore.ts` (puro: quale versione mostra un URL, quando il cambio porta al gemello, i testi degli avvisi, i blocchi della carta); `components/versione/` (l'interruttore, `LinkEventi`, `SeguiVersione`, gli avvisi); le regole in `next.config.ts`; `set_region` nella 0035.
+**I file.** `lib/versione/versione.ts` (puro: il cookie, `seguiVersione`, `gemello`, lo script del `<head>`, `localeDi`), `client.ts` (`data-reg` nel browser, `useVersione`, la regione live, il riallineamento una volta per scheda), `server.ts` (`versioneRichiesta`), `cambio.ts` (il cambio, senza Next), `interruttore.ts` (puro: quale versione mostra un URL, quando il cambio porta al gemello, i testi degli avvisi, i blocchi della carta); `lib/stato-evento.ts` (puro: lo stato di una run, con la nota "Same dates as Global" delle date Japan copiate); `components/versione/` (l'interruttore, `LinkEventi`, `SeguiVersione`, gli avvisi); le regole in `next.config.ts`; `set_region` nella 0035.
 
-**Le prove.** Il passo "versione del sito" (`db/test/versione.test.mts`): le regole di `next.config.ts` nel valutatore di Next 16 (`unstable_getResponseFromNextConfig`: chi va dove, cosa non si tocca mai, `_rsc` che passa, nessun giro), `seguiVersione` uguale alle regole, anche con le maiuscole nel percorso (che il router vero non distingue e il valutatore di prova sì: per queste righe il test usa i matcher del router di Next, `buildCustomRoute` di `router-utils/filesystem` con la `caseSensitiveRoutes` della config, e prima controlla che sulle righe di sempre diano lo stesso del valutatore) e con le barre doppie o in fondo (i 308 del router seguiti come li segue il browser: `normalizeRepeatedSlashes` di Next e la sua prima regola, che il test controlla sia ancora quella della barra in fondo; ogni riga di sempre anche con una barra in più in fondo e con le barre doppie), `gemello` nei due sensi, il cookie e lo script del `<head>` su un document finto, `set_region` e il cambio con il database vero, e le guardie sui file (ogni redirect delle azioni e dei moduli di `lib/` che importano `redirect`, letto col parser di TypeScript, con la sua controprova; nessuno scrive il cookie dal browser). Il passo "versione del sito (interfaccia)" (`db/test/versione-ui.test.mts`, senza database): quale versione mostra un URL e se è marcato, quando il cambio porta al gemello (sempre a un URL diverso, già risolto), il riallineamento, il redirect di un'azione riconosciuto come lo riconosce Next, i testi (anche l'errore di un cambio, breve quanto basta per stare in una riga a 320 px), i blocchi della carta, i contrasti in tutti i temi, e le guardie su interruttore (`aria-pressed`, niente radio, lo stesso peso per le due opzioni, il pieno di sistema con i colori forzati, hover e pressione solo su quella non scelta, le misure dei bersagli, il focus attaccato, il velo mentre gira), burger (l'errore nella cella dell'etichetta), header (accanto a Events, fuori dalla parte che cambia con `/api/me`; l'errore che se ne va cambiando pagina), tag JP sul burger (tolto col focus da tastiera), Settings (l'esito in una riga riservata, con l'errore nello stesso posto), avvisi (il link solo verso una run, il focus di "Use … everywhere", l'errore nel bottone), la cache del router dopo un cambio in un'altra scheda, liste, pagina evento (il link esplicito solo a chi non vede l'avviso) e carta. In più i passi "account" (il cookie all'accesso e all'uscita, e mai al rinnovo della sessione), il cambio che con un errore del database non scrive il cookie, "URL degli eventi e robots.txt", "notifiche (app)", "attivita' del sito", la pagina della carta (i blocchi su carte vere), il builder (`/api/cards` con `reg`), "script di produzione" (`set_region` dopo harden), e `test:smoke` contro `next start` (i 307 veri col cookie, `_rsc` che passa, le pagine marcate che restano, nessun redirect senza cookie, l'HTML del server uguale per tutti con l'interruttore e gli avvisi, `/events/japan` e `?region=global` serviti dalla cache).
+**Le prove.** Il passo "versione del sito" (`db/test/versione.test.mts`): le regole di `next.config.ts` nel valutatore di Next 16 (`unstable_getResponseFromNextConfig`: chi va dove, cosa non si tocca mai, `_rsc` che passa, nessun giro), `seguiVersione` uguale alle regole, anche con le maiuscole nel percorso (che il router vero non distingue e il valutatore di prova sì: per queste righe il test usa i matcher del router di Next, `buildCustomRoute` di `router-utils/filesystem` con la `caseSensitiveRoutes` della config, e prima controlla che sulle righe di sempre diano lo stesso del valutatore) e con le barre doppie o in fondo (i 308 del router seguiti come li segue il browser: `normalizeRepeatedSlashes` di Next e la sua prima regola, che il test controlla sia ancora quella della barra in fondo; ogni riga di sempre anche con una barra in più in fondo e con le barre doppie), `gemello` nei due sensi, il cookie e lo script del `<head>` su un document finto, `set_region` e il cambio con il database vero, e le guardie sui file (ogni redirect delle azioni e dei moduli di `lib/` che importano `redirect`, letto col parser di TypeScript, con la sua controprova; nessuno scrive il cookie dal browser). Il passo "versione del sito (interfaccia)" (`db/test/versione-ui.test.mts`, senza database): quale versione mostra un URL e se è marcato, quando il cambio porta al gemello (sempre a un URL diverso, già risolto), il riallineamento, il redirect di un'azione riconosciuto come lo riconosce Next, i testi (anche l'errore di un cambio, breve quanto basta per stare in una riga a 320 px), i blocchi della carta, le date dello specchio Japan (l'istante di Global con l'ora UTC, "Same dates as Global") e le voci del selettore delle run del builder, i contrasti in tutti i temi, e le guardie su interruttore (`aria-pressed`, niente radio, lo stesso peso per le due opzioni, il pieno di sistema con i colori forzati, hover e pressione solo su quella non scelta, le misure dei bersagli, il focus attaccato, il velo mentre gira), burger (l'errore nella cella dell'etichetta), header (accanto a Events, fuori dalla parte che cambia con `/api/me`; l'errore che se ne va cambiando pagina), tag JP sul burger (tolto col focus da tastiera), Settings (l'esito in una riga riservata, con l'errore nello stesso posto), avvisi (il link solo verso una run, il focus di "Use … everywhere", l'errore nel bottone), la cache del router dopo un cambio in un'altra scheda, liste, pagina evento (il link esplicito solo a chi non vede l'avviso) e carta. In più i passi "account" (il cookie all'accesso e all'uscita, e mai al rinnovo della sessione), il cambio che con un errore del database non scrive il cookie, "URL degli eventi e robots.txt", "notifiche (app)", "attivita' del sito", la pagina della carta (i blocchi su carte vere), il builder (`/api/cards` con `reg`), "script di produzione" (`set_region` dopo harden), e `test:smoke` contro `next start` (i 307 veri col cookie, `_rsc` che passa, le pagine marcate che restano, nessun redirect senza cookie, l'HTML del server uguale per tutti con l'interruttore e gli avvisi, `/events/japan` e `?region=global` serviti dalla cache).
 
 **In produzione: prima la 0035, poi il codice.** `npm run prod:migrate -- --yes` (migrazioni e permessi: `harden` toglie `set_region` ai ruoli della Data API come le altre funzioni), e solo dopo il deploy. Senza la 0035 `setVersionAction` fallisce per chi è entrato con un account completo (con "Couldn't change the version. Try again.", e il dispositivo resta com'era: il cookie si scrive solo dopo l'account); i redirect, lo script del `<head>` e i link funzionano anche senza, e il codice di prima sulla 0035 va (nessuno la chiama). Dopo il primo deploy:
 
@@ -3071,9 +3526,14 @@ può fare, e poi il lavoro sui dati e sulle pagine.
    fatti i controlli della sezione "Versione Global/Japan" (i redirect
    compilati dalla CDN, i 307 senza invocazioni, `?region=global` dalla
    cache). Nei riepiloghi guarda anche le sezioni "Sources"
-   (la freschezza del datamine) e "Storage". Japan resta senza finestre
-   vere, e 374 eventi Global restano "attivi, fine non nota" (312 del wiki,
-   62 del gioco). Le corse di un'area riaperta dopo più di un mese partono
+   (la freschezza del datamine) e "Storage". Japan ha dal 2025 le finestre
+   di Global (lo specchio, 0036): la 0036 va online con
+   `npm run prod:migrate -- --yes` prima che il suo codice arrivi su
+   `main`, l'interfaccia dopo con un deploy pianificato (sezione "Il
+   calendario Japan", "Il rilascio"), e nel log del primo giro va rivista
+   la lista degli eventi alla prima run Japan, per le eccezioni. Prima del
+   2025 Japan resta col wiki, e 374 eventi Global restano "attivi, fine non
+   nota" (312 del wiki, 62 del gioco). Le corse di un'area riaperta dopo più di un mese partono
    dall'ultimo blocco: la corsa di prima non ha una run del gioco sua.
 2. **Gli eventi del gioco, da completare.** Non hanno descrizione né banner
    (nessuna fonte: il datamine ha solo i percorsi dei file, il wiki non li

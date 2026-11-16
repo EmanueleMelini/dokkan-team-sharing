@@ -47,7 +47,8 @@
 //   - i clear restano sulla corsa in cui sono stati scritti: se la run
 //     chiusa li porta tutti dentro la corsa che la segue, le due righe si
 //     scambiano (vedi il passo 4).
-// Japan non si tocca: il datamine e' quello Global.
+// Japan non si tocca qui: il datamine e' quello Global. Le date Japan dal
+// 2025 le copia dalle finestre scritte qui mirror-japan, che gira dopo.
 //
 //   node db/import/load-windows.mjs [--dry-run] [--verbose]
 import { readFileSync } from 'node:fs'

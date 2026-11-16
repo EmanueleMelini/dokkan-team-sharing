@@ -160,7 +160,7 @@ await sezione('le righe scritte', async () => {
     select c.id::int, c.type::text, c.class::text cls, c.rarity::text, c.imported_from::text src,
            c.wiki_title, c.hp, t.name, t.epithet, t.leader_skill, t.passive,
            (select released_at::text from card_release r where r.card_id = c.id and r.reg = 'global') glb,
-           (select count(*) from card_release r where r.card_id = c.id and r.reg = 'japan')::int jp
+           (select released_at::text || ' ' || source from card_release r where r.card_id = c.id and r.reg = 'japan') jp
     from card c join card_text t on t.card_id = c.id and t.locale = 'en'
     where c.id = any($1::bigint[])`, [ATTESE])
   check('ci sono tutte le 45, una riga ciascuna', rs.length === ATTESE.length, `${rs.length}`)
@@ -175,8 +175,11 @@ await sezione('le righe scritte', async () => {
     const cls = decodeElement(c.element)?.cls ?? decodeElement(z?.element)?.cls
     return r.type === decodeElement(c.element)?.type && r.cls === cls && r.rarity === decodeRarity(c.rarity)
   })
-  tutte('uscita Global = giorno di open_at, nessuna data Japan inventata', rs,
-    (r) => r.glb === csvById.get(String(r.id))?.open_at.slice(0, 10) && r.jp === 0)
+  // l'uscita Japan non la scrive load-game-cards: e' la copia dello
+  // specchio (mirror-japan, 0036), uguale a quella Global, per le carte
+  // uscite su Global dal 2025 (queste sono tutte del 2026)
+  tutte('uscita Global = giorno di open_at; quella Japan e\' solo la copia dello specchio, con la stessa data', rs,
+    (r) => r.glb === csvById.get(String(r.id))?.open_at.slice(0, 10) && r.jp === `${r.glb} mirror`)
   check('le carte del wiki hanno tutte l\'epiteto',
     Number(await valore(`select count(*) from card c join card_text t on t.card_id = c.id
                          where c.wiki_title is not null and t.epithet is null`)) === 0)
@@ -224,14 +227,14 @@ await sezione('la pagina abbozzata (1034150)', async () => {
     select c.wiki_title, c.type::text, c.class::text cls, c.rarity::text, c.awakens_from::int af,
            t.name, t.epithet, t.passive,
            (select released_at::text from card_release r where r.card_id = c.id and r.reg = 'global') glb,
-           (select count(*) from card_release r where r.card_id = c.id and r.reg = 'japan')::int jp
+           (select released_at::text || ' ' || source from card_release r where r.card_id = c.id and r.reg = 'japan') jp
     from card c join card_text t on t.card_id = c.id and t.locale = 'en' where c.id = 1034150`)
   check('wiki_title ed epiteto dalla pagina', r?.wiki_title === 'Transcendent Existence Buu (Kid)'
     && r?.epithet === 'Transcendent Existence' && r?.name === 'Buu (Kid)', JSON.stringify(r))
   check('LR INT Extreme, come nel gioco', r?.rarity === 'LR' && r?.type === 'INT' && r?.cls === 'Extreme')
   check('le skill del wiki', /Activates the Entrance Animation/.test(r?.passive ?? ''), (r?.passive ?? '').slice(0, 60))
-  check('l\'uscita Global dal datamine (la pagina non ha GLBdate), nessuna data Japan inventata',
-    r?.glb === '2026-09-29' && r?.jp === 0, `${r?.glb} / ${r?.jp}`)
+  check('l\'uscita Global dal datamine (la pagina non ha GLBdate), quella Japan solo dallo specchio (0036)',
+    r?.glb === '2026-09-29' && r?.jp === '2026-09-29 mirror', `${r?.glb} / ${r?.jp}`)
   check('si risveglia ancora da 1034140', r?.af === 1034140, `${r?.af}`)
 })
 

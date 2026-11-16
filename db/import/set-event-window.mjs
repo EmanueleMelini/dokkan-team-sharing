@@ -5,13 +5,26 @@
 // ends_at_known = false e risultano attive per sempre. Questo comando
 // crea una run VERA (ends_at_known = true, source = 'manual'), che nessun
 // reimport tocca: load-events lavora solo sulle sue (source = 'wiki'), e
-// load-windows salta le finestre del gioco che si sovrappongono a questa.
+// load-windows salta le finestre del gioco che si sovrappongono a questa,
+// mirror-japan le copie Japan che la toccano.
 // Una corsa precedente che si accavalla (del gioco o del wiki) si chiude al
 // --dal, non si cancella: le run del gioco sono storia che il datamine non
 // ridà, e load-windows non la ricreerebbe piu' (tocca la run a mano).
 //
-// Serve dove il datamine non arriva: Japan, e gli eventi che load-windows
-// non riesce a legare.
+// Serve dove il datamine non arriva: Japan prima del 2025 (da li' le date
+// Japan le copia lo specchio, mirror-japan, e una run a mano vince anche su
+// di lui), e gli eventi che load-windows non riesce a legare.
+//
+// Su Global da D (2025-01-01 00:00 JST) una run a mano vale anche per
+// Japan: lo specchio copia le finestre Global a mano come quelle del gioco
+// (la copia resta 'mirror', e si ricalcola a ogni giro). Correggere una
+// data con --reg global corregge quindi anche Japan al giro dopo: la run del
+// gioco diventata a mano sul posto da' la stessa copia con le date nuove, e
+// quella chiusa al --dal da' una copia chiusa al --dal (fine non nota) piu'
+// la copia della run a mano. Per una data Japan diversa si scrive anche
+// --reg japan (la run Japan a mano vince sullo specchio); per togliere a
+// Japan una finestra Global ci sono globalOnly e skipWindows in
+// japan-mirror/rules.mjs.
 //
 // LE DATE VANNO SCRITTE CON IL FUSO (Z o +02:00). Senza, Postgres le legge
 // nel fuso della sessione (Europe/Rome su dokkan_dev), un'ora o due fuori.
@@ -106,14 +119,19 @@ try {
 
   // Il vincolo di esclusione non tollera sovrapposizioni nella stessa
   // regione. Quello che si accavalla e':
-  //   - una corsa precedente, del gioco o del wiki, iniziata prima del --dal
-  //     (per il wiki oltre i due giorni di tolleranza della sua data, come in
-  //     load-windows): si chiude al --dal con la fine non nota;
-  //   - la stessa corsa (la run del wiki della stessa uscita, una del gioco
-  //     che inizia dentro la finestra, una a mano che si sta correggendo): la
-  //     prima diventa la run a mano sul posto, tenendo l'id (clear e missioni
-  //     la puntano), le altre si tolgono. Se una di quelle ha dei clear la
-  //     chiave esterna ferma tutto, e non cambia niente.
+  //   - una corsa precedente, del gioco, del wiki o dello specchio, iniziata
+  //     prima del --dal (per il wiki e per lo specchio oltre i due giorni di
+  //     tolleranza, come in load-windows): si chiude al --dal con la fine non
+  //     nota. Lo specchio poi la lascia cosi': la sua finestra tocca la run a
+  //     mano, e si salta;
+  //   - la stessa corsa (la run del wiki o la copia dello specchio della
+  //     stessa uscita, una del gioco che inizia dentro la finestra, una a
+  //     mano che si sta correggendo): la prima diventa la run a mano sul
+  //     posto, tenendo l'id (clear e missioni la puntano), le altre si
+  //     tolgono. Lo specchio copia la data Global, e una data giapponese di
+  //     qualche ora dopo e' la stessa uscita, non una corsa nuova che
+  //     lascerebbe dietro un pezzetto di copia chiuso. Se una di quelle ha
+  //     dei clear la chiave esterna ferma tutto, e non cambia niente.
   const TOL = 2 * 86_400_000
   const { rows: [{ from }] } = await client.query(`select $1::timestamptz as from`, [dal])
   const { rows: over } = await client.query(`
@@ -125,7 +143,7 @@ try {
           && tstzrange($3::timestamptz, coalesce($4::timestamptz, 'infinity'))
     order by r.starts_at`, [id, reg, dal, al ?? null])
   const earlier = (r) => r.source !== 'manual' && r.starts_at < from
-    && !(r.source === 'wiki' && from - r.starts_at <= TOL)
+    && !((r.source === 'wiki' || r.source === 'mirror') && from - r.starts_at <= TOL)
   const close = over.filter(earlier)
   const same = over.filter((r) => !earlier(r))
   const keep = same.find((r) => r.clears > 0) ?? same[0]
@@ -139,6 +157,28 @@ try {
     const { rows: [{ n }] } = await client.query(
       `select count(*)::int as n from clear where run_id = $1 and created_at >= $2`, [r.id, from])
     if (n) log.push(`  attenzione: ${n} clear della run ${r.id} restano fuori dalla sua finestra`)
+    // Su Global da D la finestra ha la sua copia Japan (lo specchio, stesso
+    // inizio), che al prossimo giro segue la finestra e si chiude anche lei
+    // al --dal, come una run del gioco in load-windows. I clear Japan scritti
+    // dopo il --dal li porta con la sua riga nella copia della finestra nuova
+    // (mirror-japan.mjs, gli scambi), ma solo se ci stanno tutti. Se no
+    // restano sulla copia, fuori dalla sua corsa: il giro li conta in "clear
+    // Japan scritti fuori dalla loro run", da rivedere a mano
+    if (reg === 'global') {
+      const { rows: jp } = await client.query(`
+        select m.id::text, count(*) filter (where c.created_at >= $2::timestamptz)::int as dopo, count(*)::int as tutti
+        from event_run m join clear c on c.run_id = m.id
+        where m.event_id = $3 and m.reg = 'japan' and m.source = 'mirror'
+          and m.starts_at = (select starts_at from event_run where id = $1)
+        group by m.id`, [r.id, dal, id])
+      for (const m of jp.filter((x) => x.dopo > 0)) {
+        log.push(`  attenzione: ${m.dopo} clear Japan della copia ${m.id} sono dal --dal in poi: al prossimo giro lo specchio ` +
+                 (m.dopo === m.tutti ? `li porta nella copia della finestra nuova, se ci stanno tutti (se no restano sulla copia ` +
+                                       `chiusa al --dal, fuori dalla sua corsa, e il giro li conta in "clear Japan scritti fuori dalla loro run": da rivedere a mano)`
+                                     : `chiude la copia al --dal e loro restano fuori dalla sua corsa (${m.tutti - m.dopo} sono prima, quindi la riga ` +
+                                       `non si sposta); il giro li conta in "clear Japan scritti fuori dalla loro run": da rivedere a mano`))
+      }
+    }
   }
   for (const r of same) {
     if (r === keep) continue

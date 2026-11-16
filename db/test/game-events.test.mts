@@ -357,6 +357,12 @@ try {
     lancia('load-game-events.mjs')
     lancia('load-windows.mjs')
     check('anche dopo load-events + load-game-events + load-windows', (await foto()) === prima)
+    // la fotografia ha anche le copie Japan degli eventi del gioco (0036):
+    // lo specchio dopo le finestre le rifa' uguali, con gli stessi id
+    check('...con le copie Japan', Number(await valore(`select count(*) from event_run r join event e on e.id = r.event_id
+                                                        where e.imported_from = 'datamine' and r.reg = 'japan' and r.source = 'mirror'`)) > 100)
+    lancia('mirror-japan.mjs')
+    check('anche dopo lo specchio Japan', (await foto()) === prima)
     check('e il numero di eventi non cambia', (await valore(`select count(*)::int from event`)) === quanti)
   })
 
