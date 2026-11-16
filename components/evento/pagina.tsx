@@ -4,9 +4,8 @@ import Image from 'next/image'
 import { notFound } from 'next/navigation'
 import { ArrowLeft, ArrowRight, Trophy } from '@phosphor-icons/react/dist/ssr'
 import { assetUrl } from '@/lib/db'
-import { quando } from '@/lib/date'
 import {
-  CLEAR_PER_PAGINA, countClears, listClears, type EventDetail, type StageRow,
+  CLEAR_PER_PAGINA, countClears, listClears, type StageRow,
 } from '@/lib/queries'
 import {
   getEventCached, getEzaLinksCached, getMissionsCached, getStagesCached, listClearsCached,
@@ -14,6 +13,7 @@ import {
 import { browseHref, clearListHref, eventHref, filteredClearsHref, submitHref, type EventView } from '@/lib/urls'
 import { AvvisoVersione } from '@/components/versione/avviso-versione'
 import { classeVersione, linkAltraVersione, senzaDate } from '@/lib/versione/interruttore'
+import { statoEvento } from '@/lib/stato-evento'
 import { altraVersione, gemello } from '@/lib/versione/versione'
 import { AttesaLink } from '@/components/attesa-link'
 import { Clear } from '@/components/clear'
@@ -44,27 +44,6 @@ import { relRobots } from '@/lib/robots'
 // Con `filtri` e' la lista filtrata (/events/<id>/clears?...), dinamica e
 // noindex: la lista e il conteggio filtrati non stanno in cache (le
 // combinazioni sono senza fine), tutto il resto si'.
-
-/*
- * Lo stato dell'evento in parole. Una run in corso senza fine può essere
- * permanente (il gioco lo dice: gli EZA sempre in lista) o solo di fine
- * sconosciuta (il gioco non la registra, o la data viene dal wiki): sono
- * due cose diverse e vanno dette diverse.
- */
-function statoEvento(e: EventDetail): { etichetta: string; dettaglio: string; inCorso: boolean } | null {
-  if (!e.status || !e.starts_at) return null
-  const dal = quando(e.starts_at, e.source)
-  const al = e.ends_at && e.ends_at_known ? quando(e.ends_at, e.source) : null
-  if (e.status === 'active') {
-    if (al) return { etichetta: 'Ongoing', dettaglio: `until ${al}`, inCorso: true }
-    if (e.ends_at_known) return { etichetta: 'Permanent', dettaglio: `since ${dal}`, inCorso: true }
-    return { etichetta: 'End date unknown', dettaglio: `started ${dal}`, inCorso: false }
-  }
-  if (e.status === 'upcoming') {
-    return { etichetta: 'Upcoming', dettaglio: al ? `from ${dal} until ${al}` : `starts ${dal}`, inCorso: false }
-  }
-  return { etichetta: 'Ended', dettaglio: al ? `ran from ${dal} until ${al}` : `started ${dal}, end date unknown`, inCorso: false }
-}
 
 // Oltre i cento livelli la griglia si divide in fasce da cento: Dokkan
 // All-Stars ne ha 999, che in una griglia unica sarebbero 125 righe.
@@ -276,6 +255,10 @@ export async function EventPage({ id, view, filtri }: { id: string; view: EventV
               <>
                 <span className={stato.inCorso ? 'text-oro font-medium' : ''}>{stato.etichetta}</span>
                 <span className="ml-2 text-tenue">{stato.dettaglio}</span>
+                {/* Lo specchio Japan (0036): le date sono quelle di Global. Una
+                    riga sua sotto lo stato, nello stesso colore del dettaglio:
+                    in coda, a 320px andava a capo col separatore in testa. */}
+                {stato.nota && <span className="mt-0.5 block text-tenue">{stato.nota}</span>}
               </>
             ) : (
               // Nessuna run in questa regione può voler dire che l'evento non

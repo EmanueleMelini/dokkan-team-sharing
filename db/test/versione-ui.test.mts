@@ -6,6 +6,9 @@
 //     everywhere", il riallineamento con l'account), il riallineamento una
 //     volta per scheda, il redirect di un'azione riconosciuto come quello
 //     di Next, i testi degli avvisi, i blocchi della pagina della carta;
+//   - lib/stato-evento.ts: lo stato di una run in parole, con le date dello
+//     specchio Japan (0036: l'istante di Global con l'ora UTC, e "Same dates
+//     as Global"), e le voci del selettore delle run del builder;
 //   - i contrasti dei colori dell'interruttore, degli avvisi e del tag JP in
 //     tutti gli 11 temi (sono solo token);
 //   - le guardie sui file: la variante japan: del CSS, il gruppo di
@@ -30,6 +33,8 @@ import {
 } from '@/lib/versione/interruttore'
 import { VERSIONI, gemello, seguiVersione, type Versione } from '@/lib/versione/versione'
 import { TEMI } from '@/lib/tema/temi'
+import { quando } from '@/lib/date'
+import { STESSE_DATE, etichettaRun, statoBreve, statoEvento } from '@/lib/stato-evento'
 
 let fails = 0
 let passes = 0
@@ -200,8 +205,10 @@ function testi() {
     link: 'Japan version of this page', usa: 'Use Global everywhere',
   })
   // al posto dello stato dell'evento, con la sua forma: l'etichetta e il dettaglio
+  // Japan dal 2025 ha le date di Global (lo specchio, 0036): senza date
+  // resta un evento piu' vecchio che il wiki non elenca, o uno solo Global
   vale('senza date: l\'etichetta dice la versione', senzaDate('japan'),
-    { etichetta: 'No Japan dates', dettaglio: 'It may not be out in this version yet, or the wiki doesn’t list it.' })
+    { etichetta: 'No Japan dates', dettaglio: 'It may not be out in this version yet, or it’s an older event the wiki doesn’t list.' })
   check('...anche per Global, e non afferma mai che l\'evento non e\' uscito',
     senzaDate('global').etichetta === 'No Global dates' &&
     senzaDate('global').dettaglio.startsWith('It may not be out in this version yet') &&
@@ -232,6 +239,101 @@ function testi() {
   vale('due blocchi: ognuno solo nella sua versione', [classeVersione('global', 2), classeVersione('japan', 2)],
     ['japan:hidden', 'hidden japan:block'])
   vale('un blocco solo: sempre visibile', [classeVersione('global', 1), classeVersione('japan', 1)], ['', ''])
+
+  console.log('\n  -- le date dello specchio Japan (0036) e il selettore delle run')
+  // Le run dello specchio hanno l'istante di Global: la pagina Japan lo
+  // scrive come Global, con l'ora e "UTC", e la nota che le date sono
+  // quelle di Global. Il giorno da solo sarebbe quello UTC senza dirlo, e
+  // dalle 15:00 UTC a Tokyo e' gia' il giorno dopo.
+  const t = (s: string) => new Date(s)
+  const inizio = t('2026-11-05T05:00:00Z')
+  const fine = t('2026-11-19T07:59:59Z')
+  vale('quando: solo il giorno per il wiki, l\'ora UTC per il gioco, a mano e lo specchio',
+    [quando(inizio, 'mirror'), quando(inizio, 'wiki'), quando(inizio, 'game'), quando(inizio, 'manual')],
+    ['November 5, 2026, 05:00 UTC', 'November 5, 2026', 'November 5, 2026, 05:00 UTC', 'November 5, 2026, 05:00 UTC'])
+  // same_as_global come lo legge getEvent: vero solo per una copia uguale a
+  // una run Global (qui per difetto, la copia di tutti i giorni)
+  const run = (source: 'wiki' | 'game' | 'manual' | 'mirror', status: 'active' | 'upcoming' | 'past',
+    ends_at: Date | null, ends_at_known: boolean, starts_at = inizio, same_as_global = source === 'mirror') =>
+    ({ source, status, starts_at, ends_at, ends_at_known, same_as_global })
+  vale('in corso, copiata: l\'istante di Global, e la nota', statoEvento(run('mirror', 'active', fine, true)),
+    { etichetta: 'Ongoing', dettaglio: 'until November 19, 2026, 07:59 UTC', inCorso: true, nota: STESSE_DATE })
+  vale('...la stessa run di Global: lo stesso dettaglio, senza nota', statoEvento(run('game', 'active', fine, true)),
+    { etichetta: 'Ongoing', dettaglio: 'until November 19, 2026, 07:59 UTC', inCorso: true, nota: null })
+  vale('copiata, permanente (una EZA rimessa in lista)', statoEvento(run('mirror', 'active', null, true)),
+    { etichetta: 'Permanent', dettaglio: 'since November 5, 2026, 05:00 UTC', inCorso: true, nota: STESSE_DATE })
+  vale('copiata, in arrivo', statoEvento(run('mirror', 'upcoming', fine, true)),
+    { etichetta: 'Upcoming', dettaglio: 'from November 5, 2026, 05:00 UTC until November 19, 2026, 07:59 UTC', inCorso: false, nota: STESSE_DATE })
+  vale('copiata, conclusa', statoEvento(run('mirror', 'past', fine, true)),
+    { etichetta: 'Ended', dettaglio: 'ran from November 5, 2026, 05:00 UTC until November 19, 2026, 07:59 UTC', inCorso: false, nota: STESSE_DATE })
+  // I due casi dove il giorno UTC da solo sbagliava il giorno giapponese:
+  // un inizio alle 21:00 UTC (il lotto del decimo anniversario, gia' il 29 a
+  // Tokyo) e una fine esclusiva a mezzanotte UTC (721973, 23:59:59 UTC del
+  // 28). Con l'ora e "UTC" non c'e' niente da leggere male, ed e' quello che
+  // dice la pagina Global.
+  const sera = t('2025-01-28T21:00:00Z')
+  const mezzanotteUtc = t('2026-09-29T00:00:00Z')
+  vale('un inizio alle 21:00 UTC: con l\'ora, non solo il giorno UTC', statoEvento(run('mirror', 'active', null, false, sera)),
+    { etichetta: 'End date unknown', dettaglio: 'started January 28, 2025, 21:00 UTC', inCorso: false, nota: STESSE_DATE })
+  vale('una fine a mezzanotte UTC: con l\'ora, come Global', statoEvento(run('mirror', 'past', mezzanotteUtc, true, sera)),
+    { etichetta: 'Ended', dettaglio: 'ran from January 28, 2025, 21:00 UTC until September 29, 2026, 00:00 UTC', inCorso: false, nota: STESSE_DATE })
+  check('...e il dettaglio Japan e\' quello Global, parola per parola (la nota dice "Same dates as Global")',
+    [run('mirror', 'active', null, false, sera), run('mirror', 'past', mezzanotteUtc, true, sera), run('mirror', 'upcoming', fine, true)]
+      .every((r) => statoEvento(r)?.dettaglio === statoEvento({ ...r, source: 'game' })?.dettaglio))
+  vale('del wiki, fine non nota: nessuna nota', statoEvento(run('wiki', 'active', null, false)),
+    { etichetta: 'End date unknown', dettaglio: 'started November 5, 2026', inCorso: false, nota: null })
+  vale('del wiki, chiusa alla replica: conclusa, fine non nota', statoEvento(run('wiki', 'past', fine, false)),
+    { etichetta: 'Ended', dettaglio: 'started November 5, 2026, end date unknown', inCorso: false, nota: null })
+  vale('a mano su Japan: l\'ora, nessuna nota', statoEvento(run('manual', 'active', fine, true))?.nota, null)
+  // Una copia che di proposito non ha piu' le date di Global: chiusa al
+  // --dal da set-event-window --reg japan (fine non nota), o tenuta per i
+  // clear dopo che la sua finestra Global e' sparita. E' 'mirror', ma
+  // "Same dates as Global" non sarebbe vero.
+  vale('una copia chiusa al --dal da set-event-window --reg japan: nessuna nota',
+    statoEvento(run('mirror', 'past', fine, false, inizio, false)),
+    { etichetta: 'Ended', dettaglio: 'started November 5, 2026, 05:00 UTC, end date unknown', inCorso: false, nota: null })
+  vale('una copia tenuta per i clear, senza piu\' la sua finestra Global: nessuna nota',
+    statoEvento(run('mirror', 'active', fine, true, inizio, false))?.nota, null)
+  vale('...la nota solo per una copia: un\'altra run uguale a Global non l\'ha',
+    [statoEvento(run('manual', 'active', fine, true, inizio, true))?.nota, statoEvento(run('game', 'active', fine, true, inizio, true))?.nota], [null, null])
+  vale('nessuna run: null (al suo posto senzaDate)',
+    statoEvento({ source: null, status: null, starts_at: null, ends_at: null, ends_at_known: null, same_as_global: false }), null)
+  // La scheda della lista dice la stessa cosa della pagina: "Ends" solo con
+  // la fine nota. Una copia chiusa al --dal da set-event-window --reg japan
+  // (fine non nota) diceva "Ends Nov 20" in lista, e "End date unknown" sulla
+  // sua pagina.
+  const breve = (status: 'active' | 'upcoming' | 'past', ends_at: Date | null, ends_at_known: boolean) =>
+    statoBreve({ status, starts_at: inizio, ends_at, ends_at_known })
+  vale('la scheda: in corso con la fine nota, "Ends" e il giorno', breve('active', fine, true), { testo: 'Ends Nov 19', inCorso: true })
+  vale('...chiusa con la fine non nota (una copia chiusa al --dal): niente, come la fine sconosciuta', breve('active', fine, false), null)
+  vale('...e la pagina della stessa run dice "End date unknown"', statoEvento(run('mirror', 'active', fine, false, inizio, false))?.etichetta,
+    'End date unknown')
+  vale('...permanente, fine sconosciuta, in arrivo, conclusa',
+    [breve('active', null, true), breve('active', null, false), breve('upcoming', fine, false), breve('past', fine, false)],
+    [{ testo: 'Permanent', inCorso: false }, null, { testo: 'Starts Nov 5', inCorso: false }, { testo: 'Ended', inCorso: false }])
+  check('la nota: breve, in inglese, senza lineette lunghe', STESSE_DATE === 'Same dates as Global' && !/[\u2013\u2014]/.test(STESSE_DATE))
+
+  const scelta = (status: 'active' | 'past', ends_at: Date | null, ends_at_known: boolean) =>
+    etichettaRun({ starts_at: inizio, ends_at, ends_at_known, status })
+  vale('il selettore del builder: in corso, permanente o con la fine nota', [scelta('active', null, true), scelta('active', fine, true)],
+    ['Running now, since November 5, 2026', 'Running now, since November 5, 2026'])
+  vale('...la fine non nota non e\' "in corso da": iniziata, fine non nota, anche chiusa alla replica',
+    [scelta('active', null, false), scelta('past', fine, false)],
+    ['Started November 5, 2026, end date unknown', 'Started November 5, 2026, end date unknown'])
+  vale('...conclusa con la fine nota: dal giorno al giorno', scelta('past', fine, true), 'November 5, 2026 to November 19, 2026')
+  check('...solo il giorno, per ogni fonte (nessuna ora nel selettore)',
+    [scelta('active', null, true), scelta('active', null, false), scelta('past', fine, true)].every((x) => !/UTC|\d\d:\d\d/.test(x)))
+  // Il selettore e' stretto: solo il giorno, quello UTC come in tutto il
+  // sito. Per una copia che parte alle 21:00 UTC e' il giorno che la pagina
+  // scrive accanto all'ora e a "UTC", e la stessa voce della run Global.
+  const voce = etichettaRun({ starts_at: sera, ends_at: null, ends_at_known: false, status: 'active' })
+  check('...una copia delle 21:00 UTC: il giorno che la pagina dell\'evento scrive accanto a "UTC"',
+    voce === 'Started January 28, 2025, end date unknown'
+      && (statoEvento(run('mirror', 'active', null, false, sera))?.dettaglio ?? '').includes('January 28, 2025, 21:00 UTC'), voce)
+  const builder = file('lib/clears/pagina-builder.ts')
+  check('il builder scrive le run con etichettaRun, e listStartedRuns legge ends_at_known',
+    /runs\.map\(\(r\) => \(\{ id: r\.id, label: etichettaRun\(r\) \}\)\)/.test(builder) && !/Running now/.test(builder) &&
+    /es\.ends_at, r\.ends_at_known, es\.status\s+from event_status es\s+join event_run r on r\.id = es\.run_id/.test(file('lib/clears.ts')))
 }
 
 // ---------------------------------------------------------------------
@@ -555,8 +657,24 @@ function guardieComponenti() {
     /<AvvisoVersione reg=\{reg\} altra=\{query\(\{ region: altraVersione\(reg\) \}\)\}/.test(lista))
   check('la ricerca tiene la regione (input nascosto) e la nota sulle date per versione restano',
     /\{reg === 'japan' && <input type="hidden" name="region" value=\{reg\} \/>\}/.test(lista) &&
-    /Japan dates come from the wiki/.test(lista))
+    /Global dates come from the game’s own data/.test(lista) && /Japan dates from 2025 on/.test(lista))
+  // Dallo specchio (0036) le date Japan dal 2025 sono quelle di Global, e le
+  // run del wiki che una replica ha chiuso sono concluse: la nota di prima
+  // ("nothing shows as ended") non era piu' vera. Le copie ereditano anche
+  // le fini che Global non conosce (82 eventi Japan su dokkan_test sono in
+  // corso con una copia senza la fine nota): la nota dice tutte e due le
+  // ragioni per cui Ongoing comprende eventi forse gia' chiusi, come quella
+  // di Global, non solo le date vecchie del wiki.
+  const notaJp = lista.match(/'(Japan dates from 2025 on[^']*)'/)?.[1] ?? ''
+  check('...la nota Japan: da 2025 le date di Global, prima il wiki senza la fine; breve, senza lineette lunghe',
+    /same as Global’s/.test(notaJp) && /the wiki records only when an event first came out/.test(notaJp) &&
+    !/nothing shows as ended|almost every/.test(lista) && notaJp.length <= 260 && !/[\u2013\u2014]/.test(notaJp), `${notaJp.length} caratteri`)
+  check('...e anche le fini che il gioco non registra (le copie le ereditano da Global): "listed as ongoing", come la nota Global',
+    /When the game doesn’t record an end/.test(notaJp) && /the event is listed as ongoing, so Ongoing also includes some events that may have closed/.test(notaJp),
+    notaJp)
   check('l\'occhiello "Japan version" sulla lista Japan', /\{reg === 'japan' && <p[^>]*>Japan version<\/p>\}/.test(lista))
+  check('lo stato della scheda dal modulo puro (lib/stato-evento.ts), non piu\' scritto nella lista',
+    /import \{ statoBreve \} from '@\/lib\/stato-evento'/.test(lista) && !/function statoBreve/.test(lista) && /const st = statoBreve\(e\)/.test(lista))
   const casaJp = file('app/events/japan/page.tsx')
   check('/events/japan: "Japan version", non "Japanese"', !/Japanese/.test(casaJp))
 
@@ -581,6 +699,13 @@ function guardieComponenti() {
   check('...e quel link solo a chi non vede l\'avviso (classeVersione(reg), il rovescio dell\'avviso)',
     /\{versioneAltra && \(\s*<p className=\{`mt-1\.5 text-\[13px\] \$\{classeVersione\(reg\)\}`\}>/.test(evento) &&
     avvisoVersione('japan').classe === classeVersione('global') && avvisoVersione('global').classe === classeVersione('japan'))
+  check('lo stato dal modulo puro (lib/stato-evento.ts), non piu\' scritto nella pagina',
+    /import \{ statoEvento \} from '@\/lib\/stato-evento'/.test(evento) && !/function statoEvento/.test(evento) &&
+    /const stato = statoEvento\(e\)/.test(evento))
+  // La nota dello specchio in una riga sua sotto lo stato, nel colore del
+  // dettaglio: niente separatori, che a 320px finivano in testa alla riga
+  check('...e la nota dello specchio in una riga sua sotto lo stato, in tenue',
+    /<span className="ml-2 text-tenue">\{stato\.dettaglio\}<\/span>\s*(?:\{\/\*[\s\S]*?\*\/\}\s*)?\{stato\.nota && <span className="mt-0\.5 block text-tenue">\{stato\.nota\}<\/span>\}/.test(evento))
   check('il titolo Japan finisce con "(Japan)"', /view\.reg === 'japan' \? `\$\{e\.name\} \(Japan\)` : e\.name/.test(evento))
   check('il builder: "not started yet in the Japan version"', !/Japanese/.test(file('app/events/[id]/submit/page.tsx')))
 
@@ -589,8 +714,11 @@ function guardieComponenti() {
   check('un blocco di clear per versione, con classeVersione', /classeVersione\(b\.reg, clears\.length\)/.test(carta) &&
     /clears\.map\(\(b\) =>/.test(carta))
   check('"Not released on Global yet" solo a chi e\' su Global', /text-oro japan:hidden">Not released on Global yet\./.test(carta))
-  check('...e lo specchio solo a chi e\' su Japan', /hidden [^"]*japan:block">No Japan release date on the wiki yet\./.test(carta) &&
-    /\{globale && !giapponese && \(/.test(carta))
+  // Le uscite Global da D hanno la data Japan dello specchio (0036): senza
+  // restano le carte piu' vecchie che il wiki non data e quelle solo
+  // Global, quindi "on the wiki" non era piu' tutta la storia.
+  check('...e il rovescio solo a chi e\' su Japan', /hidden [^"]*japan:block">No Japan release date for this card yet\./.test(carta) &&
+    /\{globale && !giapponese && \(/.test(carta) && !/on the wiki yet/.test(carta))
   check('la pagina legge i clear di ogni versione dove la carta e\' uscita',
     /versioniCarta\(card\.releases\)\.map\(async \(reg\) =>/.test(file('app/cards/[id]/page.tsx')))
   const conCarta = file('components/cards/clear-con-carta.tsx')

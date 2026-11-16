@@ -55,6 +55,13 @@ process.env.DATABASE_URL = url
 
 const { db } = await import('@/lib/db')
 const Q = await import('@/lib/queries')
+// Le parole della pagina dell'evento e del builder, e le letture della
+// carta e del picker: per le date e le uscite dello specchio Japan (0036)
+const { STESSE_DATE, etichettaRun, statoEvento } = await import('@/lib/stato-evento')
+const { listStartedRuns } = await import('@/lib/clears')
+const { getCard } = await import('@/lib/card-page')
+const { searchCards, CARD_SEARCH_MAX } = await import('@/lib/cards')
+const { versioniCarta } = await import('@/lib/versione/interruttore')
 
 async function righe<T>(text: string, params: unknown[] = []): Promise<T[]> {
   return (await db.query(text, params)).rows as T[]
@@ -442,6 +449,130 @@ try {
       check('filtro in corso: 5001 c\'e\'', inCorso.has('5001') && !inCorso.has(T.inArrivo))
       const conclusi = await ids('past')
       check('filtro conclusi: solo quello senza run future', conclusi.has(T.concluse) && !conclusi.has(T.miste))
+    })
+
+    // Lo specchio Japan (0036): da D le run Japan sono le copie delle
+    // finestre Global del gioco. Un evento del gioco con una sola corsa ha
+    // su Japan la sua copia: la lista e la pagina Japan la mostrano con lo
+    // stato e le date di Global, e la provenienza 'mirror'.
+    await sezione('una ricorrenza Japan copiata da Global (lo specchio)', async () => {
+      const id = await valore<string>(`
+        select e.id::text from event e
+        where e.imported_from = 'datamine'
+          and (select count(*) from event_run r where r.event_id = e.id and r.reg = 'global') = 1
+          and (select count(*) from event_run r where r.event_id = e.id and r.reg = 'global' and r.source = 'game') = 1
+          and (select count(*) from event_run r where r.event_id = e.id and r.reg = 'japan') = 1
+          and (select count(*) from event_run r where r.event_id = e.id and r.reg = 'japan' and r.source = 'mirror') = 1
+        order by e.id limit 1`)
+      if (!check('un evento del gioco con una corsa Global e la sua copia Japan', !!id) || !id) return
+      const gl = await Q.getEvent(id, 'global')
+      const jpE = await Q.getEvent(id, 'japan')
+      check('getEvent Japan: la copia, con lo stato e le date di Global e un\'altra run',
+            !!gl && !!jpE && gl.source === 'game' && jpE.source === 'mirror' && jpE.status === gl.status
+              && quando(jpE.starts_at) === quando(gl.starts_at) && quando(jpE.ends_at) === quando(gl.ends_at)
+              && jpE.ends_at_known === gl.ends_at_known && !!jpE.run_id && jpE.run_id !== gl.run_id,
+            `${jpE?.source} ${jpE?.status} ${quando(jpE?.starts_at)} → ${quando(jpE?.ends_at)}, Global ${gl?.source} ${quando(gl?.starts_at)}`)
+      const nellaLista = riga(jp, id)
+      check('listEvents Japan: c\'e\', con la copia e lo stato di getEvent', !!nellaLista && nellaLista.source === 'mirror'
+              && nellaLista.status === jpE?.status && quando(nellaLista.starts_at) === quando(jpE?.starts_at)
+              && nellaLista.ends_at_known === jpE?.ends_at_known, `${nellaLista?.source} ${nellaLista?.status}`)
+      const stato = jpE?.status
+      if (stato) {
+        const filtrata = await Q.listEvents({ reg: 'japan', status: stato, limit: GRANDE })
+        check(`listEvents Japan, filtro ${stato}: c'e'`, filtrata.some((x) => x.id === id))
+      }
+      const copie = Number(await valore(`
+        select count(distinct r.event_id) from event_run r where r.reg = 'japan' and r.source = 'mirror'
+          and not exists (select 1 from event_run o where o.event_id = r.event_id and o.reg = 'japan' and o.source <> 'mirror')`))
+      check('gli eventi con le sole copie stanno nella lista Japan', copie > 100
+              && jp.length === await contaEventi('japan', null), `${copie} eventi con le sole copie, lista ${jp.length}`)
+      // la pagina: lo stato e le date di Global, parola per parola (l'istante
+      // e' quello di Global, con l'ora e "UTC"), e la nota
+      const sj = jpE ? statoEvento(jpE) : null
+      const sg = gl ? statoEvento(gl) : null
+      check('la riga di stato Japan: lo stato e le date di Global, con "UTC", e "Same dates as Global"',
+            !!sj && !!sg && sj.etichetta === sg.etichetta && sj.dettaglio === sg.dettaglio && /UTC/.test(sj.dettaglio)
+              && sj.nota === STESSE_DATE && sg.nota === null,
+            `Japan: ${sj?.etichetta} ${sj?.dettaglio} · ${sj?.nota}; Global: ${sg?.dettaglio}`)
+      check('getEvent: same_as_global vero per la copia uguale alla run Global, falso su Global',
+            jpE?.same_as_global === true && gl?.same_as_global === false, `Japan ${jpE?.same_as_global}, Global ${gl?.same_as_global}`)
+
+      // Una copia che di proposito non ha piu' le date di Global: chiusa al
+      // --dal da set-event-window --reg japan (la fine non nota), o tenuta
+      // per i clear dopo che la finestra Global e' cambiata. Resta 'mirror',
+      // ma "Same dates as Global" non sarebbe vero. Si ritocca la copia e
+      // si rimette com'era.
+      const copia = await righe<{ id: string; starts_at: Date; ends_at: Date | null; ends_at_known: boolean }>(`
+        select id::text, starts_at, ends_at, ends_at_known from event_run where event_id = $1 and reg = 'japan'`, [id])
+      const c = copia[0]
+      if (!check('la copia Japan dell\'evento, da ritoccare', copia.length === 1 && !!c) || !c) return
+      try {
+        const dal = new Date(c.starts_at.getTime() + 3_600_000)
+        await db.query(`update event_run set ends_at = $2, ends_at_known = false where id = $1`, [c.id, dal])
+        const chiusa = await Q.getEvent(id, 'japan')
+        check('chiusa al --dal (set-event-window --reg japan): same_as_global falso, e nessuna nota',
+              chiusa?.source === 'mirror' && chiusa.same_as_global === false && !!chiusa && statoEvento(chiusa)?.nota === null,
+              `${chiusa?.source} ${quando(chiusa?.starts_at)} → ${quando(chiusa?.ends_at)}, ${chiusa?.same_as_global}`)
+        await db.query(`update event_run set ends_at = $2, ends_at_known = true where id = $1`,
+                       [c.id, new Date(c.starts_at.getTime() + 40 * 86_400_000)])
+        const diversa = await Q.getEvent(id, 'japan')
+        check('...e una copia tenuta con una fine che Global non ha piu\': falso, nessuna nota',
+              diversa?.same_as_global === false && !!diversa && statoEvento(diversa)?.nota === null, `${diversa?.same_as_global}`)
+        // la run Global corretta a mano sul posto (set-event-window --reg
+        // global): lo specchio la copia come una del gioco, e la copia
+        // uguale ha la nota
+        await db.query(`update event_run set ends_at = $2, ends_at_known = $3 where id = $1`, [c.id, c.ends_at, c.ends_at_known])
+        await db.query(`update event_run set source = 'manual' where id = $1 and reg = 'global' and source = 'game'`, [gl?.run_id])
+        const aMano = await Q.getEvent(id, 'japan')
+        check('...uguale a una run Global a mano: same_as_global vero, e la nota',
+              aMano?.same_as_global === true && !!aMano && statoEvento(aMano)?.nota === STESSE_DATE, `${aMano?.same_as_global}`)
+      } finally {
+        await db.query(`update event_run set ends_at = $2, ends_at_known = $3 where id = $1`, [c.id, c.ends_at, c.ends_at_known])
+        await db.query(`update event_run set source = 'game' where id = $1 and reg = 'global' and source = 'manual'`, [gl?.run_id])
+      }
+      check('rimessa com\'era: di nuovo uguale a Global', (await Q.getEvent(id, 'japan'))?.same_as_global === true)
+    })
+
+    // Il selettore delle run del builder su Japan: le run del wiki che una
+    // copia ha chiuso hanno la fine non nota, e non sono "in corso da".
+    await sezione('il selettore delle run del builder su Japan (lo specchio)', async () => {
+      const ev = await valore<string>(`
+        select w.event_id::text from event_run w
+        join event_run m on m.event_id = w.event_id and m.reg = 'japan' and m.source = 'mirror' and m.starts_at = w.ends_at
+        where w.reg = 'japan' and w.source = 'wiki' and not w.ends_at_known and m.starts_at <= now()
+        order by w.event_id limit 1`)
+      if (!check('un evento con la run Japan del wiki chiusa da una copia gia\' iniziata', !!ev) || !ev) return
+      const runs = await listStartedRuns(ev, 'japan')
+      const attese = await righe<{ id: string; ends_at_known: boolean }>(`
+        select id::text, ends_at_known from event_run where event_id = $1 and reg = 'japan' and starts_at <= now()
+        order by starts_at desc`, [ev])
+      check('listStartedRuns Japan: le run iniziate, dalla piu\' recente, con ends_at_known',
+            stessi(runs.map((r) => `${r.id}:${r.ends_at_known}`), attese.map((r) => `${r.id}:${r.ends_at_known}`)),
+            runs.map((r) => `${r.id}:${r.status}:${r.ends_at_known}`).join(', '))
+      tutte('...la run del wiki chiusa: "Started <giorno>, end date unknown", mai "Running now"',
+            runs.filter((r) => !r.ends_at_known), (r) => /^Started \w+ \d{1,2}, \d{4}, end date unknown$/.test(etichettaRun(r)))
+    })
+
+    // Le uscite Japan delle carte copiate da Global (0036): la pagina della
+    // carta mostra il blocco Japan e il picker di un clear Japan le propone.
+    await sezione('le carte uscite su Japan dallo specchio: la pagina e il picker', async () => {
+      const carta = (await righe<{ id: string; nome: string; glb: string }>(`
+        select r.card_id::text as id, ct.name as nome, g.released_at::text as glb
+        from card_release r
+        join card_release g on g.card_id = r.card_id and g.reg = 'global'
+        join card_text ct on ct.card_id = r.card_id and ct.locale = 'en'
+        where r.reg = 'japan' and r.source = 'mirror' and r.released_at <= current_date
+        order by (select count(*) from card_text x where x.locale = 'en' and x.name = ct.name), r.card_id
+        limit 1`))[0]
+      if (!check('una carta con l\'uscita Japan copiata', !!carta) || !carta) return
+      const c = await getCard(carta.id)
+      const jpR = c?.releases.find((r) => r.reg === 'japan')
+      check('getCard: l\'uscita Japan c\'e\', lo stesso giorno di Global, e la pagina ha il blocco Japan',
+            !!jpR && jpR.date === carta.glb && stessi(versioniCarta(c?.releases ?? []), ['global', 'japan']),
+            JSON.stringify(c?.releases))
+      const trovate = await searchCards({ reg: 'japan', q: carta.nome, limit: CARD_SEARCH_MAX })
+      check('il picker di un clear Japan la propone', trovate.some((h) => h.id === carta.id && h.released_at === carta.glb),
+            `${carta.id} ${carta.nome}: ${trovate.length} trovate`)
     })
 
     await sezione('la ricerca prende i caratteri alla lettera', async () => {

@@ -4,9 +4,8 @@ import { Suspense } from 'react'
 import Image from 'next/image'
 import { MagnifyingGlass } from '@phosphor-icons/react/dist/ssr'
 import { assetUrl } from '@/lib/db'
-import { giornoBreve } from '@/lib/date'
 import { pagina as leggiPagina, regione, testoRicerca, uno, type Ricerca } from '@/lib/parametri'
-import { EVENTI_PER_PAGINA, type EventKind, type EventRow, type Region, type Status } from '@/lib/queries'
+import { EVENTI_PER_PAGINA, type EventKind, type Region, type Status } from '@/lib/queries'
 import { listEventsCached } from '@/lib/cache/data'
 import { browseHref, eventHref } from '@/lib/urls'
 import { relRobots } from '@/lib/robots'
@@ -19,6 +18,7 @@ import { CAMPO_DITO } from '@/components/scelta/stile'
 import { AvvisoVersione } from '@/components/versione/avviso-versione'
 import { segnapostoEvento } from '@/lib/segnaposto'
 import { altraVersione } from '@/lib/versione/versione'
+import { statoBreve } from '@/lib/stato-evento'
 
 // La lista degli eventi, comune a /events e /events/japan (statiche: una
 // versione, nessun filtro, pagina 1) e a /events/browse (ogni vista
@@ -41,17 +41,6 @@ const STATI: { valore: Status; etichetta: string; vuoto: string }[] = [
   { valore: 'past', etichetta: 'Ended', vuoto: 'No event is listed as ended' },
   { valore: 'upcoming', etichetta: 'Upcoming', vuoto: 'No event is listed as upcoming' },
 ]
-
-// Lo stato in breve sulla scheda. Niente per la fine sconosciuta: sarebbe
-// la maggioranza, e ripeterlo su ogni scheda non dice niente.
-function statoBreve(e: EventRow): { testo: string; inCorso: boolean } | null {
-  if (e.status === 'active') {
-    if (e.ends_at) return { testo: `Ends ${giornoBreve(e.ends_at)}`, inCorso: true }
-    return e.ends_at_known ? { testo: 'Permanent', inCorso: false } : null
-  }
-  if (e.status === 'upcoming') return { testo: `Starts ${giornoBreve(e.starts_at)}`, inCorso: false }
-  return { testo: 'Ended', inCorso: false }
-}
 
 function Filtro({
   attivo, href, children,
@@ -208,13 +197,16 @@ export async function EventList({ filtri }: { filtri: FiltriLista }) {
         </Form>
       </div>
 
-      {/* Global ha le finestre del gioco; Japan solo la data di prima uscita
-          dal wiki. L'avviso dice quanto ci si può fidare dello stato. */}
+      {/* Global ha le finestre del gioco; Japan dal 2025 le stesse (lo
+          specchio, 0036), e prima solo la data di prima uscita dal wiki.
+          L'avviso dice quanto ci si può fidare dello stato: su Japan una
+          run resta in corso senza fine sia quando il gioco non la registra
+          (le copie la ereditano da Global) sia per le date vecchie del wiki. */}
       {status && (
         <p className="mt-6 text-[12px] leading-relaxed text-testo bg-oro-tenue border border-oro-linea rounded-[var(--raggio)] px-3 py-2 max-w-[70ch]">
           {reg === 'global'
             ? 'Global dates come from the game’s own data wherever we can match the event. When the game doesn’t record an end, the event is listed as ongoing, so Ongoing also includes some events that may have closed.'
-            : 'Japan dates come from the wiki, which records when an event first came out but not when it ends, so almost every Japan event shows as ongoing and nothing shows as ended.'}
+            : 'Japan dates from 2025 on are the same as Global’s. When the game doesn’t record an end, or for older events where the wiki records only when an event first came out, the event is listed as ongoing, so Ongoing also includes some events that may have closed.'}
         </p>
       )}
 

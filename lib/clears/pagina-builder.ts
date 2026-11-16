@@ -2,8 +2,8 @@ import 'server-only'
 import { listCategories, type CategoryOption } from '@/lib/cards'
 import { listStartedRuns } from '@/lib/clears'
 import { listPotentialSkills } from '@/lib/equipment'
-import { quando } from '@/lib/date'
 import { nomeTier } from '@/lib/livelli'
+import { etichettaRun } from '@/lib/stato-evento'
 import { getEvent, getStages, type EventDetail, type Region } from '@/lib/queries'
 import type { RunScelta } from '@/lib/clears/builder-stato'
 
@@ -31,13 +31,7 @@ export async function datiBuilder(eventId: string, reg: Region, tierId: string):
   if (!tier) return null
   const eza = stages.every((s) => s.difficulty === 'eza_level')
 
-  const scelte: RunScelta[] = runs.map((r) => {
-    const dal = quando(r.starts_at, 'wiki')
-    const label = r.status === 'active'
-      ? `Running now, since ${dal}`
-      : r.ends_at ? `${dal} to ${quando(r.ends_at, 'wiki')}` : `From ${dal}`
-    return { id: r.id, label }
-  })
+  const scelte: RunScelta[] = runs.map((r) => ({ id: r.id, label: etichettaRun(r) }))
   const predefinita = runs.find((r) => r.id === evento.run_id)?.id ?? runs[0]?.id ?? null
   return { evento, nomeTier: nomeTier(tier, eza), runs: scelte, runPredefinita: predefinita, categorie, abilita }
 }

@@ -14,7 +14,14 @@ const ora = new Intl.DateTimeFormat('en-US', {
   hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: 'UTC',
 })
 
-/** Il giorno, più l'ora quando la fonte la conosce: il wiki dà solo il giorno. */
+/**
+ * Il giorno, più l'ora quando la fonte la conosce: il wiki dà solo il
+ * giorno. Lo specchio Japan (mirror, 0036) ha l'istante di Global, e lo
+ * mostra come Global, con l'ora e "UTC": il giorno da solo sarebbe quello
+ * UTC, e una finestra che parte dalle 15:00 UTC a Tokyo è già il giorno
+ * dopo (le date del wiki sulle stesse pagine sono giorni giapponesi). Così
+ * "Same dates as Global" sotto lo stato è vero alla lettera.
+ */
 export function quando(d: Date, source: RunSource | null): string {
   const g = giorno.format(d)
   return source === 'wiki' ? g : `${g}, ${ora.format(d)} UTC`

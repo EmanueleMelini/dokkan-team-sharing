@@ -70,10 +70,14 @@ export function CardPage({ card, clears }: { card: CardDetail; clears: BloccoCle
               <span key={r.reg}>{REGIONE[r.reg]}: {soloGiorno(new Date(`${r.date}T00:00:00Z`))}</span>
             ))}
           </p>
-          {/* solo a chi e' su Global, e lo specchio solo a chi e' su Japan */}
+          {/* Solo a chi e' su Global, e il rovescio solo a chi e' su Japan.
+              Le uscite Global da D hanno la data Japan (lo specchio, 0036):
+              senza restano le carte piu' vecchie che il wiki non data, e
+              quelle solo di Global. Accanto c'e' la data Global, quindi
+              una data Japan copiata non ha bisogno di una nota. */}
           {!globale && <p className="mt-2 text-[13px] font-medium text-oro japan:hidden">Not released on Global yet.</p>}
           {globale && !giapponese && (
-            <p className="mt-2 hidden text-[13px] font-medium text-oro japan:block">No Japan release date on the wiki yet.</p>
+            <p className="mt-2 hidden text-[13px] font-medium text-oro japan:block">No Japan release date for this card yet.</p>
           )}
           {(card.has_eza || superEza) && (
             <div className="mt-3 flex flex-wrap gap-1.5">

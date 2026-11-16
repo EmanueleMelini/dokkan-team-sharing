@@ -148,13 +148,16 @@ export function avvisoVersione(reg: Versione) {
 
 /**
  * Un evento senza run in questa versione: lo diciamo senza affermare che
- * non e' uscito (puo' darsi che manchi solo la data nelle fonti). Japan ha
- * le date solo dal wiki, Global anche dal gioco. Nella pagina sta al posto
- * dello stato dell'evento, con la stessa forma: l'etichetta ("Ongoing",
- * qui "No Japan dates") e il dettaglio.
+ * non e' uscito (puo' darsi che manchi solo la data nelle fonti). Global
+ * ha le date dal gioco e dal wiki. Japan dal 2025 ha quelle di Global
+ * (lo specchio, 0036): un evento uscito da allora le ha, quindi senza date
+ * resta un evento piu' vecchio che il wiki non elenca, o uno che su Japan
+ * non c'e'. Nella pagina sta al posto dello stato dell'evento, con la
+ * stessa forma: l'etichetta ("Ongoing", qui "No Japan dates") e il
+ * dettaglio.
  */
 export function senzaDate(reg: Versione): { etichetta: string; dettaglio: string } {
-  const fonti = reg === 'japan' ? 'the wiki doesn’t list it' : 'neither the game data nor the wiki lists it'
+  const fonti = reg === 'japan' ? 'it’s an older event the wiki doesn’t list' : 'neither the game data nor the wiki lists it'
   return { etichetta: `No ${NOME_VERSIONE[reg]} dates`, dettaglio: `It may not be out in this version yet, or ${fonti}.` }
 }
 

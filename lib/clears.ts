@@ -229,17 +229,26 @@ export async function getClearVersions(clearId: string): Promise<ClearVersionRow
   )
 }
 
-export type RunOption = { id: string; starts_at: Date; ends_at: Date | null; status: 'active' | 'past' }
+export type RunOption = {
+  id: string
+  starts_at: Date
+  ends_at: Date | null
+  /** falso: la fine non si sa (il wiki, o una run chiusa alla replica dopo) */
+  ends_at_known: boolean
+  status: 'active' | 'past'
+}
 
 /**
  * Le ricorrenze di un evento in una regione per cui si puo' inviare un
  * clear: quelle gia' iniziate (submit_clear rifiuta le altre), dalla
- * piu' recente. Il builder parte da quella mostrata nella pagina.
+ * piu' recente. Il builder parte da quella mostrata nella pagina, e le
+ * scrive con etichettaRun (lib/stato-evento.ts).
  */
 export async function listStartedRuns(eventId: string, reg: Region): Promise<RunOption[]> {
   return sql<RunOption>(
-    `select es.run_id::text as id, es.starts_at, es.ends_at, es.status
+    `select es.run_id::text as id, es.starts_at, es.ends_at, r.ends_at_known, es.status
      from event_status es
+     join event_run r on r.id = es.run_id
      where es.event_id = $1::bigint and es.reg = $2 and es.starts_at <= now()
      order by es.starts_at desc`,
     [eventId, reg],

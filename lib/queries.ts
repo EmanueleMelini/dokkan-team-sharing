@@ -13,8 +13,10 @@ import { VUOTI, type Classe, type FiltriClear, type Ordine, type TipoCarta } fro
 export type Region = 'global' | 'japan'
 export type Status = 'active' | 'upcoming' | 'past'
 // Da dove viene una ricorrenza: il wiki dà solo il giorno di prima uscita,
-// il gioco e le finestre messe a mano danno istanti precisi.
-export type RunSource = 'wiki' | 'game' | 'manual'
+// il gioco e le finestre messe a mano danno istanti precisi. Su Japan, dal
+// 2025, lo specchio (mirror, migrazione 0036) copia le finestre Global del
+// gioco e quelle a mano: stesso calendario, l'istante è quello di Global.
+export type RunSource = 'wiki' | 'game' | 'manual' | 'mirror'
 
 export const EVENT_KINDS = [
   'challenge', 'zbattle', 'limited', 'story', 'bonus',
@@ -139,6 +141,12 @@ export type EventDetail = {
   source: RunSource | null
   // La ricorrenza mostrata: le missioni si scelgono su questa
   run_id: string | null
+  // Vero solo per una copia dello specchio Japan (0036) identica a una run
+  // Global del gioco o a mano: stesso inizio, stessa fine, stessa fine
+  // nota. Una copia puo' non esserlo piu' di proposito (chiusa al --dal da
+  // set-event-window --reg japan, o tenuta per i clear dopo che la sua
+  // finestra Global e' sparita): allora "Same dates as Global" non e' vero.
+  same_as_global: boolean
 }
 
 export async function getEvent(id: string, reg: Region): Promise<EventDetail | null> {
@@ -147,12 +155,18 @@ export async function getEvent(id: string, reg: Region): Promise<EventDetail | n
             et.official_description as description, e.banner_key,
             cv.thumb_key as cover_thumb_key, asset_bare(cv.thumb_key) as cover_thumb_bare,
             cv.type::text as cover_type, cv.rarity::text as cover_rarity,
-            u.status, u.starts_at, u.ends_at, u.ends_at_known, u.source, u.run_id
+            u.status, u.starts_at, u.ends_at, u.ends_at_known, u.source, u.run_id,
+            coalesce(u.same_as_global, false) as same_as_global
      from event e
      join event_text et on et.event_id = e.id and et.locale = 'en'
      left join card cv on cv.id = e.cover_card_id
      left join lateral (
-       select es.status, es.starts_at, es.ends_at, r.ends_at_known, r.source, es.run_id::text as run_id
+       select es.status, es.starts_at, es.ends_at, r.ends_at_known, r.source, es.run_id::text as run_id,
+              r.source = 'mirror' and exists (
+                select 1 from event_run g
+                where g.event_id = r.event_id and g.reg = 'global' and g.source in ('game', 'manual')
+                  and g.starts_at = r.starts_at and g.ends_at is not distinct from r.ends_at
+                  and g.ends_at_known = r.ends_at_known) as same_as_global
        from event_status es
        join event_run r on r.id = es.run_id
        where es.event_id = e.id and es.reg = $2
