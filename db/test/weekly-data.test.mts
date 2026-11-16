@@ -767,6 +767,13 @@ console.log('i workflow')
     check(`${n}: ogni uses: fissato a uno sha di 40 caratteri`, uses.length >= 4 && uses.every((u) => /@[0-9a-f]{40}$/.test(u)), uses.filter((u) => !/@[0-9a-f]{40}$/.test(u)).join(', '))
     check(`${n}: niente set -x`, !/set\s+-[a-z]*x/.test(text))
     check(`${n}: npm ci --ignore-scripts`, /npm ci --ignore-scripts/.test(text))
+    // La rete del runner a volte cade a meta' (curl 56 sulla chiave di
+    // PostgreSQL il 2026-11-16): la chiave e apt ritentano, invece di far
+    // saltare il giro al primo passo
+    const installa = [...text.matchAll(/^\s*sudo (?:curl|apt-get) .*$/gm)].map((m) => m[0].trim())
+    check(`${n}: curl e apt-get dell'installazione ritentano`, installa.length === 3 && installa.every((r) =>
+      r.startsWith('sudo curl') ? /--retry [1-9]\b/.test(r) && /--retry-all-errors/.test(r) : /^sudo apt-get -o Acquire::Retries=[1-9]\b/.test(r)),
+      installa.join(' | '))
     check(`${n}: wrangler a una versione esatta`, /wrangler@\d+\.\d+\.\d+ /.test(text) && !/wrangler(@latest)?\s+pages/.test(text))
     if (wf) {
       check(`${n}: i job sono ${jobs.join(', ')}`, Object.keys(wf.jobs).sort().join() === [...jobs].sort().join())
