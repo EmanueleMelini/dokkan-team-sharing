@@ -10,7 +10,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * The HTTP side of "Check for updates" ([UpdateCheck.fetch]) against a one-request server on the
+ * The HTTP side of "Update categories" ([UpdateCheck.fetch]) against a one-request server on the
  * loopback address: the request it sends and how each kind of answer maps to a result.
  */
 class UpdateCheckTest {

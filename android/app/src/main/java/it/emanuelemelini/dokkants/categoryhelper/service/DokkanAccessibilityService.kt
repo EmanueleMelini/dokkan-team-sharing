@@ -14,7 +14,10 @@ import android.os.Looper
 import android.os.PowerManager
 import android.view.accessibility.AccessibilityEvent
 import androidx.core.content.ContextCompat
+import it.emanuelemelini.dokkants.categoryhelper.MainActivity
 import it.emanuelemelini.dokkants.categoryhelper.R
+import it.emanuelemelini.dokkants.categoryhelper.appupdate.AppUpdateRecord
+import it.emanuelemelini.dokkants.categoryhelper.appupdate.AppUpdater
 import it.emanuelemelini.dokkants.categoryhelper.diagnostics.DebugLog
 import it.emanuelemelini.dokkants.categoryhelper.diagnostics.NodeDumper
 import it.emanuelemelini.dokkants.categoryhelper.dictionary.Category
@@ -47,7 +50,9 @@ import kotlinx.coroutines.withContext
  * overlay over it: the bubble, or the search panel once the bubble is tapped. Everything goes as
  * soon as another app takes over. A selected name goes to the clipboard and, in automatic mode,
  * into the game's search field ([TextInserter]). When the monitored app comes to the front it also
- * runs the automatic "Check for updates", if due ([AutoUpdatePolicy]).
+ * runs the automatic checks, if due: new categories ([AutoUpdatePolicy]) and, in release builds, a
+ * new version of the app ([AppUpdater]), which then shows as a dot on the bubble and a row in the
+ * panel.
  */
 class DokkanAccessibilityService : AccessibilityService() {
 
@@ -69,6 +74,11 @@ class DokkanAccessibilityService : AccessibilityService() {
     private lateinit var panel: SearchPanel
     private lateinit var message: MessageOverlay
     private lateinit var inserter: TextInserter
+    private lateinit var appUpdater: AppUpdater
+
+    /** The version the bubble's dot and the panel's row announce; null for none. */
+    private val appUpdateVersion = MutableStateFlow<String?>(null)
+    private var appUpdateRecord: AppUpdateRecord? = null
 
     /** Null until the stored settings are read: nothing is shown before that. */
     private var settings: AppSettings? = null
@@ -98,6 +108,7 @@ class DokkanAccessibilityService : AccessibilityService() {
         super.onServiceConnected()
         settingsRepository = SettingsRepository(this)
         history = HistoryRepository(this)
+        appUpdater = AppUpdater.get(this)
         val dictionary = DictionaryRepository.get(this)
         bubble = BubbleOverlay(
             service = this,
@@ -113,6 +124,8 @@ class DokkanAccessibilityService : AccessibilityService() {
             onSelect = ::onCategorySelected,
             onToggleFavorite = { category -> scope.launch { history.toggleFavorite(category.id) } },
             onClose = ::closePanel,
+            appUpdateVersion = appUpdateVersion,
+            onOpenAppUpdate = ::openAppUpdate,
         )
         message = MessageOverlay(this, handler)
         inserter = TextInserter(
@@ -138,6 +151,12 @@ class DokkanAccessibilityService : AccessibilityService() {
                 if (newSettings.insertMode != InsertMode.AUTO) inserter.cancel()
                 bubble.update(newSettings)
                 evaluate("settings")
+            }
+        }
+        scope.launch {
+            appUpdater.record.collect { record ->
+                appUpdateRecord = record
+                refreshAppUpdate()
             }
         }
         connectedState.value = true
@@ -198,6 +217,7 @@ class DokkanAccessibilityService : AccessibilityService() {
                 // Only the switch to the monitored app, not every event while it stays in front
                 val cameToFront = !targetInFront
                 targetInFront = true
+                if (cameToFront) refreshAppUpdate()
                 if (!panel.isShowing) bubble.show()
                 if (cameToFront) checkForUpdatesIfDue(current)
             }
@@ -209,12 +229,15 @@ class DokkanAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * The automatic "Check for updates": the same request and the same only-add rule as the button,
-     * at most once a day ([AutoUpdatePolicy.due]). Off the event thread; a message only when new
-     * categories arrive, nothing when the dictionary is up to date or the check fails.
+     * The automatic checks. New categories: the same request and the same only-add rule as "Update
+     * categories", at most once a day ([AutoUpdatePolicy.due]). Off the event thread; a message only
+     * when new categories arrive, nothing when the dictionary is up to date or the check fails.
+     * The app version: [AppUpdater.checkAutomaticallyIfDue] (release builds only, its own day).
      */
     private fun checkForUpdatesIfDue(current: AppSettings) {
-        if (!current.autoUpdate || autoCheck?.isActive == true) return
+        if (!current.autoUpdate) return
+        appUpdater.checkAutomaticallyIfDue()
+        if (autoCheck?.isActive == true) return
         // Dispatched, not immediate: the event handler returns first
         autoCheck = scope.launch(Dispatchers.Main) {
             try {
@@ -237,6 +260,41 @@ class DokkanAccessibilityService : AccessibilityService() {
             } catch (e: Exception) {
                 DebugLog.w("automatic update check failed", e)
             }
+        }
+    }
+
+    /**
+     * The dot and the row follow the known newer version until it is installed, "Later" or not
+     * ([AppUpdater.newer]): re-read on every change of the record and each time the monitored app
+     * comes to the front (the installed version may have changed meanwhile).
+     */
+    private fun refreshAppUpdate() {
+        val record = appUpdateRecord ?: return
+        val available = try {
+            appUpdater.newer(record)
+        } catch (e: RuntimeException) {
+            DebugLog.w("app update: cannot read the installed version", e)
+            null
+        }
+        appUpdateVersion.value = available?.version?.toString()
+        bubble.setUpdateDot(available != null)
+    }
+
+    /**
+     * The panel's "Version X.Y.Z available" row: the app opens with the update dialog. Like leaving
+     * Dokkan: this app's own window is an unknown foreground, which keeps the state, and with nothing
+     * showing the next app would not hide anything either. So the next arrival in Dokkan counts again
+     * (the dot, the daily checks), and nothing pending waits over other apps.
+     */
+    private fun openAppUpdate() {
+        cancelDelayedHide()
+        targetInFront = false
+        inserter.cancel()
+        hideOverlay()
+        try {
+            startActivity(MainActivity.showAppUpdateIntent(this))
+        } catch (e: RuntimeException) {
+            DebugLog.w("app update: cannot open the app", e)
         }
     }
 

@@ -10,7 +10,7 @@ export const CATEGORY_HELPER = {
   pagina: '/category-helper',
   apk: `${REPO}/releases/latest/download/dokkants-category-helper.apk`,
   release: `${REPO}/releases`,
-  /** l'unica rete dell'app: "Check for updates", il pulsante e quello automatico (al più una volta al giorno, all'apertura di Dokkan) */
+  /** la rete dell'app verso il sito: "Update categories", il pulsante e il controllo automatico (al più una volta al giorno, all'apertura di Dokkan). Dalla 1.2.0 l'app chiede anche a GitHub l'ultima versione (api.github.com, mai il sito) */
   api: '/api/v1/categories',
   /** minSdk 26 */
   android: '8.0',

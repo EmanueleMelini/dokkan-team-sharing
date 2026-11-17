@@ -1,7 +1,7 @@
 package it.emanuelemelini.dokkants.categoryhelper.update
 
 /**
- * When the automatic "Check for updates" runs, and what it keeps of the result. Pure: the
+ * When the automatic "Update categories" runs, and what it keeps of the result. Pure: the
  * accessibility service asks [due] each time the monitored app comes to the front, so the check
  * happens at most once a day and only while the user is playing (no scheduler, no wake-ups).
  */

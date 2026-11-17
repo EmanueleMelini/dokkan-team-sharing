@@ -44,11 +44,15 @@ android {
         applicationId = "it.emanuelemelini.dokkants.categoryhelper"
         minSdk = 26
         targetSdk = 37
-        versionCode = 7
-        // 1.0.0: English UI (Italian translation), game ids in the dictionary, "Check for updates",
-        // signed releases on GitHub
-        // 1.1.0: automatic "Check for updates", at most once a day when Dokkan comes to the front
-        versionName = "1.1.0"
+        versionCode = 8
+        // 1.0.0: English UI (Italian translation), game ids in the dictionary, the category update
+        // check (then "Check for updates", "Update categories" since 1.2.0), signed releases on GitHub
+        // 1.1.0: the automatic category update check, at most once a day when Dokkan comes to the front
+        // 1.2.0: in-app updates of the app from GitHub Releases, "What's new"
+        versionName = "1.2.0"
+        // The package a debug build installs from GitHub to try the in-app update: the release app
+        // (a debug build, ".debug" and signed with the debug key, cannot update itself from there)
+        buildConfigField("String", "RELEASE_APPLICATION_ID", "\"$applicationId\"")
     }
 
     signingConfigs {
@@ -64,7 +68,7 @@ android {
 
     buildTypes {
         // Debug builds install next to the release from GitHub: another id (.debug), "-debug" in the
-        // version (also in the User-Agent of Check for updates), and in src/debug/res another name
+        // version (also in the User-Agent of the update checks), and in src/debug/res another name
         // ("(debug)", "CH debug" on the home screen) and another icon and bubble background.
         // Their data are separate from the release's.
         debug {
@@ -85,6 +89,9 @@ android {
 
     buildFeatures {
         compose = true
+        // BuildConfig.DEBUG (no automatic app update check, the debug install target),
+        // VERSION_CODE ("What's new"), RELEASE_APPLICATION_ID
+        buildConfig = true
     }
 }
 
@@ -131,6 +138,15 @@ androidComponents {
             duplicatesStrategy = DuplicatesStrategy.FAIL
         }
     }
+}
+
+// The unit tests read src/main/assets (the bundled dictionary, the release notes) as plain files,
+// outside the test classpath: declared as an input, so that a change there runs them again instead
+// of reusing a cached result
+tasks.withType<Test>().configureEach {
+    inputs.dir(layout.projectDirectory.dir("src/main/assets"))
+        .withPropertyName("bundledAssets")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
 }
 
 dependencies {

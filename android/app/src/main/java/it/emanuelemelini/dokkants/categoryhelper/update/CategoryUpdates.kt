@@ -10,7 +10,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 
 /**
- * "Check for updates": the category list of Dokkan Team Sharing and the rule that picks what to
+ * "Update categories": the category list of Dokkan Team Sharing and the rule that picks what to
  * add. Pure code (no Android, no network), unit tested offline.
  *
  * The payload of `GET /api/v1/categories`, version 1:

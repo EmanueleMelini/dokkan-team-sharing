@@ -13,7 +13,7 @@ import java.net.URI
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-/** What a "Check for updates" did (the button, or the automatic check of the service). */
+/** What an "Update categories" did (the button, or the automatic check of the service). */
 sealed interface UpdateResult {
     data class Added(val categories: List<Category>) : UpdateResult
     data object UpToDate : UpdateResult
@@ -38,11 +38,12 @@ sealed interface UpdateResult {
 }
 
 /**
- * The only network access of the app: one GET of [CategoryUpdates.URL], then the new categories are
- * appended ([DictionaryRepository.addNew]). It runs when the user taps "Check for updates" and, if
+ * The category update check: one GET of [CategoryUpdates.URL], then the new categories are
+ * appended ([DictionaryRepository.addNew]). It runs when the user taps "Update categories" and, if
  * the setting is on, at most once a day when the monitored app comes to the front
  * ([AutoUpdatePolicy], from the accessibility service). No scheduled or periodic work, nothing is
- * sent besides the request itself.
+ * sent besides the request itself. The app's other network access is its own update from GitHub
+ * (the appupdate package).
  */
 object UpdateCheck {
 

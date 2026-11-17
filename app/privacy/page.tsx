@@ -166,9 +166,18 @@ export default function Privacy() {
         newer, if your phone has a screen lock (PIN, pattern or password), the backup is end-to-end encrypted with
         it. The site never receives them. The app contacts the site only to download the public list of game
         categories from {LEGALE.sito}/api/v1/categories: when you open Dokkan Battle, at most once a day or an
-        hour after a check that failed (you can turn this off in the app settings), and when you tap Check for
-        updates. The request is the same either way and carries no account, no device identifier and nothing
-        from your dictionary: for the site it is the same as browsing without an account.
+        hour after a check that failed, and when you tap Update categories. The request is the same either way
+        and carries no account, no device identifier and nothing from your dictionary: for the site it is the
+        same as browsing without an account.
+      </p>
+      <p>
+        The app also contacts GitHub, where it is published, directly and not through the site. At most once a
+        day, when you open Dokkan Battle or the app (or an hour after a check that failed), it asks
+        api.github.com whether a newer version of the app is out, and it asks again when you tap Check for app
+        updates. It downloads a new version from GitHub only when you tap Update. These requests carry no
+        account, no device identifier and nothing from your dictionary. GitHub receives your IP address, as with
+        any download, and handles it under its own privacy policy. The Check automatically setting in the app
+        turns off both daily checks, the one with the site and the one with GitHub.
       </p>
 
       <h2>Who else handles the data</h2>
@@ -188,6 +197,12 @@ export default function Privacy() {
         privacy policy. Some of these services may process data outside the European Union, with
         the safeguards the GDPR requires, such as the European Commission&apos;s standard
         contractual clauses.
+      </p>
+      <p>
+        GitHub, where the Android app and its updates are published, is not one of these services.
+        The app contacts it directly (see The Android app above), and so does your browser when you
+        download the app from the <Link href="/category-helper">Category Helper</Link> page. GitHub
+        handles those requests under its own privacy policy, not on the site&apos;s behalf.
       </p>
 
       <h2>How long it is kept</h2>

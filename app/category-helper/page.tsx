@@ -1,7 +1,8 @@
 import type { Metadata } from 'next'
 import type { ReactNode } from 'react'
 import {
-  ArrowSquareOut, ArrowsClockwise, BookOpenText, ClipboardText, DownloadSimple, HandTap, Heart, MagnifyingGlass,
+  ArrowCircleUp, ArrowSquareOut, ArrowsClockwise, BookOpenText, ClipboardText, DownloadSimple, HandTap, Heart,
+  MagnifyingGlass, Sparkle,
 } from '@phosphor-icons/react/dist/ssr'
 import { CATEGORY_HELPER } from '@/lib/category-helper'
 import { LEGALE } from '@/lib/legale'
@@ -195,6 +196,14 @@ export default function CategoryHelper() {
                   service.
                 </p>
               </Passo>
+              <Passo n={5} azione="Keep it up to date">
+                <p>
+                  From version 1.2.0 on, updates install from inside the app: when a new version is out, tap
+                  Update and confirm, and it installs over the one you have, keeping your dictionary and
+                  settings. The first time, Android asks you to allow installs from this source.
+                </p>
+                <p>To update an older version, download the APK again from this page and install it the same way.</p>
+              </Passo>
             </ol>
           </Sezione>
 
@@ -222,21 +231,32 @@ export default function CategoryHelper() {
                 The app comes with the 99 categories of the game as of October 2026. In the dictionary editor you
                 can add, edit and delete categories, and import or export them as JSON.
               </Uso>
-              <Uso icona={<ArrowsClockwise {...icona} />} nome="Check for updates">
+              <Uso icona={<ArrowsClockwise {...icona} />} nome="Update categories">
                 Downloads the new categories from Dokkan Team Sharing and adds the ones you do not have yet.
                 Nothing you already have changes, edits included, and a category you deleted is not added back.
                 The app also checks by itself when you open Dokkan, at most once a day or an hour after a check
-                that failed, and tells you only when it adds something. To stop that, turn off Check for updates
+                that failed, and tells you only when it adds something.
+              </Uso>
+              <Uso icona={<ArrowCircleUp {...icona} />} nome="App updates">
+                The app also asks GitHub whether a newer version is out: when you open Dokkan or the app, at most
+                once a day or an hour after a check that failed. If there is one, a dot shows on the bubble until
+                you install it, and the app shows what is new in it: tap Update, or Later to be asked again the
+                next day. Check for app
+                updates, in the settings, looks right away. To stop both daily checks, turn off Check
                 automatically in the app settings.
+              </Uso>
+              <Uso icona={<Sparkle {...icona} />} nome="What's new">
+                After an update, the app shows what is new in it, in English or in Italian like the rest of the
+                app. You can read the notes of every version again in the settings, under About.
               </Uso>
             </div>
           </Sezione>
 
           <Sezione id="developers" nome="For developers">
             <p className="mt-2 text-[14px] leading-relaxed text-testo">
-              The app updates from <code className={codice}>GET {CATEGORY_HELPER.api}</code>, a public JSON list of
-              every category, with no key. It comes from the game data of the Global version and changes at most
-              once a week, after the weekly data update.
+              The app gets new categories from <code className={codice}>GET {CATEGORY_HELPER.api}</code>, a public
+              JSON list of every category, with no key. It comes from the game data of the Global version and
+              changes at most once a week, after the weekly data update.
             </p>
             <pre className="mt-3 max-w-full overflow-x-auto border border-linea rounded-[var(--raggio)] bg-superficie px-4 py-3 font-mono text-[12px] leading-relaxed text-inchiostro">
               <code>{ESEMPIO_API}</code>
@@ -267,13 +287,20 @@ export default function CategoryHelper() {
                 and never taps anything for you.
               </li>
               <li>
-                The app goes online only to download the list from{' '}
+                The app goes online for two things only. The first is the list of categories from{' '}
                 <code className={`${codice} [overflow-wrap:anywhere]`}>{LEGALE.sito}{CATEGORY_HELPER.api}</code>: when you open
-                Dokkan, at most once a day or an hour after a check that failed (you can turn this off in the app
-                settings), and when you tap Check for updates. The request is the same either way and carries no
-                account, no device id and nothing from your dictionary, like opening a page of this site without
-                signing in.
+                Dokkan, at most once a day or an hour after a check that failed, and when you tap Update
+                categories. The request is the same either way and carries no account, no device id and nothing
+                from your dictionary, like opening a page of this site without signing in.
               </li>
+              <li>
+                The second is GitHub, where the app is published. At most once a day, when you open Dokkan or the
+                app (or an hour after a check that failed), it asks GitHub whether a newer version is out, and again
+                when you tap Check for app updates. It downloads a new version only when you tap Update. These
+                requests carry no account and no device id either, and GitHub sees your IP address, as with any
+                download.
+              </li>
+              <li>Check automatically, in the app settings, turns off both daily checks.</li>
             </ul>
           </Sezione>
           <Sezione id="unofficial" nome="Unofficial">

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Italian translation of values/strings.xml (non-translatable strings live only there). -->
 <resources xmlns:tools="http://schemas.android.com/tools" tools:locale="it">
-    <string name="service_description">Mostra una piccola bolla sopra Dokkan Battle JP per cercare le categorie in inglese e inserirne il nome giapponese nel campo di ricerca del gioco. Legge solo quale app è in primo piano e il campo di ricerca del gioco. Va in rete solo per scaricare l\'elenco delle categorie: quando tocchi «Controlla aggiornamenti» e quando apri Dokkan, al massimo una volta al giorno o un\'ora dopo un controllo non riuscito (si può disattivare nell\'app).</string>
+    <string name="service_description">Mostra una piccola bolla sopra Dokkan Battle JP per cercare le categorie in inglese e inserirne il nome giapponese nel campo di ricerca del gioco. Legge solo quale app è in primo piano e il campo di ricerca del gioco. Va in rete solo per due cose: l\'elenco delle categorie da Dokkan Team Sharing e l\'ultima versione dell\'app su GitHub. Controlla quando tocchi «Aggiorna le categorie» o «Cerca aggiornamenti dell\'app», e da sola al massimo una volta al giorno (o un\'ora dopo un controllo non riuscito) quando apri Dokkan, e la versione anche quando apri l\'app. I controlli automatici si possono disattivare nell\'app. Scarica una nuova versione solo quando tocchi «Aggiorna».</string>
 
     <!-- Service -->
     <string name="section_service">Servizio di accessibilità</string>
@@ -50,7 +50,7 @@
     <string name="dictionary_edited">Modificato nell\'app: gli aggiornamenti dell\'app non lo toccano più (salvo «Ripristina» nell\'editor).</string>
     <string name="open_editor">Apri l\'editor</string>
     <string name="clear_recents">Svuota i recenti</string>
-    <string name="update_check">Controlla aggiornamenti</string>
+    <string name="update_check">Aggiorna le categorie</string>
     <string name="update_checking">Controllo in corso…</string>
     <string name="update_hint">Aggiunge le categorie nuove del gioco, da Dokkan Team Sharing. Non modifica né elimina quelle che hai già, e non riaggiunge quelle che hai eliminato.</string>
     <plurals name="update_added">
@@ -62,23 +62,55 @@
     <string name="update_failed_network">Dokkan Team Sharing non risponde: controlla la connessione e riprova.</string>
     <string name="update_failed_http">Controllo non riuscito (HTTP %1$d): riprova più tardi.</string>
     <string name="update_failed_invalid">Controllo non riuscito: risposta inattesa.</string>
-    <string name="update_failed_newer">I dati aggiornati richiedono una versione più recente dell\'app: installa l\'ultima release.</string>
+    <string name="update_failed_newer">I dati delle categorie richiedono una versione più recente dell\'app: tocca «Cerca aggiornamenti dell\'app».</string>
     <string name="update_failed_storage">Non è stato possibile salvare le categorie nuove. Controlla che il telefono abbia spazio libero e riprova.</string>
-    <string name="auto_update">Controlla gli aggiornamenti in automatico</string>
-    <string name="auto_update_hint">Quando apri Dokkan e compare la bolla: al massimo una volta al giorno, o un\'ora dopo un controllo non riuscito. Scarica solo l\'elenco pubblico delle categorie.</string>
-    <string name="auto_update_last_up_to_date">Ultimo controllo automatico: %1$s. Dizionario già aggiornato.</string>
+    <string name="auto_update">Controlla in automatico</string>
+    <string name="auto_update_hint">Una volta al giorno, o un\'ora dopo un controllo non riuscito, quando apri Dokkan e compare la bolla: le categorie nuove da Dokkan Team Sharing e le nuove versioni dell\'app da GitHub. Le nuove versioni si controllano anche quando apri quest\'app.</string>
+    <string name="auto_update_last_up_to_date">Ultimo controllo automatico delle categorie: %1$s. Dizionario già aggiornato.</string>
     <plurals name="auto_update_last_added">
-        <item quantity="one">Ultimo controllo automatico: %1$s. Aggiunta %2$d categoria nuova.</item>
-        <item quantity="many">Ultimo controllo automatico: %1$s. Aggiunte %2$d categorie nuove.</item>
-        <item quantity="other">Ultimo controllo automatico: %1$s. Aggiunte %2$d categorie nuove.</item>
+        <item quantity="one">Ultimo controllo automatico delle categorie: %1$s. Aggiunta %2$d categoria nuova.</item>
+        <item quantity="many">Ultimo controllo automatico delle categorie: %1$s. Aggiunte %2$d categorie nuove.</item>
+        <item quantity="other">Ultimo controllo automatico delle categorie: %1$s. Aggiunte %2$d categorie nuove.</item>
     </plurals>
-    <string name="auto_update_last_failed">Ultimo controllo automatico: %1$s. Non riuscito.</string>
+    <string name="auto_update_last_failed">Ultimo controllo automatico delle categorie: %1$s. Non riuscito.</string>
 
     <!-- About -->
     <string name="section_about">Informazioni</string>
     <string name="about_version">Versione %1$s</string>
     <string name="about_instructions">Istruzioni</string>
     <string name="about_no_browser">Nessun browser per aprire %1$s</string>
+
+    <!-- App updates from GitHub Releases -->
+    <string name="app_update_check">Cerca aggiornamenti dell\'app</string>
+    <string name="app_update_status_up_to_date">Ultimo controllo: %1$s. L\'app è aggiornata.</string>
+    <string name="app_update_status_available">Ultimo controllo: %1$s. È disponibile la versione %2$s.</string>
+    <string name="app_update_status_failed">Ultimo controllo: %1$s. Non riuscito.</string>
+    <string name="app_update_none">L\'app è aggiornata</string>
+    <string name="app_update_failed_network">GitHub non risponde: controlla la connessione e riprova.</string>
+    <string name="app_update_failed_http">Controllo degli aggiornamenti dell\'app non riuscito (HTTP %1$d): riprova più tardi.</string>
+    <string name="app_update_failed_invalid">Controllo degli aggiornamenti dell\'app non riuscito: risposta inattesa.</string>
+    <string name="app_update_title">È disponibile la versione %1$s</string>
+    <string name="app_update_current">Hai la versione %1$s.</string>
+    <string name="app_update_update">Aggiorna</string>
+    <string name="app_update_later">Più tardi</string>
+    <string name="app_update_install_release">Installa l\'app di release</string>
+    <string name="app_update_debug_hint">Questa build di debug non può aggiornarsi da GitHub. Il pulsante installa l\'app di release, un\'app separata, per provare l\'installazione.</string>
+    <string name="app_update_permission_title">Consenti gli aggiornamenti</string>
+    <string name="app_update_permission_text">Per installare la nuova versione, Android chiede il tuo permesso: attiva «Consenti da questa fonte» per quest\'app, poi torna qui.</string>
+    <string name="app_update_permission_open">Apri le impostazioni</string>
+    <string name="app_update_permission_denied">Senza il permesso l\'app non può installare l\'aggiornamento. Puoi scaricarlo dal browser.</string>
+    <string name="app_update_browser">Scarica dal browser</string>
+    <string name="app_update_downloading">Download della versione %1$s</string>
+    <string name="app_update_cancel">Annulla</string>
+    <string name="app_update_close">Chiudi</string>
+    <string name="app_update_failed_title">Aggiornamento non installato</string>
+    <string name="app_update_error_download">Il download non è finito. Controlla la connessione e riprova, oppure scaricalo dal browser.</string>
+    <string name="app_update_error_conflict">Android ha rifiutato la nuova versione perché non corrisponde all\'app installata, per esempio perché è firmata con un\'altra chiave.</string>
+    <string name="app_update_error_storage">Non c\'è abbastanza spazio libero per installare l\'aggiornamento.</string>
+    <string name="app_update_error_install">Android non è riuscito a installare l\'aggiornamento.</string>
+    <string name="app_update_installed">Versione %1$s installata</string>
+    <string name="whats_new">Novità</string>
+    <string name="notes_language">it</string>
 
     <!-- Dictionary editor -->
     <string name="editor_title">Dizionario</string>
@@ -131,12 +163,14 @@
     <string name="export_failed">Esportazione non riuscita: %1$s</string>
 
     <string name="restore_title">Ripristinare il dizionario incluso?</string>
-    <string name="restore_text">Le modifiche fatte nell\'app andranno perse, e così le categorie aggiunte con «Controlla aggiornamenti» (il controllo successivo le riaggiunge, anche quelle che avevi eliminato). Se vuoi conservare le modifiche, esportale prima.</string>
+    <string name="restore_text">Le modifiche fatte nell\'app andranno perse, e così le categorie aggiunte con «Aggiorna le categorie» (il controllo successivo le riaggiunge, anche quelle che avevi eliminato). Se vuoi conservare le modifiche, esportale prima.</string>
     <string name="restore_confirm">Ripristina</string>
     <string name="restore_done">Dizionario incluso ripristinato</string>
 
     <!-- Overlay -->
     <string name="bubble_description">Cerca una categoria</string>
+    <string name="bubble_description_update">Cerca una categoria. È disponibile una nuova versione dell\'app.</string>
+    <string name="panel_app_update">Versione %1$s disponibile</string>
     <string name="panel_search_hint">Cerca in inglese (es. pure saiyans)</string>
     <string name="panel_clear">Cancella la ricerca</string>
     <string name="panel_close">Chiudi</string>

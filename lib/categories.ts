@@ -2,7 +2,7 @@ import 'server-only'
 import { sql } from '@/lib/db'
 
 // Le categorie per GET /api/v1/categories, che legge l'app Android DokkanTS
-// Category Helper ("Check for updates": il pulsante e il controllo
+// Category Helper ("Update categories": il pulsante e il controllo
 // automatico, al massimo una volta al giorno): per ogni categoria il
 // nome inglese, quello giapponese e gli alias (0037). Modulo puro, senza
 // cache: lo avvolge lib/cache/categories.ts, e i test lo importano fuori

@@ -12,10 +12,12 @@
 #   1. il commit del tag deve stare su main: una release e' sempre codice
 #      rivisto, mai un commit di dev o di un ramo qualunque;
 #   2. il tag deve essere category-helper-v + versionName di
-#      android/app/build.gradle.kts, e android/release-notes/<versione>.md
-#      (le note della release) deve esserci, con almeno una riga "- "; l'icona
-#      e la bolla dell'app sono quelle che scripts/brand/icona-android.mjs
-#      genera adesso dal marchio del sito;
+#      android/app/build.gradle.kts, e
+#      android/app/src/main/assets/release-notes/<versione>.md (le note
+#      della release, le stesse che l'app mostra) deve esserci, con i punti
+#      "- " in inglese e quelli in italiano nel blocco nascosto
+#      "<!-- dch-notes:it"; l'icona e la bolla dell'app sono quelle che
+#      scripts/brand/icona-android.mjs genera adesso dal marchio del sito;
 #   3. il keystore arriva dal secret DCH_KEYSTORE_BASE64 in $RUNNER_TEMP, le
 #      password dagli altri secret, solo nell'env del passo che le usa;
 #   4. test, lint e :app:releaseApk; poi apksigner: la firma non e' mai
@@ -24,8 +26,8 @@
 #   5. l'APK e le note in un artifact di un giorno;
 # - publish, con contents: write, senza secret, senza checkout ne' Gradle:
 #   6. la release Latest di adesso, se c'e', deve avere una versione piu'
-#      vecchia e lo stesso certificato (se no Android rifiuta
-#      l'aggiornamento a chi ha gia' l'app);
+#      vecchia, un versionCode piu' basso e lo stesso certificato (se no
+#      Android rifiuta l'aggiornamento a chi ha gia' l'app);
 #   7. gh release create con --latest e --verify-tag.
 #
 # Il repository e' pubblico: si parte solo da un tag (niente pull_request
@@ -110,13 +112,49 @@ jobs:
           echo "VERSION=$version" >> "$GITHUB_ENV"
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
-      # Il testo della release su GitHub, in inglese: prima della build, cosi'
-      # una nota mancante ferma il giro subito
+      # Le note, prima della build, cosi' una nota mancante ferma il giro
+      # subito. Un file solo, negli asset dell'APK: e' il testo della release
+      # su GitHub, che l'app gia' installata legge e mostra nella finestra
+      # dell'aggiornamento, e quello di "What's new" dopo l'aggiornamento
+      # (dagli asset, anche senza rete). La forma:
+      # una riga di introduzione facoltativa, i punti "- " in inglese (li
+      # vede GitHub), poi i punti "- " in italiano fra una riga
+      # "<!-- dch-notes:it" e una riga "-->": un commento HTML, nascosto su
+      # GitHub e letto dall'app in italiano. Un "<!--" o un "-->" dentro un
+      # punto aprirebbe o chiuderebbe il commento nel posto sbagliato:
+      # fuori da quelle due righe non ci devono essere. Un punto per riga:
+      # dopo il primo punto inglese solo punti "- " e righe vuote (l'app
+      # legge una riga per punto, e una riga che continua il punto andrebbe
+      # persa). Niente CRLF
       - name: Check the release notes
         run: |
-          notes="release-notes/$VERSION.md"
-          if ! grep -q '^- ' "$notes" 2>/dev/null; then
-            echo "::error::android/$notes is missing or has no '- ' bullet"
+          notes="app/src/main/assets/release-notes/$VERSION.md"
+          if [ ! -f "$notes" ]; then
+            echo "::error::android/$notes is missing"
+            exit 1
+          fi
+          problem=$(awk '
+            function bad(m) { print m; failed = 1; exit }
+            /\r/ { bad("line " NR " ends with CRLF: save the file with LF line endings") }
+            block == 0 && $0 == "<!-- dch-notes:it" { block = 1; next }
+            block == 1 && $0 == "-->" { block = 2; next }
+            /^(<!-- dch-notes:it|-->)[ \t]+$/ { bad("line " NR " ends with spaces: the lines \"<!-- dch-notes:it\" and \"-->\" must be exactly that") }
+            /<!--|-->/ { bad("line " NR " has a \"<!--\" or \"-->\" outside the two lines of the dch-notes:it block") }
+            block == 0 && /^- [^ \t]/ { en++; next }
+            block == 0 && en && NF { bad("line " NR " is not a \"- \" bullet: after the first English bullet, only one-line \"- \" bullets and blank lines") }
+            block == 1 && /^- [^ \t]/ { it++; next }
+            block == 1 && NF { bad("line " NR " of the dch-notes:it block is not a \"- \" bullet") }
+            block == 2 && NF { bad("line " NR " comes after the end of the dch-notes:it block") }
+            END {
+              if (failed) exit
+              if (!en) print "no English \"- \" bullet before the dch-notes:it block"
+              else if (block == 0) print "no \"<!-- dch-notes:it\" block with the Italian bullets"
+              else if (block == 1) print "the dch-notes:it block is not closed by a \"-->\" line"
+              else if (!it) print "no Italian \"- \" bullet in the dch-notes:it block"
+            }
+          ' "$notes")
+          if [ -n "$problem" ]; then
+            echo "::error::android/$notes: $problem"
             exit 1
           fi
 
@@ -196,7 +234,7 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/release"
           cp app/build/dist/dokkants-category-helper.apk "$RUNNER_TEMP/release/dokkants-category-helper.apk"
-          cp "release-notes/$VERSION.md" "$RUNNER_TEMP/release/notes.md"
+          cp "app/src/main/assets/release-notes/$VERSION.md" "$RUNNER_TEMP/release/notes.md"
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -223,9 +261,9 @@ jobs:
           path: ${{ runner.temp }}/release
 
       # Il link del sito serve sempre la Latest: una versione piu' vecchia
-      # (un Re-run di un tag superato) o un'altra chiave (Android non la
-      # installa sopra l'app che c'e') non deve diventarlo. La prima release
-      # non ha niente con cui confrontarsi
+      # (un Re-run di un tag superato), un versionCode che non sale o
+      # un'altra chiave (Android non la installa sopra l'app che c'e') non
+      # deve diventarlo. La prima release non ha niente con cui confrontarsi
       - name: Check the release against the current Latest
         env:
           GH_TOKEN: ${{ github.token }}
@@ -259,6 +297,17 @@ jobs:
             exit 1
           fi
           echo "Same signing certificate as $latest: $new" | tee -a "$GITHUB_STEP_SUMMARY"
+          # Anche il versionCode deve salire: Android rifiuta un aggiornamento
+          # con un versionCode piu' basso (anche quello dall'app), e "What's
+          # new" non mostra niente se resta uguale. La riga package: si cerca
+          code() { local dump; dump=$("$tools/aapt2" dump badging "$1"); grep -m1 '^package:' <<< "$dump" | sed -n "s/^package:.* versionCode='\([0-9]*\)'.*/\1/p"; }
+          old_code=$(code "$RUNNER_TEMP/previous/dokkants-category-helper.apk" || true)
+          new_code=$(code "$apk" || true)
+          if ! [[ $old_code =~ ^[0-9]+$ && $new_code =~ ^[0-9]+$ ]] || [ "$new_code" -le "$old_code" ]; then
+            echo "::error::$VERSION has versionCode ${new_code:-?}, the Latest $previous ${old_code:-?}: it must be higher, or Android refuses the update"
+            exit 1
+          fi
+          echo "versionCode $new_code, higher than $old_code of $latest" | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Publish the GitHub release
         env:

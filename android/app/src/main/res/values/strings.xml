@@ -7,7 +7,7 @@
     <string name="service_label" translatable="false">DokkanTS Category Helper</string>
     <!-- Label of the launcher activity only (home screen, recent apps): the full name would be cut there. -->
     <string name="launcher_name" translatable="false">Category Helper</string>
-    <string name="service_description">Shows a small bubble over Dokkan Battle JP so you can search categories in English and put the Japanese name into the game\'s search field. It only reads which app is in front and the game\'s search field. It goes online only to download the list of categories: when you tap Check for updates, and when you open Dokkan, at most once a day or an hour after a check that failed (you can turn this off in the app).</string>
+    <string name="service_description">Shows a small bubble over Dokkan Battle JP so you can search categories in English and put the Japanese name into the game\'s search field. It only reads which app is in front and the game\'s search field. It goes online only for two things: the list of categories from Dokkan Team Sharing and the latest version of the app on GitHub. It checks when you tap Update categories or Check for app updates, and by itself at most once a day (or an hour after a check that failed) when you open Dokkan, and the version also when you open the app. You can turn the automatic checks off in the app. It downloads a new version only when you tap Update.</string>
 
     <!-- Service -->
     <string name="section_service">Accessibility service</string>
@@ -60,7 +60,7 @@
     <string name="dictionary_edited">Edited in the app: app updates leave it alone (unless you restore it in the editor).</string>
     <string name="open_editor">Open the editor</string>
     <string name="clear_recents">Clear recents</string>
-    <string name="update_check">Check for updates</string>
+    <string name="update_check">Update categories</string>
     <string name="update_checking">Checking…</string>
     <string name="update_hint">Adds the categories that are new in the game, from Dokkan Team Sharing. It never changes or removes the ones you have, and never adds back one you deleted.</string>
     <plurals name="update_added">
@@ -71,16 +71,16 @@
     <string name="update_failed_network">Could not reach Dokkan Team Sharing. Check your connection and try again.</string>
     <string name="update_failed_http">Update check failed (HTTP %1$d). Try again later.</string>
     <string name="update_failed_invalid">Update check failed: unexpected response.</string>
-    <string name="update_failed_newer">The update data needs a newer version of this app. Install the latest release.</string>
+    <string name="update_failed_newer">The category data needs a newer version of this app: tap Check for app updates.</string>
     <string name="update_failed_storage">Could not save the new categories. Check that the phone has free space and try again.</string>
-    <string name="auto_update">Check for updates automatically</string>
-    <string name="auto_update_hint">When you open Dokkan and the bubble appears: at most once a day, or an hour after a check that failed. It downloads only the public list of categories.</string>
-    <string name="auto_update_last_up_to_date">Last automatic check: %1$s. Already up to date.</string>
+    <string name="auto_update">Check automatically</string>
+    <string name="auto_update_hint">Once a day, or an hour after a check that failed, when you open Dokkan and the bubble appears: new categories from Dokkan Team Sharing and new versions of the app from GitHub. New versions are also checked when you open this app.</string>
+    <string name="auto_update_last_up_to_date">Last automatic category check: %1$s. Already up to date.</string>
     <plurals name="auto_update_last_added">
-        <item quantity="one">Last automatic check: %1$s. Added %2$d new category.</item>
-        <item quantity="other">Last automatic check: %1$s. Added %2$d new categories.</item>
+        <item quantity="one">Last automatic category check: %1$s. Added %2$d new category.</item>
+        <item quantity="other">Last automatic category check: %1$s. Added %2$d new categories.</item>
     </plurals>
-    <string name="auto_update_last_failed">Last automatic check: %1$s. Failed.</string>
+    <string name="auto_update_last_failed">Last automatic category check: %1$s. Failed.</string>
     <!-- Message over the game after an automatic check that added categories: the app name, then update_added. -->
     <string name="auto_update_message" translatable="false">%1$s: %2$s</string>
 
@@ -89,6 +89,42 @@
     <string name="about_version">Version %1$s</string>
     <string name="about_instructions">Instructions</string>
     <string name="about_no_browser">No browser to open %1$s</string>
+
+    <!-- App updates from GitHub Releases (Settings > About, the update dialogs, "What's new") -->
+    <string name="app_update_check">Check for app updates</string>
+    <string name="app_update_status_up_to_date">Last check: %1$s. The app is up to date.</string>
+    <string name="app_update_status_available">Last check: %1$s. Version %2$s is available.</string>
+    <string name="app_update_status_failed">Last check: %1$s. Failed.</string>
+    <string name="app_update_none">The app is up to date</string>
+    <string name="app_update_failed_network">Could not reach GitHub. Check your connection and try again.</string>
+    <string name="app_update_failed_http">Could not check for app updates (HTTP %1$d). Try again later.</string>
+    <string name="app_update_failed_invalid">Could not check for app updates: unexpected response.</string>
+    <string name="app_update_title">Version %1$s is available</string>
+    <string name="app_update_current">You have version %1$s.</string>
+    <string name="app_update_update">Update</string>
+    <string name="app_update_later">Later</string>
+    <!-- Debug builds only: they cannot update themselves from GitHub, the button installs the release app. -->
+    <string name="app_update_install_release">Install the release app</string>
+    <string name="app_update_debug_hint">This debug build cannot update itself from GitHub. The button installs the release app, a separate app, to try the installation.</string>
+    <string name="app_update_permission_title">Allow updates</string>
+    <string name="app_update_permission_text">To install the new version, Android needs your permission: turn on “Allow from this source” for this app, then come back here.</string>
+    <string name="app_update_permission_open">Open settings</string>
+    <string name="app_update_permission_denied">Without the permission the app cannot install the update. You can download it in the browser instead.</string>
+    <string name="app_update_browser">Download in the browser</string>
+    <string name="app_update_downloading">Downloading version %1$s</string>
+    <string name="app_update_progress" translatable="false">%1$d%%</string>
+    <string name="app_update_cancel">Cancel</string>
+    <string name="app_update_close">Close</string>
+    <string name="app_update_failed_title">Update not installed</string>
+    <string name="app_update_error_download">The download did not finish. Check your connection and try again, or download it in the browser.</string>
+    <string name="app_update_error_conflict">Android refused the new version because it does not match the installed app, for example because it is signed with another key.</string>
+    <string name="app_update_error_storage">There is not enough free space to install the update.</string>
+    <string name="app_update_error_install">Android could not install the update.</string>
+    <!-- Debug builds only: the release app was installed. -->
+    <string name="app_update_installed">Version %1$s installed</string>
+    <string name="whats_new">What\'s new</string>
+    <!-- The language of the release notes to show: "it" in values-it, the Italian block of the notes. -->
+    <string name="notes_language">en</string>
 
     <!-- Dictionary editor -->
     <string name="editor_title">Dictionary</string>
@@ -139,12 +175,14 @@
     <string name="export_failed">Export failed: %1$s</string>
 
     <string name="restore_title">Restore the bundled dictionary?</string>
-    <string name="restore_text">Changes made in the app will be lost, and so will the categories added by Check for updates (the next check adds them back, also the ones you had deleted). To keep your changes, export them first.</string>
+    <string name="restore_text">Changes made in the app will be lost, and so will the categories added by Update categories (the next check adds them back, also the ones you had deleted). To keep your changes, export them first.</string>
     <string name="restore_confirm">Restore</string>
     <string name="restore_done">Bundled dictionary restored</string>
 
     <!-- Overlay -->
     <string name="bubble_description">Search a category</string>
+    <string name="bubble_description_update">Search a category. A new version of the app is available.</string>
+    <string name="panel_app_update">Version %1$s available</string>
     <string name="panel_search_hint">Search in English (e.g. pure saiyans)</string>
     <string name="panel_clear">Clear the search</string>
     <string name="panel_close">Close</string>

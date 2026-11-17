@@ -31,7 +31,7 @@ data class AppSettings(
     val insertMode: InsertMode = InsertMode.AUTO,
     /** Foreground decisions and focused nodes in Logcat (tag DokkanHelper). */
     val debugLog: Boolean = false,
-    /** Check for updates by itself, at most once a day, when the monitored app comes to the front. */
+    /** "Check automatically": new categories and, in release builds, a new version of the app, at most once a day. */
     val autoUpdate: Boolean = true,
 ) {
     companion object {

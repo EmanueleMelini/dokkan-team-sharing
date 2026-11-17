@@ -6,7 +6,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** When the automatic "Check for updates" runs, and what it keeps and announces of a result. */
+/** When the automatic "Update categories" runs, and what it keeps and announces of a result. */
 class AutoUpdatePolicyTest {
 
     private val minute = 60_000L

@@ -68,6 +68,8 @@ import it.emanuelemelini.dokkants.categoryhelper.AppInfo
 import it.emanuelemelini.dokkants.categoryhelper.DictionaryActivity
 import it.emanuelemelini.dokkants.categoryhelper.DokkanPackages
 import it.emanuelemelini.dokkants.categoryhelper.R
+import it.emanuelemelini.dokkants.categoryhelper.appupdate.AppUpdateRecord
+import it.emanuelemelini.dokkants.categoryhelper.appupdate.AppUpdater
 import it.emanuelemelini.dokkants.categoryhelper.dictionary.CategoryDictionary
 import it.emanuelemelini.dokkants.categoryhelper.dictionary.DictionaryRepository
 import it.emanuelemelini.dokkants.categoryhelper.history.HistoryRepository
@@ -90,6 +92,10 @@ fun SettingsScreen() {
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
     var checking by remember { mutableStateOf(false) }
+
+    val updater = remember { AppUpdater.get(context) }
+    val appUpdate by updater.record.collectAsStateWithLifecycle(initialValue = null)
+    val checkingApp by updater.checking.collectAsStateWithLifecycle()
 
     val history = remember { HistoryRepository(context) }
     val dictionaryRepository = remember { DictionaryRepository.get(context) }
@@ -186,6 +192,14 @@ fun SettingsScreen() {
             }
             AboutSection(
                 version = remember { AppInfo.versionName(context) },
+                updater = updater,
+                record = appUpdate,
+                checking = checkingApp,
+                onCheck = {
+                    scope.launch {
+                        appCheckMessage(resources, updater.checkNow())?.let { snackbar.showSnackbar(it) }
+                    }
+                },
                 onInstructions = { openInstructions(context) },
             )
         }
@@ -409,10 +423,44 @@ private fun DictionarySection(
 }
 
 @Composable
-private fun AboutSection(version: String, onInstructions: () -> Unit) {
+private fun AboutSection(
+    version: String,
+    updater: AppUpdater,
+    record: AppUpdateRecord?,
+    checking: Boolean,
+    onCheck: () -> Unit,
+    onInstructions: () -> Unit,
+) {
+    val context = LocalContext.current
+    val resources = LocalResources.current
     Section(stringResource(R.string.section_about)) {
         Text(stringResource(R.string.about_version, version), style = MaterialTheme.typography.bodyMedium)
-        TextButton(onClick = onInstructions) { Text(stringResource(R.string.about_instructions)) }
+        OutlinedButton(onClick = onCheck, enabled = !checking) {
+            Text(stringResource(if (checking) R.string.update_checking else R.string.app_update_check))
+        }
+        if (record != null) {
+            val newer = updater.newer(record)
+            // Hidden before the first check, and while one runs (the button says Checking…): until it
+            // ends the record says it failed
+            if (!checking) {
+                appUpdateStatusText(context, resources, record, newer)?.let {
+                    Text(it, style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+            if (newer != null) {
+                Button(onClick = updater::offerKnown) {
+                    Text(
+                        stringResource(
+                            if (updater.installsReleaseApp) R.string.app_update_install_release else R.string.app_update_update,
+                        ),
+                    )
+                }
+            }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            TextButton(onClick = updater::showAllNotes) { Text(stringResource(R.string.whats_new)) }
+            TextButton(onClick = onInstructions) { Text(stringResource(R.string.about_instructions)) }
+        }
     }
 }
 

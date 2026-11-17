@@ -1,12 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- INTERNET only for "Check for updates": one HTTPS GET of
-         https://dokkants.app/api/v1/categories when the user taps it (settings and dictionary
-         editor) and, unless turned off in the settings, when Dokkan comes to the front, at most once
-         a day or an hour after a check that failed (the accessibility service). No scheduled or
-         periodic work, no analytics, nothing else goes online. -->
+    <!-- INTERNET only for the update checks, and for the download of a new version:
+         - "Update categories": one HTTPS GET of https://dokkants.app/api/v1/categories when the
+           user taps it (settings and dictionary editor) and, unless "Check automatically" is off,
+           when Dokkan comes to the front, at most once a day or an hour after a check that failed
+           (the accessibility service);
+         - the app version: one HTTPS GET of the latest release on api.github.com when the user taps
+           "Check for app updates" and, in release builds with the same switch on, when Dokkan comes
+           to the front or the app opens, by the same rule;
+         - the APK of a new version from GitHub, only when the user taps Update.
+         No scheduled or periodic work, no analytics, nothing else goes online. -->
     <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- The in-app update: the downloaded APK goes to PackageInstaller, and Android asks the user to
+         confirm every install ("Install unknown apps" must be allowed for this app first). -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <!-- Makes launchable apps visible to PackageManager (Android 11+), so the settings can list
          the installed Dokkan packages without QUERY_ALL_PACKAGES. -->
@@ -53,6 +62,11 @@
             android:exported="false"
             android:label="@string/editor_title"
             android:windowSoftInputMode="adjustResize" />
+
+        <!-- The answer of PackageInstaller to the update session (an explicit PendingIntent) -->
+        <receiver
+            android:name=".appupdate.AppUpdateReceiver"
+            android:exported="false" />
 
         <service
             android:name=".service.DokkanAccessibilityService"

@@ -428,7 +428,7 @@ public/.well-known/security.txt   il contatto per chi trova una vulnerabilita' (
 public/assets/                le immagini ospitate da noi (non versionate)
 backups/                      le copie di prod:backup (non versionate)
 docs/                         l'analisi competitiva e le decisioni di progetto
-android/                      l'app Android DokkanTS Category Helper: un progetto Gradle a parte, fuori dal deploy (android/README.md); release-notes/ le note di ogni release
+android/                      l'app Android DokkanTS Category Helper: un progetto Gradle a parte, fuori dal deploy (android/README.md); app/src/main/assets/release-notes/ le note di ogni versione (la release su GitHub e "What's new" nell'app)
 ```
 
 Le migrazioni che contano per il sito, oltre allo schema dei dati (0001-0013, 0015, 0017):
@@ -2486,13 +2486,23 @@ release dell'app (un tag `category-helper-vX.Y.Z`, `android/README.md`,
 ## L'API delle categorie e la pagina /category-helper
 
 L'app Android DokkanTS Category Helper prende le categorie nuove da
-`GET /api/v1/categories` ("Check for updates": aggiunge quelle che non ha,
-non tocca le altre). La chiama quando si tocca il pulsante e, dalla 1.1.0,
-da sola al più una volta al giorno, quando si apre Dokkan (di nuovo dopo
-un'ora solo se il tentativo è fallito; si spegne nelle impostazioni
-dell'app): niente lavori pianificati né risvegli, la stessa richiesta del
-pulsante (`android/README.md`, "Il controllo automatico").
+`GET /api/v1/categories` ("Update categories", fino alla 1.1.0 "Check for
+updates": aggiunge quelle che non ha, non tocca le altre). La chiama quando
+si tocca il pulsante e, dalla 1.1.0, da sola al più una volta al giorno,
+quando si apre Dokkan (di nuovo dopo un'ora solo se il tentativo è fallito;
+si spegne nelle impostazioni dell'app, "Check automatically"): niente
+lavori pianificati né risvegli, la stessa richiesta del pulsante
+(`android/README.md`, "Il controllo automatico").
 La pagina `/category-helper` la presenta e la fa scaricare.
+
+Dalla 1.2.0 l'app chiede anche a GitHub se c'è una versione nuova di sé
+(`api.github.com`, la release *Latest* di questo repository): con la stessa
+regola e lo stesso interruttore, quando si apre Dokkan o l'app (solo nella
+build di release), e quando si tocca "Check for app updates". La scarica da
+lì quando si tocca Update. Il sito non c'entra, quindi niente costi su
+Vercel e niente firewall. Per
+questo le release di GitHub del repository restano solo dell'app
+(`android/README.md`, "Aggiornamenti dell'app").
 
 **Il contratto** (`app/api/v1/categories/route.ts`), che l'app conosce:
 
@@ -2544,8 +2554,9 @@ quattro categorie d'esempio sono scritte nella pagina. Dice cosa fa l'app, i
 requisiti (Android 8.0+, il gioco JP), il download (l'APK dell'ultima release
 del repository pubblico, nome fisso `dokkants-category-helper.apk`; i link in
 `lib/category-helper.ts`), l'installazione (le origini sconosciute,
-l'accessibilità, le impostazioni con restrizioni di Android 13+), l'uso, la
-privacy, che è non ufficiale, e la forma dell'API per chi sviluppa. Il menu
+l'accessibilità, le impostazioni con restrizioni di Android 13+, gli
+aggiornamenti dall'app dalla 1.2.0), l'uso, la privacy, che è non
+ufficiale, e la forma dell'API per chi sviluppa. Il menu
 ha la voce "Category Helper" per tutti: nel burger dopo Events, dai 1024px
 nell'header dopo l'interruttore della versione, che resta accanto a Events.
 **Il nome**: il sito non scrive mai "DokkanTS" nelle sue parti (header,
@@ -2555,9 +2566,10 @@ nominano il corpo della pagina (`CATEGORY_HELPER.nome`) e la Privacy Policy.
 Sulla home del telefono l'icona dice solo "Category Helper" (il nome intero
 verrebbe tagliato), e la pagina lo dice nel primo passo dell'installazione.
 Come Privacy e Terms non è nella sitemap: la trovano i link dell'header. La
-Privacy Policy ha un paragrafo sull'app ("The Android app"): ogni frase
-della pagina e della policy descrive quello che l'app fa davvero, e va
-cambiata con lei.
+Privacy Policy ha un paragrafo sull'app ("The Android app"), che dice
+anche che l'app parla direttamente con GitHub (e GitHub non è fra i
+servizi che lavorano per il sito): ogni frase della pagina e della policy
+descrive quello che l'app fa davvero, e va cambiata con lei.
 
 **Le prove.** `cache-tags.test.mts`: `lib/categories.ts` fra i moduli puri e
 fra le letture in cache (l'ordine degli alias ha il suo vincolo nella
@@ -2583,7 +2595,7 @@ repository non ha una release dell'app è un 404 di GitHub. `test:smoke`
 controlla solo l'`href`, non che il file ci sia. La release la fa
 `.github/workflows/category-helper-release.yml` (la sezione "Il rilascio"
 di `android/README.md`): una volta sola il keystore e i secret `DCH_*`,
-poi il codice dell'app e `android/release-notes/1.0.0.md` su `main`, il tag
+poi il codice dell'app e le note della 1.0.0 su `main`, il tag
 `category-helper-v1.0.0` su quel commit, il giro verde in Actions e il link
 `releases/latest/download/dokkants-category-helper.apk` aperto da un browser
 senza login che scarica l'APK. Solo dopo, `git push origin main:release`.
@@ -2592,7 +2604,11 @@ Il workflow parte solo dai tag e non tocca il sito: `.github/` e
 niente su Vercel. `db/test/android-release.test.mjs` (passo "release
 dell'app Android (workflow)" di `npm run db:test`, puro) tiene allineati il
 workflow, la firma di `android/app/build.gradle.kts`, il nome dell'APK, il
-link di `lib/category-helper.ts` e le note.
+link di `lib/category-helper.ts`, le note (in
+`android/app/src/main/assets/release-notes/`, con il blocco italiano) e le
+costanti con cui l'app trova le versioni nuove (il repository, il prefisso
+del tag, il nome dell'asset); `publish` vuole anche un `versionCode` più
+alto della *Latest*.
 
 ## Gli account
 
@@ -3667,8 +3683,9 @@ regole valgono subito) e il traffico bloccato non si paga. Su Hobby ci sono
   non costa funzioni né scritture, ma ogni risposta (circa 8 KB) consuma
   banda, e da sola l'app chiama al più una volta al giorno, quando si apre
   Dokkan (di nuovo dopo un'ora solo se il tentativo è fallito), più le
-  volte che si tocca "Check for updates": un telefono resta lontano dal
-  limite.
+  volte che si tocca "Update categories": un telefono resta lontano dal
+  limite. Le richieste dell'app a GitHub (le versioni nuove dell'app, dalla
+  1.2.0) non passano da Vercel.
   Il resto di `/api/` resta fuori.
 - **Domini**: `dokkants.emanuelemelini.dev` e il dominio `*.vercel.app` del
   progetto come redirect 308 verso `dokkants.app` (Settings → Domains),

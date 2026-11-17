@@ -109,10 +109,13 @@ passo "dizionario dell'app Android (asset)" verifica node db/test/android-dictio
 # le sta intorno. Solo il tag category-helper-v*, permessi minimi, azioni
 # fissate a uno sha; il prefisso del tag, l'APK di :app:releaseApk e il nome
 # in fondo al link di lib/category-helper.ts, le note della versione di
-# build.gradle.kts (android/release-notes/), le variabili DCH_* lette da
-# Gradle, i quattro secret, la firma di debug che ferma il giro, --latest;
-# le controprove su copie ritoccate, e i passi del tag, delle note e del
-# keystore eseguiti con bash.
+# build.gradle.kts (android/app/src/main/assets/release-notes/: i punti in
+# inglese e il blocco nascosto <!-- dch-notes:it, in ogni file), le
+# variabili DCH_* lette da Gradle, i quattro secret, la firma di debug che
+# ferma il giro, --latest, il versionCode che sale rispetto alla Latest, le
+# costanti dell'app (GitHubReleases.kt, ApkDownload.kt); le controprove su
+# copie ritoccate, e i passi del tag, delle note, del keystore e del
+# confronto con la Latest eseguiti con bash.
 passo "release dell'app Android (workflow)" verifica node db/test/android-release.test.mjs
 # Funzioni pure, niente database, niente Gradle: l'icona dell'app Android
 # (android/app/src/main/res/, adaptive icon) e la sua bolla sono quelle che

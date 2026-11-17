@@ -102,7 +102,7 @@ class StoredDictionaryTest {
     }
 
     @Test
-    fun `check for updates does not add back what the user removed`() {
+    fun `update categories does not add back what the user removed`() {
         // Deleted a bundled category: only the new one comes
         val local = bundled.categories.filterNot { it.gameId == 4 }
         val removed = StoredDictionary.removedAfter(emptySet(), bundled.categories, local)

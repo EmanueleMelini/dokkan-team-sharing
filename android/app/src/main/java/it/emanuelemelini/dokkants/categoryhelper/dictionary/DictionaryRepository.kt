@@ -21,7 +21,7 @@ import kotlinx.coroutines.withContext
  * never been changed in the app, a bundled dictionary with a higher `version` replaces it; after
  * the first edit or import (marker file) the bundled one is ignored until "restore" is used.
  *
- * Categories added by "Check for updates" ([addNew]) do not set the marker: they only add what
+ * Categories added by "Update categories" ([addNew]) do not set the marker: they only add what
  * the game data has and the dictionary lacks, so an unedited dictionary stays unedited (a newer
  * bundled one, built from the same game data, can still replace it) and an edited one stays
  * edited. "Restore" drops them like everything else; the next check adds them back.

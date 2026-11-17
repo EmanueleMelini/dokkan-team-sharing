@@ -23,11 +23,13 @@ import it.emanuelemelini.dokkants.categoryhelper.dictionary.Category
 import it.emanuelemelini.dokkants.categoryhelper.dictionary.DictionaryRepository
 import it.emanuelemelini.dokkants.categoryhelper.history.HistoryRepository
 import it.emanuelemelini.dokkants.categoryhelper.ui.AppTheme
+import kotlinx.coroutines.flow.StateFlow
 
 /**
  * The expanded state: a full-screen TYPE_ACCESSIBILITY_OVERLAY window with the search card. Unlike
  * the bubble it is focusable, so the search field can get the keyboard. It closes on a tap outside
  * the card, on back, or after a selection (the caller decides, through [onClose] / [onSelect]).
+ * While a new version of the app is available ([appUpdateVersion]) a row at the top opens it.
  */
 class SearchPanel(
     private val service: AccessibilityService,
@@ -36,6 +38,8 @@ class SearchPanel(
     private val onSelect: (Category) -> Unit,
     private val onToggleFavorite: (Category) -> Unit,
     private val onClose: () -> Unit,
+    private val appUpdateVersion: StateFlow<String?>,
+    private val onOpenAppUpdate: () -> Unit,
 ) {
     private val windowManager = service.getSystemService(WindowManager::class.java)
     private var root: ViewGroup? = null
@@ -71,6 +75,7 @@ class SearchPanel(
                     val loaded by dictionary.dictionary.collectAsState()
                     val favorites by history.favorites.collectAsState(initial = emptySet())
                     val recents by history.recents.collectAsState(initial = emptyList())
+                    val updateVersion by appUpdateVersion.collectAsState()
                     SearchPanelContent(
                         categories = loaded?.categories,
                         favoriteIds = favorites,
@@ -78,6 +83,8 @@ class SearchPanel(
                         onSelect = onSelect,
                         onToggleFavorite = onToggleFavorite,
                         onClose = onClose,
+                        appUpdateVersion = updateVersion,
+                        onOpenAppUpdate = onOpenAppUpdate,
                     )
                 }
             }

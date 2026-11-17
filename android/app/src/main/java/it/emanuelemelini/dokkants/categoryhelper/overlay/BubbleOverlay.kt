@@ -14,6 +14,7 @@ import android.view.View
 import android.view.ViewConfiguration
 import android.view.WindowManager
 import android.view.animation.DecelerateInterpolator
+import android.widget.FrameLayout
 import android.widget.ImageView
 import it.emanuelemelini.dokkants.categoryhelper.R
 import it.emanuelemelini.dokkants.categoryhelper.diagnostics.DebugLog
@@ -25,7 +26,12 @@ import kotlin.math.roundToInt
  * The compact bubble: a small translucent circle drawn with TYPE_ACCESSIBILITY_OVERLAY (no
  * SYSTEM_ALERT_WINDOW needed). It is never focusable, so it can't steal input or the keyboard
  * from the game. It can be dragged anywhere, snaps to the nearest side edge when released and
- * reports where it rests so the position can be saved.
+ * reports where it rests so the position can be saved. A dot at its top end says that a new version
+ * of the app is available ([setUpdateDot]).
+ *
+ * The window holds a frame with two children: the face (the disc with the mark), which takes the
+ * opacity from the settings, and the dot, which is always fully opaque so it stays visible on a
+ * faint bubble. The frame itself is only faded in when the bubble appears.
  */
 class BubbleOverlay(
     private val service: AccessibilityService,
@@ -42,12 +48,18 @@ class BubbleOverlay(
     private var onRight = true
     private var yFraction = AppSettings.DEFAULT_Y_FRACTION
 
+    /** The frame added to the window manager; [face] and [dotView] are its children. */
     private var view: View? = null
+    private var face: ImageView? = null
+    private var dotView: View? = null
     private var snapAnimator: ValueAnimator? = null
     private var dragging = false
 
     /** A selected name waits for the game's field: the bubble is fully opaque with a ring. */
     private var pending = false
+
+    /** A new version of the app is available (and not put off with "Later"). */
+    private var updateDot = false
 
     private val params = WindowManager.LayoutParams(
         sizePx,
@@ -74,9 +86,10 @@ class BubbleOverlay(
         sizePx = dp(settings.bubbleSizeDp)
         onRight = settings.bubbleOnRight
         yFraction = settings.bubbleYFraction
-        val bubble = view ?: return
+        if (view == null) return
         if (dragging) return
-        bubble.alpha = restingAlpha()
+        face?.alpha = restingAlpha()
+        layoutDot()
         params.width = sizePx
         params.height = sizePx
         placeAtSavedPosition()
@@ -93,15 +106,21 @@ class BubbleOverlay(
             .onSuccess {
                 view = bubble
                 bubble.alpha = 0f
-                bubble.animate().alpha(restingAlpha()).setDuration(FADE_MS).start()
+                bubble.animate().alpha(1f).setDuration(FADE_MS).start()
                 DebugLog.d { "bubble shown at ${params.x},${params.y}" }
             }
-            .onFailure { DebugLog.w("bubble: addView failed", it) }
+            .onFailure {
+                face = null
+                dotView = null
+                DebugLog.w("bubble: addView failed", it)
+            }
     }
 
     fun hide() {
         val bubble = view ?: return
         view = null
+        face = null
+        dotView = null
         dragging = false
         snapAnimator?.cancel()
         runCatching { windowManager.removeView(bubble) }
@@ -111,12 +130,35 @@ class BubbleOverlay(
     fun setPending(value: Boolean) {
         if (pending == value) return
         pending = value
+        val disc = face ?: return
+        disc.background = background()
+        if (!dragging) disc.animate().alpha(restingAlpha()).setDuration(FADE_MS).start()
+    }
+
+    fun setUpdateDot(value: Boolean) {
+        if (updateDot == value) return
+        updateDot = value
         val bubble = view ?: return
-        bubble.background = background()
-        if (!dragging) bubble.animate().alpha(restingAlpha()).setDuration(FADE_MS).start()
+        layoutDot()
+        bubble.contentDescription = description()
     }
 
     private fun restingAlpha() = if (pending) 1f else opacity
+
+    /**
+     * The dot, sized to the bubble: about a quarter of it, in the top end corner outside the
+     * circle. It is a sibling of the face, so the bubble's opacity never fades it.
+     */
+    private fun layoutDot() {
+        val dot = dotView ?: return
+        val size = (sizePx * DOT_FRACTION).roundToInt()
+        dot.layoutParams = FrameLayout.LayoutParams(size, size, Gravity.TOP or Gravity.END)
+        dot.visibility = if (updateDot) View.VISIBLE else View.GONE
+    }
+
+    private fun description() = service.getString(
+        if (updateDot) R.string.bubble_description_update else R.string.bubble_description,
+    )
 
     private fun background() = GradientDrawable().apply {
         shape = GradientDrawable.OVAL
@@ -125,15 +167,30 @@ class BubbleOverlay(
     }
 
     @SuppressLint("ClickableViewAccessibility")
-    private fun createView(): View = ImageView(service).apply {
-        // The launcher foreground cropped to the 72dp a launcher shows: the whole 108dp canvas
-        // would leave the mark at half the bubble
-        setImageResource(R.drawable.ic_bubble_foreground)
-        scaleType = ImageView.ScaleType.FIT_CENTER
-        background = background()
-        contentDescription = service.getString(R.string.bubble_description)
-        setOnClickListener { onTap() }
-        setOnTouchListener(DragListener())
+    private fun createView(): View {
+        val disc = ImageView(service).apply {
+            // The launcher foreground cropped to the 72dp a launcher shows: the whole 108dp canvas
+            // would leave the mark at half the bubble
+            setImageResource(R.drawable.ic_bubble_foreground)
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            background = background()
+            alpha = restingAlpha()
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        }
+        val dot = View(service).apply {
+            background = service.getDrawable(R.drawable.bubble_update_dot)
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        }
+        face = disc
+        dotView = dot
+        return FrameLayout(service).apply {
+            addView(disc, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+            addView(dot)
+            layoutDot()
+            contentDescription = description()
+            setOnClickListener { onTap() }
+            setOnTouchListener(DragListener())
+        }
     }
 
     private fun placeAtSavedPosition() {
@@ -198,8 +255,8 @@ class BubbleOverlay(
                     startX = params.x
                     startY = params.y
                     dragging = false
-                    v.animate().cancel()
-                    v.alpha = 1f
+                    face?.animate()?.cancel()
+                    face?.alpha = 1f
                 }
                 MotionEvent.ACTION_MOVE -> {
                     val dx = event.rawX - downX
@@ -219,7 +276,7 @@ class BubbleOverlay(
                     } else if (event.actionMasked == MotionEvent.ACTION_UP) {
                         v.performClick()
                     }
-                    v.animate().alpha(restingAlpha()).setDuration(FADE_MS).start()
+                    face?.animate()?.alpha(restingAlpha())?.setDuration(FADE_MS)?.start()
                 }
             }
             return true
@@ -229,5 +286,6 @@ class BubbleOverlay(
     private companion object {
         const val FADE_MS = 150L
         const val SNAP_MS = 180L
+        const val DOT_FRACTION = 0.28f
     }
 }

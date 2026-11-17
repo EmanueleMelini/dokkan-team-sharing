@@ -21,6 +21,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Favorite
@@ -67,6 +68,7 @@ import kotlinx.coroutines.flow.first
  * whole dictionary when the field is empty. Rows show the English and the Japanese name.
  *
  * @param categories null while the dictionary is loading.
+ * @param appUpdateVersion a new version of the app, shown in a row at the top; null for none.
  */
 @Composable
 internal fun SearchPanelContent(
@@ -76,6 +78,8 @@ internal fun SearchPanelContent(
     onSelect: (Category) -> Unit,
     onToggleFavorite: (Category) -> Unit,
     onClose: () -> Unit,
+    appUpdateVersion: String? = null,
+    onOpenAppUpdate: () -> Unit = {},
 ) {
     var query by remember { mutableStateOf("") }
     val all = categories.orEmpty()
@@ -119,6 +123,9 @@ internal fun SearchPanelContent(
             elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
         ) {
             Column {
+                if (appUpdateVersion != null) {
+                    AppUpdateRow(appUpdateVersion, onOpenAppUpdate)
+                }
                 SearchField(
                     query = query,
                     onQueryChange = { query = it },
@@ -153,6 +160,32 @@ internal fun SearchPanelContent(
                 }
             }
         }
+    }
+}
+
+/** "Version X.Y.Z available": opens the app with the update dialog. */
+@Composable
+private fun AppUpdateRow(version: String, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.primaryContainer)
+            .clickable(onClick = onClick)
+            .padding(start = 16.dp, end = 8.dp, top = 10.dp, bottom = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = stringResource(R.string.panel_app_update, version),
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.onPrimaryContainer,
+            modifier = Modifier.weight(1f),
+        )
+        Icon(
+            Icons.AutoMirrored.Filled.KeyboardArrowRight,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+        )
     }
 }
 

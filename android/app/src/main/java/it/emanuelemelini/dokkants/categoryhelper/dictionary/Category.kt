@@ -8,7 +8,7 @@ import kotlinx.serialization.Serializable
  * [DictionaryFormat] then drops entries without names and generates missing ids.
  *
  * [gameId] is the category id in the game data (the bundled dictionary and the update check
- * set it); null for categories added by hand. It is how "Check for updates" recognises a
+ * set it); null for categories added by hand. It is how "Update categories" recognises a
  * category the dictionary already has. [id] stays the key of recents and favourites.
  */
 @Serializable

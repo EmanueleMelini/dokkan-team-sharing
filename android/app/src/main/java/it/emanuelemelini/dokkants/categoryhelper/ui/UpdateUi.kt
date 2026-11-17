@@ -1,18 +1,14 @@
 package it.emanuelemelini.dokkants.categoryhelper.ui
 
-import android.content.ActivityNotFoundException
 import android.content.Context
-import android.content.Intent
 import android.content.res.Resources
 import android.text.format.DateUtils
-import android.widget.Toast
-import androidx.core.net.toUri
 import it.emanuelemelini.dokkants.categoryhelper.AppInfo
 import it.emanuelemelini.dokkants.categoryhelper.R
 import it.emanuelemelini.dokkants.categoryhelper.settings.AutoCheckRecord
 import it.emanuelemelini.dokkants.categoryhelper.update.UpdateResult
 
-/** The snackbar text for a finished "Check for updates" (settings and editor share it). */
+/** The snackbar text for a finished "Update categories" (settings and editor share it). */
 internal fun updateMessage(resources: Resources, result: UpdateResult): String = when (result) {
     is UpdateResult.Added -> resources.getQuantityString(R.plurals.update_added, result.categories.size, result.categories.size)
     UpdateResult.UpToDate -> resources.getString(R.string.update_none)
@@ -49,10 +45,4 @@ internal fun lastAutoCheckText(context: Context, resources: Resources, record: A
 }
 
 /** The instructions page on the site, in the browser. */
-internal fun openInstructions(context: Context) {
-    try {
-        context.startActivity(Intent(Intent.ACTION_VIEW, AppInfo.INSTRUCTIONS_URL.toUri()))
-    } catch (_: ActivityNotFoundException) {
-        Toast.makeText(context, context.getString(R.string.about_no_browser, AppInfo.INSTRUCTIONS_URL), Toast.LENGTH_LONG).show()
-    }
-}
+internal fun openInstructions(context: Context) = openUrl(context, AppInfo.INSTRUCTIONS_URL)
