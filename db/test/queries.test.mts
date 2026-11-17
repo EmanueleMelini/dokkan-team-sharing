@@ -904,6 +904,51 @@ try {
       check('dopo: le carte tornano senza miniatura', (await Q.getEvent(cop.ev, 'global'))?.cover_thumb_bare === false &&
         Number(await valore('select count(*) from asset where key like \'test/nuda-%\'')) === 0)
     })
+
+    // GET /api/v1/categories (l'app Android, README "L'API delle
+    // categorie"): la lettura pura che la rotta avvolge, perche' la rotta
+    // vera gira solo dentro Next. La forma del contratto, gli stessi nomi e
+    // alias del database (presi qui con SQL suo, senza ordine), due letture
+    // uguali byte per byte (e' un prerender: byte diversi a ogni
+    // rigenerazione costerebbero scritture ISR) e il peso.
+    await sezione('GET /api/v1/categories: il contenuto (lib/categories.ts)', async () => {
+      const { CATEGORIES_API_VERSION, categoriesPayload, listCategoriesForApi } = await import('@/lib/categories')
+      const corpo = categoriesPayload(await listCategoriesForApi())
+      const json = JSON.stringify(corpo)
+      check('due chiavi, version e categories, con version 1', stessi(Object.keys(corpo), ['version', 'categories']) &&
+        corpo.version === 1 && CATEGORIES_API_VERSION === 1)
+      const cat = corpo.categories
+      const nelDb = new Map((await righe<{ id: number; en: string; ja: string | null; alias: string[] | null }>(`
+        select c.id::int as id, en.name as en,
+               (select ja.name from category_text ja where ja.category_id = c.id and ja.locale = 'ja') as ja,
+               (select array_agg(a.alias) from category_alias a where a.category_id = c.id) as alias
+        from category c join category_text en on en.category_id = c.id and en.locale = 'en'`)).map((r) => [r.id, r]))
+      check('una voce per ogni categoria col nome inglese, almeno le 99 del gioco', cat.length === nelDb.size && cat.length >= 99,
+        `${cat.length} voci, ${nelDb.size} categorie`)
+      tutte('ogni voce ha id, name_en, name_ja, aliases, in quest\'ordine', cat,
+        (c) => stessi(Object.keys(c), ['id', 'name_en', 'name_ja', 'aliases']))
+      tutte('gli id sono interi positivi', cat,
+        (c) => typeof c.id === 'number' && Number.isInteger(c.id) && c.id > 0)
+      check('...strettamente crescenti', cat.every((c, i) => i === 0 || cat[i - 1].id < c.id))
+      tutte('name_en e name_ja quelli di category_text (null senza la riga ja)', cat,
+        (c) => c.name_en === nelDb.get(c.id)?.en && c.name_ja === (nelDb.get(c.id)?.ja ?? null))
+      const conJa = cat.filter((c) => c.name_ja !== null).length
+      check('i nomi giapponesi ci sono (load-datamine, 0037)', conJa > 0 && conJa === [...nelDb.values()].filter((r) => r.ja).length,
+        `${conJa} su ${cat.length}`)
+      tutte('aliases: quelli di category_alias, minuscoli, senza doppioni, in ordine di code unit', cat, (c) => {
+        const attesi = [...(nelDb.get(c.id)?.alias ?? [])].sort()
+        return Array.isArray(c.aliases) && stessi(c.aliases, attesi) && new Set(c.aliases).size === c.aliases.length &&
+          c.aliases.every((a) => typeof a === 'string' && a === a.trim().toLowerCase() && a !== '')
+      })
+      check('ci sono degli alias', cat.some((c) => c.aliases.length > 0), `${cat.reduce((n, c) => n + c.aliases.length, 0)} alias`)
+      const fusion = cat.find((c) => c.id === 1)
+      check('l\'esempio del contratto: 1 Fusion フュージョン, senza alias',
+        fusion?.name_en === 'Fusion' && fusion.name_ja === 'フュージョン' && fusion.aliases.length === 0, JSON.stringify(fusion))
+      check('due letture danno gli stessi byte', JSON.stringify(categoriesPayload(await listCategoriesForApi())) === json)
+      check('niente orari nella risposta', !/\d{4}-\d{2}-\d{2}T\d{2}:/.test(json))
+      const byte = Buffer.byteLength(json)
+      check('pesa al massimo 3 unita\' di scrittura ISR (24 KB)', byte <= 3 * 8192, `${byte} byte`)
+    })
   })()
 } finally {
   try {

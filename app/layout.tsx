@@ -76,7 +76,7 @@ export default function RootLayout({ children }: LayoutProps<'/'>) {
               <Marchio className="size-6 shrink-0" />
               <span className="truncate">Dokkan Team Sharing</span>
             </LinkEventi>
-            <nav className="text-sm max-lg:hidden">
+            <nav aria-label="Main" className="text-sm max-lg:hidden">
               <LinkEventi className="text-tenue hover:text-inchiostro transition-colors">
                 Events
               </LinkEventi>
@@ -88,6 +88,15 @@ export default function RootLayout({ children }: LayoutProps<'/'>) {
             <div className="max-lg:hidden">
               <SceltaVersione variante="riga" />
             </div>
+            {/* L'app Android (app/category-helper), dai 1024px: dopo
+                l'interruttore, che resta accanto a Events (i suoi link lo
+                seguono, questo no), e prima della parte di destra. Fisso,
+                quindi niente si sposta. Sotto i 1024px e' nel burger. */}
+            <nav aria-label="Tools" className="text-sm max-lg:hidden">
+              <Link href="/category-helper" className="text-tenue hover:text-inchiostro transition-colors whitespace-nowrap">
+                Category Helper
+              </Link>
+            </nav>
             <div className="ml-auto shrink-0">
               <UserMenu />
             </div>

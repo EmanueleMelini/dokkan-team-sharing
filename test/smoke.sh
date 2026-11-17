@@ -490,6 +490,44 @@ else
     || pass "/events/$MEV/japan senza missioni (sono solo Global)"
 fi
 
+# L'app Android (README, "L'API delle categorie"): GET /api/v1/categories e'
+# un prerender pubblico, JSON, uguale per tutti, senza cookie ne' CORS; la
+# pagina /category-helper e' statica, col link all'APK, e il menu la linka.
+echo "l'app Android (/api/v1/categories, /category-helper)"
+intestazioni=$(curl -s -D - -o "$TMP/categorie" --max-time 120 "$BASE/api/v1/categories" | tr -d '\r')
+if grep -qiE '^HTTP/[0-9.]+ 200' <<<"$intestazioni" && grep -qi '^content-type: application/json; charset=utf-8' <<<"$intestazioni"; then
+  pass "/api/v1/categories (200, application/json; charset=utf-8)"
+else fail "/api/v1/categories: $(head -1 <<<"$intestazioni"), $(grep -i '^content-type' <<<"$intestazioni")"
+fi
+esito=$(node -e '
+  const b = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"))
+  const c = Array.isArray(b.categories) ? b.categories : []
+  const male = c.filter((x, i) => !Number.isInteger(x.id) || (i > 0 && c[i - 1].id >= x.id) || typeof x.name_en !== "string" ||
+    !(x.name_ja === null || typeof x.name_ja === "string") || !Array.isArray(x.aliases) || x.aliases.some((a) => typeof a !== "string"))
+  const chiavi = Object.keys(b).join(",")
+  console.log(chiavi === "version,categories" && b.version === 1 && c.length >= 99 && male.length === 0
+    ? `ok ${c.length}` : `no chiavi=${chiavi} version=${b.version} categorie=${c.length} sbagliate=${male.length}`)
+' "$TMP/categorie" 2>/dev/null) || esito='no (non e'"'"' JSON)'
+case "$esito" in
+  ok*) pass "/api/v1/categories: version 1, ${esito#ok } categorie con id numerici in ordine, name_en, name_ja, aliases" ;;
+  *) fail "/api/v1/categories: $esito" ;;
+esac
+grep -qi '^set-cookie' <<<"$intestazioni" && fail "/api/v1/categories manda un cookie" || pass "/api/v1/categories senza Set-Cookie"
+grep -qi '^access-control-allow-origin' <<<"$intestazioni" && fail "/api/v1/categories con un header CORS" \
+  || pass "/api/v1/categories senza header CORS"
+cc=$(grep -i '^cache-control:' <<<"$intestazioni" | head -1)
+if [ -n "$cc" ] && ! grep -qiE 'private|no-store' <<<"$cc"; then pass "/api/v1/categories non e' privata (${cc#*: })"
+else fail "/api/v1/categories: ${cc:-senza Cache-Control}"; fi
+codice=$(curl -s -o /dev/null -w '%{http_code}' --max-time 60 -X POST "$BASE/api/v1/categories") || codice=000
+[ "$codice" = 405 ] && pass "/api/v1/categories: POST 405" || fail "/api/v1/categories: POST ha risposto $codice, atteso 405"
+verifica "la pagina dell'app" /category-helper 200 'DokkanTS Category Helper' "$ERRORE"
+grep -qF 'href="https://github.com/EmanueleMelini/dokkan-team-sharing/releases/latest/download/dokkants-category-helper.apk"' "$TMP/html" \
+  && pass "/category-helper col link all'APK dell'ultima release" || fail "/category-helper senza il link all'APK"
+grep -qE '—|–' "$TMP/testo" && fail "/category-helper ha una lineetta lunga nel testo" || pass "/category-helper senza lineette lunghe"
+prendi /events
+grep -qE '<a [^>]*href="/category-helper"' "$TMP/html" && pass "/events: l'header linka /category-helper" \
+  || fail "/events: l'header senza il link a /category-helper"
+
 # La PWA (fase 1): manifest, icone con la misura vera (dall'IHDR), il
 # service worker senza cache lunga e la pagina offline. L'invito a
 # installare e' un'isola: nell'HTML del server non c'e'.
@@ -539,7 +577,9 @@ grep -qE 'Install Dokkan Team Sharing|Add to Home Screen' "$TMP/testo" && fail "
 if [ "${SMOKE_EXPECT_CACHE:-}" = 1 ]; then
   echo "la cache (next start o Vercel)"
   # /events/<id>?region=global (i link espliciti) e' la stessa pagina in cache
-  for p in /events /events/japan ${EZA:+/events/$EZA} ${EZA:+/events/$EZA?region=global} /cards/1032310 ${UTENTE:+/users/$UTENTE}; do
+  # e i due prerender dell'app Android: la rotta delle categorie e la sua pagina
+  for p in /events /events/japan ${EZA:+/events/$EZA} ${EZA:+/events/$EZA?region=global} /cards/1032310 ${UTENTE:+/users/$UTENTE} \
+    /api/v1/categories /category-helper; do
     curl -s -o /dev/null "$BASE$p"
     stato=$(curl -s -D - -o /dev/null "$BASE$p" | tr -d '\r' | grep -iE '^x-(nextjs|vercel)-cache:' | awk '{print $2}' | head -1)
     case "$stato" in

@@ -15,7 +15,8 @@
 //     bottoni con aria-pressed (un controllo a segmenti: lo stesso peso,
 //     hover solo sull'opzione non scelta, i bersagli, il focus, il velo),
 //     la prima riga del burger, il controllo dell'header dai 1024px
-//     accanto a Events, il tag JP sul bottone del burger, Settings, i
+//     accanto a Events, il posto della voce Category Helper (nel burger e
+//     nell'header), il tag JP sul bottone del burger, Settings, i
 //     link agli eventi della versione, gli avvisi statici e uguali per
 //     tutti (col link all'altra versione solo se li' c'e' una run), il focus
 //     di "Use ... everywhere", la cache del router dopo un cambio in
@@ -581,6 +582,16 @@ function guardieComponenti() {
     /<LinkEventi key="events" aria-current=\{suEventi \? 'page' : undefined\}/.test(menu) &&
     /const suEventi = pathname === homeHref\('global'\) \|\| pathname === homeHref\('japan'\)/.test(menu) && !/href="\/events"/.test(menu))
   check('il bottone dice "Menu, Japan version" in Japan', /versione === 'japan' \? 'Menu, Japan version' : 'Menu'/.test(menu))
+  // L'app Android (app/category-helper): per tutti, subito dopo Events e
+  // prima delle voci dell'account (Sign in, il profilo, Settings).
+  {
+    const voci = togliCommenti(menu.slice(menu.indexOf('const voci: ReactNode[] = ['), menu.indexOf('<div ref={contenitore}>')))
+    const [iEv, iCh, iConto] = [voci.indexOf('<LinkEventi key="events"'), voci.indexOf('<Link key="category-helper"'), voci.indexOf("if (mode === 'anon'")]
+    check('Category Helper nel burger, dopo Events e prima delle voci dell\'account, per tutti',
+      iEv > 0 && iCh > iEv && iConto > iCh &&
+      /<Link key="category-helper" href="\/category-helper" aria-current=\{qui\('\/category-helper'\)\} className=\{voce\}>Category Helper<\/Link>,\s*\]\s*if \(mode === 'anon'/.test(voci),
+      `${iEv} ${iCh} ${iConto}`)
+  }
 
   console.log('\n  -- l\'header (dai 1024px) e il tag JP')
   const um = file('components/auth/user-menu.tsx')
@@ -593,6 +604,13 @@ function guardieComponenti() {
   check('dai 1024px l\'interruttore compatto sta nel layout, subito dopo Events e prima della parte di destra',
     iNav > 0 && iScelta > iNav && iDestra > iScelta, `${iNav} ${iScelta} ${iDestra}`)
   check('...e non nella parte di destra, che cambia larghezza con /api/me', !/SceltaVersione/.test(togliCommenti(um)))
+  // L'app Android dai 1024px: dopo l'interruttore (che resta accanto a
+  // Events) e prima della parte di destra, quindi niente si sposta.
+  {
+    const iCh = layout.indexOf('<nav aria-label="Tools" className="text-sm max-lg:hidden">\n              <Link href="/category-helper"')
+    check('dai 1024px Category Helper sta nell\'header, dopo l\'interruttore e prima della parte di destra',
+      iCh > iScelta && iDestra > iCh && (layout.match(/href="\/category-helper"/g) ?? []).length === 1, `${iScelta} ${iCh} ${iDestra}`)
+  }
   // Sotto i 1024px il nome intero del sito ci sta a 320px con la campanella
   // solo se il tag non prende posto nella riga: sta sull'angolo del burger.
   const cluster = um.slice(um.indexOf('<div className="lg:hidden'), um.indexOf('<MenuMobile />'))

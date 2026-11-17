@@ -81,6 +81,10 @@ export function MenuMobile() {
       />
     </div>,
     <LinkEventi key="events" aria-current={suEventi ? 'page' : undefined} className={voce}>Events</LinkEventi>,
+    // l'app Android (app/category-helper): per tutti, dopo le sezioni del
+    // sito e prima delle voci dell'account. Una pagina statica del build:
+    // il prefetch non genera niente.
+    <Link key="category-helper" href="/category-helper" aria-current={qui('/category-helper')} className={voce}>Category Helper</Link>,
   ]
   if (mode === 'anon' || (mode !== 'unknown' && !user)) {
     voci.push(

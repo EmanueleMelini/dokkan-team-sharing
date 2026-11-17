@@ -123,6 +123,7 @@ for (const f of [
   'lib/queries.ts', 'lib/clears.ts', 'lib/cards.ts', 'lib/equipment.ts',
   'lib/tips.ts', 'lib/card-page.ts', 'lib/card-art.ts', 'lib/profiles.ts',
   'lib/clears/filtri.ts', 'lib/urls.ts', 'lib/robots.ts', 'lib/cache/vita.ts',
+  'lib/categories.ts', 'lib/category-helper.ts',
 ]) {
   const testo = readFileSync(new URL(`../../${f}`, import.meta.url), 'utf8')
   const trovato = testo.match(/['"]use cache|cacheTag\(|cacheLife\(|from 'next\/cache'/)
@@ -209,6 +210,36 @@ console.log('i tag del giro delle immagini sono sulle pagine giuste')
   check('la lista degli eventi: events-list', /export async function listEventsCached[\s\S]*?cacheTag\(TAG\.catalog, TAG\.eventsList\)/.test(data))
 }
 
+// GET /api/v1/categories (l'app Android) e' un prerender: la rotta non
+// legge la richiesta (leggerla ne farebbe una funzione a ogni chiamata), i
+// dati stanno in 'use cache' con catalog (gli import la rinfrescano), e gli
+// header sono pubblici, senza CORS e senza CDN-Cache-Control sopra la cache
+// ISR (README, "L'API delle categorie").
+console.log('l\'API delle categorie (app/api/v1/categories): un prerender')
+{
+  const rotta = senzaCommenti(file('app/api/v1/categories/route.ts'))
+  const cache = senzaCommenti(file('lib/cache/categories.ts'))
+  const cc = senzaCommenti(file('lib/cache/headers.ts')).match(/export const CACHE_CATEGORIE = \{([^}]*)\}/)?.[1] ?? ''
+  check('solo GET, e senza la richiesta (nessun parametro)', /export async function GET\(\) \{/.test(rotta) &&
+    !/export (?:async )?function (?:POST|PUT|PATCH|DELETE|OPTIONS|HEAD)\b/.test(rotta) &&
+    !/export const (?:dynamic|revalidate|runtime|fetchCache)\b/.test(rotta))
+  check('...e niente che legga la richiesta', !/next\/headers|next\/server|\brequest\b|searchParams|cookies\(|headers\(\)|connection\(/.test(rotta))
+  check('il corpo dalla cache: categoriesPayload(await listCategoriesForApiCached())',
+    /categoriesPayload\(await listCategoriesForApiCached\(\)\)/.test(rotta))
+  check('la cache: \'use cache\', cacheLife e cacheTag catalog, sopra la lettura pura',
+    /export async function listCategoriesForApiCached\(\) \{\s*'use cache'\s*cacheLife\('catalog'\)\s*cacheTag\(TAG\.catalog\)\s*return listCategoriesForApi\(\)\s*\}/.test(cache))
+  check('JSON in utf-8, con CACHE_CATEGORIE', /'Content-Type': 'application\/json; charset=utf-8', \.\.\.CACHE_CATEGORIE \}/.test(rotta))
+  check('CACHE_CATEGORIE: public, senza CDN-Cache-Control', /^\s*'Cache-Control': 'public, max-age=\d+',?\s*$/.test(cc), cc.trim())
+  check('niente CORS', !/Access-Control/i.test(rotta) && !/Access-Control/i.test(cc))
+  // La sua pagina e' statica: un prerender del build che non si rigenera
+  // mai. Un dato del database la farebbe riscrivere a ogni import.
+  const pagina = senzaCommenti(file('app/category-helper/page.tsx'))
+  check('/category-helper: niente dati, niente richiesta',
+    !/from '@\/lib\/(?:cache|db|queries|categories|dal|auth|versione\/server)|from 'next\/(?:headers|cache)'|searchParams|params\b|'use cache'/.test(pagina))
+  check('...e niente lineette lunghe nel testo (anche nel paragrafo della Privacy Policy)',
+    !/[–—]/.test(file('app/category-helper/page.tsx')) && !/[–—]/.test(file('app/privacy/page.tsx')))
+}
+
 console.log('le missioni solo sulla pagina dell\'evento')
 {
   const evento = file('components/evento/pagina.tsx')
@@ -284,6 +315,7 @@ console.log('le letture in cache hanno un ordine deterministico')
   const MODULI: Record<string, string> = {
     queries: 'lib/queries.ts', clears: 'lib/clears.ts', 'card-page': 'lib/card-page.ts',
     profiles: 'lib/profiles.ts', tips: 'lib/tips.ts', 'clears/build': 'lib/clears/build.ts',
+    categories: 'lib/categories.ts',
   }
   // le funzioni dei moduli che lib/cache/* avvolge con 'use cache'
   const usate: [string, string][] = []
@@ -401,6 +433,7 @@ console.log('le letture in cache hanno un ordine deterministico')
     ['e', 'resolveHandle: id di evento, la union toglie i doppioni'],
     ['p.clears desc, p.handle', 'handle unico (citext)'],
     ['t.stage_tier_id nulls first, t.rn_top', 'row_number per tier: rn_top unico nel tier'],
+    ['a.alias collate "C"', 'category_alias: primary key (category_id, alias), category_id fissato (gli alias di una categoria)'],
   ])
   const ORDINI = ['ORDINE_CLEAR', 'ORDINE_CLEAR_NUOVI', 'ORDINE_CLEAR_TURNI']
   check('gli ordini dei clear finiscono con c.id', ORDINI.every((n) => conChiave(costanti.get(n) ?? '')),
@@ -431,6 +464,9 @@ console.log('niente Date.now o Math.random nel render delle pagine')
     'lib/queries.ts', 'lib/clears.ts', 'lib/card-page.ts', 'lib/profiles.ts', 'lib/tips.ts', 'lib/clears/build.ts',
     'lib/clears/vista.ts', 'lib/clears/filtri-pagina.ts', 'lib/date.ts', 'lib/urls.ts', 'lib/robots.ts', 'lib/segnaposto.ts',
     'lib/livelli.ts', ...sorgenti('lib/versione'),
+    // le rotte di app/api restano fuori, tranne i prerender: le categorie
+    // dell'app Android, e le loro letture
+    'app/api/v1/categories/route.ts', 'lib/categories.ts',
   ]
   const trovati = radici.filter((rel) => !AMMESSI.has(rel) &&
     /Date\.now\(|new Date\(\)|Math\.random\(|randomUUID\(|performance\.now\(|getRandomValues\(/.test(senzaCommenti(file(rel))))

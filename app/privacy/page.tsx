@@ -12,7 +12,8 @@ export const metadata: Metadata = {
 // app_user, auth_*, clear_*, report, moderation_action, notification,
 // email_quota, push_subscription, push_sent; lib/auth/config.ts,
 // lib/notify/digest.ts, lib/notify/payload.ts, lib/notify/push-client.ts,
-// lib/notify/attivita.ts):
+// lib/notify/attivita.ts; per l'app Android, android/ e
+// app/api/v1/categories/route.ts):
 // se cambia il codice, va cambiata anche questa pagina.
 export default function Privacy() {
   const mail = `mailto:${LEGALE.contatto}`
@@ -154,6 +155,19 @@ export default function Privacy() {
         If you turn on browser notifications, your browser also keeps in its local storage your
         handle and when it last checked its notification setting with the site, so it does that at
         most once a day. Signing out removes it.
+      </p>
+
+      <h2>The Android app</h2>
+      <p>
+        The <Link href="/category-helper">DokkanTS Category Helper</Link> app has no account and no analytics. What
+        you save in it (your dictionary, favorites, recent picks and settings) stays on your phone, and Android can
+        also copy it into your phone&apos;s backup in your Google account and onto a new phone when you move to one.
+        Those copies follow your Android backup settings and are handled by Android and Google. On Android 9 and
+        newer, if your phone has a screen lock (PIN, pattern or password), the backup is end-to-end encrypted with
+        it. The site never receives them. The app contacts the site only when you tap Check for updates, to
+        download the public list of game categories from {LEGALE.sito}/api/v1/categories. That request carries no
+        account, no device identifier and nothing from your dictionary: for the site it is the same as browsing
+        without an account.
       </p>
 
       <h2>Who else handles the data</h2>
