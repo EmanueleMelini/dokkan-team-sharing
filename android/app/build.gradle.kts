@@ -44,10 +44,11 @@ android {
         applicationId = "it.emanuelemelini.dokkants.categoryhelper"
         minSdk = 26
         targetSdk = 37
-        versionCode = 6
+        versionCode = 7
         // 1.0.0: English UI (Italian translation), game ids in the dictionary, "Check for updates",
         // signed releases on GitHub
-        versionName = "1.0.0"
+        // 1.1.0: automatic "Check for updates", at most once a day when Dokkan comes to the front
+        versionName = "1.1.0"
     }
 
     signingConfigs {
@@ -62,6 +63,14 @@ android {
     }
 
     buildTypes {
+        // Debug builds install next to the release from GitHub: another id (.debug), "-debug" in the
+        // version (also in the User-Agent of Check for updates), and in src/debug/res another name
+        // ("(debug)", "CH debug" on the home screen) and another icon and bubble background.
+        // Their data are separate from the release's.
+        debug {
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
+        }
         release {
             isMinifyEnabled = false
             // Null without the DCH_* signing values (and then checkReleaseSigning fails the build)

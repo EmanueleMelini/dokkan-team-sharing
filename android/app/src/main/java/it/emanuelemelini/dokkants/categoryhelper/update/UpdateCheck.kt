@@ -13,7 +13,7 @@ import java.net.URI
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-/** What a manual "Check for updates" did. */
+/** What a "Check for updates" did (the button, or the automatic check of the service). */
 sealed interface UpdateResult {
     data class Added(val categories: List<Category>) : UpdateResult
     data object UpToDate : UpdateResult
@@ -38,9 +38,11 @@ sealed interface UpdateResult {
 }
 
 /**
- * The only network access of the app, and only when the user taps "Check for updates": one GET of
- * [CategoryUpdates.URL], then the new categories are appended ([DictionaryRepository.addNew]).
- * Nothing runs in the background, nothing is sent besides the request itself.
+ * The only network access of the app: one GET of [CategoryUpdates.URL], then the new categories are
+ * appended ([DictionaryRepository.addNew]). It runs when the user taps "Check for updates" and, if
+ * the setting is on, at most once a day when the monitored app comes to the front
+ * ([AutoUpdatePolicy], from the accessibility service). No scheduled or periodic work, nothing is
+ * sent besides the request itself.
  */
 object UpdateCheck {
 

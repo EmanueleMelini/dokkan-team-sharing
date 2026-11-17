@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Italian translation of values/strings.xml (non-translatable strings live only there). -->
 <resources xmlns:tools="http://schemas.android.com/tools" tools:locale="it">
-    <string name="service_description">Mostra una piccola bolla sopra Dokkan Battle JP per cercare le categorie in inglese e inserirne il nome giapponese nel campo di ricerca del gioco. Legge solo quale app è in primo piano e il campo di ricerca del gioco. Va in rete solo quando tocchi «Controlla aggiornamenti».</string>
+    <string name="service_description">Mostra una piccola bolla sopra Dokkan Battle JP per cercare le categorie in inglese e inserirne il nome giapponese nel campo di ricerca del gioco. Legge solo quale app è in primo piano e il campo di ricerca del gioco. Va in rete solo per scaricare l\'elenco delle categorie: quando tocchi «Controlla aggiornamenti» e quando apri Dokkan, al massimo una volta al giorno o un\'ora dopo un controllo non riuscito (si può disattivare nell\'app).</string>
 
     <!-- Service -->
     <string name="section_service">Servizio di accessibilità</string>
@@ -64,6 +64,15 @@
     <string name="update_failed_invalid">Controllo non riuscito: risposta inattesa.</string>
     <string name="update_failed_newer">I dati aggiornati richiedono una versione più recente dell\'app: installa l\'ultima release.</string>
     <string name="update_failed_storage">Non è stato possibile salvare le categorie nuove. Controlla che il telefono abbia spazio libero e riprova.</string>
+    <string name="auto_update">Controlla gli aggiornamenti in automatico</string>
+    <string name="auto_update_hint">Quando apri Dokkan e compare la bolla: al massimo una volta al giorno, o un\'ora dopo un controllo non riuscito. Scarica solo l\'elenco pubblico delle categorie.</string>
+    <string name="auto_update_last_up_to_date">Ultimo controllo automatico: %1$s. Dizionario già aggiornato.</string>
+    <plurals name="auto_update_last_added">
+        <item quantity="one">Ultimo controllo automatico: %1$s. Aggiunta %2$d categoria nuova.</item>
+        <item quantity="many">Ultimo controllo automatico: %1$s. Aggiunte %2$d categorie nuove.</item>
+        <item quantity="other">Ultimo controllo automatico: %1$s. Aggiunte %2$d categorie nuove.</item>
+    </plurals>
+    <string name="auto_update_last_failed">Ultimo controllo automatico: %1$s. Non riuscito.</string>
 
     <!-- About -->
     <string name="section_about">Informazioni</string>

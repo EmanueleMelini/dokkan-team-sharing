@@ -73,6 +73,7 @@ import it.emanuelemelini.dokkants.categoryhelper.dictionary.DictionaryRepository
 import it.emanuelemelini.dokkants.categoryhelper.history.HistoryRepository
 import it.emanuelemelini.dokkants.categoryhelper.service.DokkanAccessibilityService
 import it.emanuelemelini.dokkants.categoryhelper.settings.AppSettings
+import it.emanuelemelini.dokkants.categoryhelper.settings.AutoCheckRecord
 import it.emanuelemelini.dokkants.categoryhelper.settings.InsertMode
 import it.emanuelemelini.dokkants.categoryhelper.settings.SettingsRepository
 import it.emanuelemelini.dokkants.categoryhelper.update.UpdateCheck
@@ -96,6 +97,7 @@ fun SettingsScreen() {
 
     val settings by repository.settings.collectAsStateWithLifecycle(initialValue = null)
     val rawPackage by repository.rawTargetPackage.collectAsStateWithLifecycle(initialValue = null)
+    val lastAutoCheck by repository.lastAutoCheck.collectAsStateWithLifecycle(initialValue = null)
     val connected by DokkanAccessibilityService.connected.collectAsStateWithLifecycle()
     val dictionary by dictionaryRepository.dictionary.collectAsStateWithLifecycle()
     val dictionaryEdited by dictionaryRepository.edited.collectAsStateWithLifecycle()
@@ -173,6 +175,9 @@ fun SettingsScreen() {
                             snackbar.showSnackbar(updateMessage(resources, result))
                         }
                     },
+                    autoUpdate = current.autoUpdate,
+                    onAutoUpdate = { scope.launch { repository.setAutoUpdate(it) } },
+                    lastAutoCheck = lastAutoCheck,
                 )
                 DiagnosticsSection(
                     enabled = current.debugLog,
@@ -359,7 +364,12 @@ private fun DictionarySection(
     onClearRecents: () -> Unit,
     checking: Boolean,
     onCheckUpdates: () -> Unit,
+    autoUpdate: Boolean,
+    onAutoUpdate: (Boolean) -> Unit,
+    lastAutoCheck: AutoCheckRecord?,
 ) {
+    val context = LocalContext.current
+    val resources = LocalResources.current
     Section(stringResource(R.string.section_dictionary)) {
         Text(
             text = if (dictionary == null) {
@@ -388,6 +398,12 @@ private fun DictionarySection(
         Text(stringResource(R.string.update_hint), style = MaterialTheme.typography.bodyMedium)
         OutlinedButton(onClick = onCheckUpdates, enabled = !checking && dictionary != null) {
             Text(stringResource(if (checking) R.string.update_checking else R.string.update_check))
+        }
+        SwitchRow(stringResource(R.string.auto_update), autoUpdate, onAutoUpdate)
+        Text(stringResource(R.string.auto_update_hint), style = MaterialTheme.typography.bodyMedium)
+        // Hidden until the first automatic check
+        if (lastAutoCheck != null) {
+            Text(lastAutoCheckText(context, resources, lastAutoCheck), style = MaterialTheme.typography.bodyMedium)
         }
     }
 }

@@ -7,7 +7,7 @@
     <string name="service_label" translatable="false">DokkanTS Category Helper</string>
     <!-- Label of the launcher activity only (home screen, recent apps): the full name would be cut there. -->
     <string name="launcher_name" translatable="false">Category Helper</string>
-    <string name="service_description">Shows a small bubble over Dokkan Battle JP so you can search categories in English and put the Japanese name into the game\'s search field. It only reads which app is in front and the game\'s search field. It goes online only when you tap Check for updates.</string>
+    <string name="service_description">Shows a small bubble over Dokkan Battle JP so you can search categories in English and put the Japanese name into the game\'s search field. It only reads which app is in front and the game\'s search field. It goes online only to download the list of categories: when you tap Check for updates, and when you open Dokkan, at most once a day or an hour after a check that failed (you can turn this off in the app).</string>
 
     <!-- Service -->
     <string name="section_service">Accessibility service</string>
@@ -73,6 +73,16 @@
     <string name="update_failed_invalid">Update check failed: unexpected response.</string>
     <string name="update_failed_newer">The update data needs a newer version of this app. Install the latest release.</string>
     <string name="update_failed_storage">Could not save the new categories. Check that the phone has free space and try again.</string>
+    <string name="auto_update">Check for updates automatically</string>
+    <string name="auto_update_hint">When you open Dokkan and the bubble appears: at most once a day, or an hour after a check that failed. It downloads only the public list of categories.</string>
+    <string name="auto_update_last_up_to_date">Last automatic check: %1$s. Already up to date.</string>
+    <plurals name="auto_update_last_added">
+        <item quantity="one">Last automatic check: %1$s. Added %2$d new category.</item>
+        <item quantity="other">Last automatic check: %1$s. Added %2$d new categories.</item>
+    </plurals>
+    <string name="auto_update_last_failed">Last automatic check: %1$s. Failed.</string>
+    <!-- Message over the game after an automatic check that added categories: the app name, then update_added. -->
+    <string name="auto_update_message" translatable="false">%1$s: %2$s</string>
 
     <!-- About -->
     <string name="section_about">About</string>

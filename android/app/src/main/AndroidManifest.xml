@@ -1,9 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- INTERNET only for the manual "Check for updates" (settings and dictionary editor): one
-         HTTPS GET of https://dokkants.app/api/v1/categories when the user taps it. Nothing runs in
-         the background, no analytics, nothing else goes online. -->
+    <!-- INTERNET only for "Check for updates": one HTTPS GET of
+         https://dokkants.app/api/v1/categories when the user taps it (settings and dictionary
+         editor) and, unless turned off in the settings, when Dokkan comes to the front, at most once
+         a day or an hour after a check that failed (the accessibility service). No scheduled or
+         periodic work, no analytics, nothing else goes online. -->
     <uses-permission android:name="android.permission.INTERNET" />
 
     <!-- Makes launchable apps visible to PackageManager (Android 11+), so the settings can list

@@ -225,6 +225,9 @@ export default function CategoryHelper() {
               <Uso icona={<ArrowsClockwise {...icona} />} nome="Check for updates">
                 Downloads the new categories from Dokkan Team Sharing and adds the ones you do not have yet.
                 Nothing you already have changes, edits included, and a category you deleted is not added back.
+                The app also checks by itself when you open Dokkan, at most once a day or an hour after a check
+                that failed, and tells you only when it adds something. To stop that, turn off Check for updates
+                automatically in the app settings.
               </Uso>
             </div>
           </Sezione>
@@ -264,8 +267,10 @@ export default function CategoryHelper() {
                 and never taps anything for you.
               </li>
               <li>
-                The app goes online only when you tap Check for updates, to download the list from{' '}
-                <code className={`${codice} [overflow-wrap:anywhere]`}>{LEGALE.sito}{CATEGORY_HELPER.api}</code>. The request carries no
+                The app goes online only to download the list from{' '}
+                <code className={`${codice} [overflow-wrap:anywhere]`}>{LEGALE.sito}{CATEGORY_HELPER.api}</code>: when you open
+                Dokkan, at most once a day or an hour after a check that failed (you can turn this off in the app
+                settings), and when you tap Check for updates. The request is the same either way and carries no
                 account, no device id and nothing from your dictionary, like opening a page of this site without
                 signing in.
               </li>

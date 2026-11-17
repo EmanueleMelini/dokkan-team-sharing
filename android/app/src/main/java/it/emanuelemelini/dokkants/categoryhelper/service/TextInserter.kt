@@ -4,7 +4,6 @@ import android.accessibilityservice.AccessibilityService
 import android.os.Bundle
 import android.os.Handler
 import android.view.accessibility.AccessibilityNodeInfo
-import android.widget.Toast
 import it.emanuelemelini.dokkants.categoryhelper.R
 import it.emanuelemelini.dokkants.categoryhelper.diagnostics.DebugLog
 import it.emanuelemelini.dokkants.categoryhelper.diagnostics.NodeDumper
@@ -14,7 +13,7 @@ import it.emanuelemelini.dokkants.categoryhelper.diagnostics.NodeDumper
  *
  * After a selection the Japanese name is already in the clipboard; here it becomes the pending
  * text. The first editable field of the monitored app that has input focus gets it, trying in
- * order ACTION_SET_TEXT, then ACTION_PASTE; if both are refused a toast says to paste by hand.
+ * order ACTION_SET_TEXT, then ACTION_PASTE; if both are refused a message says to paste by hand.
  * Only one attempt per pending text, and it expires after [PENDING_TIMEOUT_MS].
  *
  * Variant: if the game's field is still focused when the panel closes (or the field focused before
@@ -24,6 +23,8 @@ class TextInserter(
     private val service: AccessibilityService,
     private val handler: Handler,
     private val onPendingChanged: (Boolean) -> Unit,
+    /** Shows a short message over the game (the service's MessageOverlay, not a toast). */
+    private val showMessage: (CharSequence) -> Unit,
 ) {
     /** Package whose fields may receive the text (the monitored app). */
     var targetPackage: String = ""
@@ -109,7 +110,7 @@ class TextInserter(
             return
         }
         DebugLog.d { "insert: SET_TEXT and PASTE refused" }
-        Toast.makeText(service, R.string.insert_failed, Toast.LENGTH_LONG).show()
+        showMessage(service.getString(R.string.insert_failed))
     }
 
     private fun logResult(node: AccessibilityNodeInfo, expected: String) {

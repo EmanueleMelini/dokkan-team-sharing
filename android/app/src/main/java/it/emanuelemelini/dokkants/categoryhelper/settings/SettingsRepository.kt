@@ -6,8 +6,10 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import it.emanuelemelini.dokkants.categoryhelper.DokkanPackages
+import it.emanuelemelini.dokkants.categoryhelper.update.AutoUpdatePolicy
 import java.io.IOException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
@@ -29,6 +31,8 @@ data class AppSettings(
     val insertMode: InsertMode = InsertMode.AUTO,
     /** Foreground decisions and focused nodes in Logcat (tag DokkanHelper). */
     val debugLog: Boolean = false,
+    /** Check for updates by itself, at most once a day, when the monitored app comes to the front. */
+    val autoUpdate: Boolean = true,
 ) {
     companion object {
         const val DEFAULT_OPACITY = 0.35f
@@ -39,6 +43,12 @@ data class AppSettings(
         const val DEFAULT_Y_FRACTION = 0.3f
     }
 }
+
+/**
+ * The last automatic update check: when it started (epoch ms) and how it ended. Kept apart from
+ * [AppSettings], so recording a check does not re-apply the settings to the bubble.
+ */
+data class AutoCheckRecord(val atMs: Long, val outcome: AutoUpdatePolicy.Outcome)
 
 enum class InsertMode {
     /** Also write the Japanese name into the game's search field (pending insertion, Phase 3). */
@@ -67,7 +77,24 @@ class SettingsRepository(context: Context) {
                     ?.let { stored -> InsertMode.entries.firstOrNull { it.name == stored } }
                     ?: InsertMode.AUTO,
                 debugLog = prefs[DEBUG_LOG] ?: false,
+                autoUpdate = prefs[AUTO_UPDATE] ?: true,
             )
+        }
+        .distinctUntilChanged()
+
+    /** Null until the first automatic check. */
+    val lastAutoCheck: Flow<AutoCheckRecord?> = store.data
+        .catch { error -> if (error is IOException) emit(emptyPreferences()) else throw error }
+        .map { prefs ->
+            prefs[LAST_AUTO_CHECK_AT]?.let { at ->
+                AutoCheckRecord(
+                    atMs = at,
+                    outcome = AutoUpdatePolicy.Outcome(
+                        failed = prefs[LAST_AUTO_CHECK_FAILED] ?: true,
+                        added = prefs[LAST_AUTO_CHECK_ADDED] ?: 0,
+                    ),
+                )
+            }
         }
         .distinctUntilChanged()
 
@@ -115,6 +142,26 @@ class SettingsRepository(context: Context) {
         store.edit { it[DEBUG_LOG] = value }
     }
 
+    suspend fun setAutoUpdate(value: Boolean) {
+        store.edit { it[AUTO_UPDATE] = value }
+    }
+
+    /** Written before going online: until [recordAutoCheckOutcome] the attempt counts as failed. */
+    suspend fun recordAutoCheckAttempt(atMs: Long) {
+        store.edit {
+            it[LAST_AUTO_CHECK_AT] = atMs
+            it[LAST_AUTO_CHECK_FAILED] = AutoUpdatePolicy.UNFINISHED.failed
+            it[LAST_AUTO_CHECK_ADDED] = AutoUpdatePolicy.UNFINISHED.added
+        }
+    }
+
+    suspend fun recordAutoCheckOutcome(outcome: AutoUpdatePolicy.Outcome) {
+        store.edit {
+            it[LAST_AUTO_CHECK_FAILED] = outcome.failed
+            it[LAST_AUTO_CHECK_ADDED] = outcome.added
+        }
+    }
+
     private companion object {
         val AUTO_SHOW = booleanPreferencesKey("auto_show")
         val TARGET_PACKAGE = stringPreferencesKey("target_package")
@@ -124,5 +171,9 @@ class SettingsRepository(context: Context) {
         val BUBBLE_Y_FRACTION = floatPreferencesKey("bubble_y_fraction")
         val INSERT_MODE = stringPreferencesKey("insert_mode")
         val DEBUG_LOG = booleanPreferencesKey("debug_log")
+        val AUTO_UPDATE = booleanPreferencesKey("auto_update")
+        val LAST_AUTO_CHECK_AT = longPreferencesKey("last_auto_check_at")
+        val LAST_AUTO_CHECK_FAILED = booleanPreferencesKey("last_auto_check_failed")
+        val LAST_AUTO_CHECK_ADDED = intPreferencesKey("last_auto_check_added")
     }
 }

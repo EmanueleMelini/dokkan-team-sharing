@@ -2486,9 +2486,13 @@ release dell'app (un tag `category-helper-vX.Y.Z`, `android/README.md`,
 ## L'API delle categorie e la pagina /category-helper
 
 L'app Android DokkanTS Category Helper prende le categorie nuove da
-`GET /api/v1/categories` (il pulsante "Check for updates": aggiunge quelle
-che non ha, non tocca le altre). La pagina `/category-helper` la presenta e
-la fa scaricare.
+`GET /api/v1/categories` ("Check for updates": aggiunge quelle che non ha,
+non tocca le altre). La chiama quando si tocca il pulsante e, dalla 1.1.0,
+da sola al più una volta al giorno, quando si apre Dokkan (di nuovo dopo
+un'ora solo se il tentativo è fallito; si spegne nelle impostazioni
+dell'app): niente lavori pianificati né risvegli, la stessa richiesta del
+pulsante (`android/README.md`, "Il controllo automatico").
+La pagina `/category-helper` la presenta e la fa scaricare.
 
 **Il contratto** (`app/api/v1/categories/route.ts`), che l'app conosce:
 
@@ -3661,7 +3665,10 @@ regole valgono subito) e il traffico bloccato non si paga. Su Hobby ci sono
   categorie online, nella stessa regola (condizione in OR, nessuno slot in
   più) anche il percorso che comincia con `/api/v1/`: è statica e dal CDN
   non costa funzioni né scritture, ma ogni risposta (circa 8 KB) consuma
-  banda, e l'app fa una richiesta solo quando si tocca "Check for updates".
+  banda, e da sola l'app chiama al più una volta al giorno, quando si apre
+  Dokkan (di nuovo dopo un'ora solo se il tentativo è fallito), più le
+  volte che si tocca "Check for updates": un telefono resta lontano dal
+  limite.
   Il resto di `/api/` resta fuori.
 - **Domini**: `dokkants.emanuelemelini.dev` e il dominio `*.vercel.app` del
   progetto come redirect 308 verso `dokkants.app` (Settings → Domains),

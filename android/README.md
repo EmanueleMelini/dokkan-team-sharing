@@ -17,11 +17,12 @@ L'app Android di Dokkan Team Sharing per cercare le **categorie** di *Dragon Bal
 | Fase 3 | Inserimento diretto nel campo del gioco | ✅ |
 | Fase 4 | Editor del dizionario, import/export | ✅ (v0.4.0) |
 | 1.0.0 | Interfaccia in inglese (con l'italiano), `gameId` nel dizionario, dizionario dai dati del gioco, «Check for updates», release firmate | da provare sul telefono |
+| 1.1.0 | «Check for updates» automatico, al massimo una volta al giorno quando si apre Dokkan; interruttore nelle impostazioni; avviso solo quando aggiunge categorie | da provare sul telefono |
 
 ## Rispetto alla specifica
 
 - Interfaccia in inglese con la traduzione italiana (la specifica diceva stringhe in italiano).
-- Permesso INTERNET, ma solo per **Check for updates**: una richiesta quando la tocchi, niente in background, niente analytics.
+- Permesso INTERNET, ma solo per **Check for updates**: una richiesta quando la tocchi e, con **Check for updates automatically** acceso (default), quando apri Dokkan, al massimo una al giorno o un'ora dopo un controllo fallito. Niente lavori pianificati o periodici, niente analytics.
 - Eventi di accessibilità `typeWindowStateChanged|typeWindowsChanged|typeViewFocused`, senza `typeWindowContentChanged` (non serve e consuma batteria).
 - Oltre all'APK locale, release firmate su GitHub, automatiche a ogni tag (sotto, «Il rilascio»).
 
@@ -33,19 +34,19 @@ L'app Android di Dokkan Team Sharing per cercare le **categorie** di *Dragon Bal
 - `app/src/main/res/values/strings.xml` (inglese) e `values-it/strings.xml` (italiano);
 - `app/src/main/assets/categories.json`: il dizionario incluso, generato (sotto);
 - l'icona e la bolla, generate dal marchio del sito (l'Anello Ki con la lente al posto del disco): `app/src/main/res/drawable/ic_launcher_foreground.xml`, `ic_launcher_monochrome.xml` (icone a tema) e `ic_bubble_foreground.xml` (la bolla e la sua anteprima: lo stesso disegno ritagliato ai 72 dp che il launcher mostra), `mipmap-anydpi/ic_launcher.xml`, `values/ic_launcher_background.xml`. Non si modificano a mano: dalla radice del repository `node scripts/brand/icona-android.mjs` (o `npm run brand`, che rifà anche le icone del sito). `db/test/android-icon.test.mjs` è rosso finché non coincidono col marchio, e il workflow della release si ferma;
-- `app/src/test/…`: i test unitari (formato del dizionario, avvio e categorie eliminate, ricerca, regola e richiesta di Check for updates);
+- `app/src/test/…`: i test unitari (formato del dizionario, avvio e categorie eliminate, ricerca, regola e richiesta di Check for updates, quando parte il controllo automatico e cosa ne resta);
 - `release-notes/X.Y.Z.md`: le note di ogni release su GitHub, in inglese (sotto, «Il rilascio»). La release la fa `.github/workflows/category-helper-release.yml`, dalla radice del repository.
 
 ### Mappa del codice
 
 In `app/src/main/java/it/emanuelemelini/dokkants/categoryhelper/`:
 
-- `service/DokkanAccessibilityService`: l'unico servizio. Legge le impostazioni, decide l'app in primo piano (`service/ForegroundApp`: la finestra attiva) e mostra o nasconde la bolla (300 ms prima di nasconderla; con l'app in primo piano sconosciuta non cambia niente; nascosta a schermo spento o bloccato).
-- `overlay/BubbleOverlay`: la bolla (View classiche). `overlay/SearchPanel`: il pannello, una finestra a schermo intero `TYPE_ACCESSIBILITY_OVERLAY` che prende il focus e ospita Compose (`OverlayLifecycleOwner`); `SearchPanelContent` è la scheda.
+- `service/DokkanAccessibilityService`: l'unico servizio. Legge le impostazioni, decide l'app in primo piano (`service/ForegroundApp`: la finestra attiva) e mostra o nasconde la bolla (300 ms prima di nasconderla; con l'app in primo piano sconosciuta non cambia niente; nascosta a schermo spento o bloccato). Quando l'app monitorata arriva in primo piano fa partire il controllo automatico degli aggiornamenti, se è il momento (sotto, «Il controllo automatico»).
+- `overlay/BubbleOverlay`: la bolla (View classiche). `overlay/MessageOverlay`: gli avvisi brevi sopra il gioco, una finestra `TYPE_ACCESSIBILITY_OVERLAY` che non prende né il focus né i tocchi, al posto dei toast (da Android 13 il sistema scarta i toast di un servizio di accessibilità senza il permesso delle notifiche, che l'app non chiede). `overlay/SearchPanel`: il pannello, una finestra a schermo intero `TYPE_ACCESSIBILITY_OVERLAY` che prende il focus e ospita Compose (`OverlayLifecycleOwner`); `SearchPanelContent` è la scheda.
 - `service/TextInserter`: il testo in attesa (30 s, un tentativo) e l'inserimento nel campo con il focus dell'app monitorata: `SET_TEXT`, poi `PASTE`, poi l'avviso.
 - `dictionary/Category`: `id` (lo slug, la chiave di recenti e preferiti, non cambia mai), `en`, `jp`, `aliases`, `gameId` facoltativo. `dictionary/DictionaryFormat`: lettura tollerante, scrittura, `uniqueId`, `merge`. `dictionary/DictionaryRepository`: il dizionario condiviso da servizio ed editor, i file in memoria interna. `dictionary/StoredDictionary`: le sue regole pure (quale dizionario all'avvio, i `gameId` dallo slug, le categorie eliminate).
-- `update/CategoryUpdates`: il payload dell'API e la regola di cosa aggiungere (puri). `update/UpdateCheck`: la richiesta HTTP e l'esito.
-- `ui/SettingsScreen` (le impostazioni), `DictionaryActivity` e `ui/DictionaryScreen` (l'editor), `ui/UpdateUi` (i messaggi di Check for updates, il link Instructions).
+- `update/CategoryUpdates`: il payload dell'API e la regola di cosa aggiungere (puri). `update/UpdateCheck`: la richiesta HTTP e l'esito. `update/AutoUpdatePolicy`: quando parte il controllo automatico e cosa ne resta (puro).
+- `ui/SettingsScreen` (le impostazioni), `DictionaryActivity` e `ui/DictionaryScreen` (l'editor), `ui/UpdateUi` (i messaggi di Check for updates, anche l'avviso e la riga del controllo automatico, il link Instructions).
 - `search/CategorySearch`: normalizzazione e ordine dei risultati. `history/HistoryRepository`: recenti e preferiti. `settings/`: il DataStore e le impostazioni. `AppInfo`: versione e URL delle istruzioni. `diagnostics/`: il log (`DebugLog`) e il dump dei nodi.
 
 ## Build
@@ -65,7 +66,8 @@ Si usano i task di debug: `./gradlew build`, `./gradlew assemble` e `assembleRel
 
 - **Dalla release** (chi usa l'app): scarica [dokkants-category-helper.apk](https://github.com/EmanueleMelini/dokkan-team-sharing/releases/latest/download/dokkants-category-helper.apk) sul telefono, aprilo e consenti l'installazione da quella fonte. È il link della pagina `/category-helper` del sito.
 - **Per lo sviluppo**: `adb install -r app/build/outputs/apk/debug/app-debug.apk`. Con più telefoni collegati serve `adb -s <seriale>` (vedi `adb devices`); su quali telefoni provare lo dicono le note private del proprietario, non questo repository.
-- La build di debug e quella di release hanno firme diverse: Android non installa l'una sopra l'altra. Per passare da una all'altra va disinstallata l'app, e si perdono dizionario, impostazioni, recenti e preferiti: prima esporta il dizionario (⋮ → **Export JSON…**) e poi reimportalo.
+- **Debug e release convivono.** La build di debug ha un id suo, `it.emanuelemelini.dokkants.categoryhelper.debug` (`applicationIdSuffix` in `app/build.gradle.kts`), la versione con `-debug` (anche nello User-Agent di Check for updates), e in `app/src/debug/res/` un nome suo («DokkanTS Category Helper (debug)», «CH debug» sotto l'icona) e uno sfondo color ruggine per l'icona e la bolla. Sul telefono sono due app, con dati separati, firme diverse e due servizi di accessibilità: accendine uno alla volta, se no compaiono due bolle. La release resta `it.emanuelemelini.dokkants.categoryhelper`. Per spostare il dizionario fra le due: ⋮ → **Export JSON…** nell'una, **Import JSON…** nell'altra.
+- Le build di debug fatte prima della 1.1.0 avevano l'id della release, firmato con la chiave di debug: Android non ci installa sopra la release. Va disinstallata, dopo aver esportato il dizionario se serve.
 
 ## Attivare il servizio
 
@@ -80,7 +82,7 @@ Su ColorOS/OxygenOS conviene togliere l'ottimizzazione batteria all'app, altrime
 - **Visibility**: bolla automatica sì/no e package dell'app da monitorare (default Dokkan JP, oppure scegli tra le app Dokkan installate).
 - **Insertion**: **Automatic** (default) oppure **Clipboard only**.
 - **Bubble**: opacità (default 35%) e dimensione (36-72 dp) con anteprima; riporta la bolla al bordo destro.
-- **Dictionary**: numero di categorie, preferiti e recenti; **Open the editor**, **Clear recents**, **Check for updates**.
+- **Dictionary**: numero di categorie, preferiti e recenti; **Open the editor**, **Clear recents**, **Check for updates**; **Check for updates automatically** (acceso di default) e, dopo il primo controllo automatico, quando è stato fatto e com'è andato.
 - **Diagnostics**: log in Logcat dell'app in primo piano e dei campi che prendono il focus in Dokkan (`adb logcat -s DokkanHelper`).
 - **About**: la versione e il link **Instructions** (apre <https://dokkants.app/category-helper> nel browser).
 
@@ -156,14 +158,26 @@ con le regole di `db/import/categories/android-dictionary.mjs`:
 
 ## Check for updates
 
-Impostazioni → **Dictionary** → **Check for updates**, oppure nell'editor ⋮ → **Check for updates**.
+Impostazioni → **Dictionary** → **Check for updates**, oppure nell'editor ⋮ → **Check for updates**. Con **Check for updates automatically** acceso (default) l'app fa lo stesso controllo anche da sola quando apri Dokkan, al massimo una volta al giorno o un'ora dopo un controllo fallito (sotto, «Il controllo automatico»).
 
-- Una sola richiesta `GET https://dokkants.app/api/v1/categories` (timeout 10 s per la connessione, 15 s per la risposta, User-Agent `DokkanTSCategoryHelper/<versione> (Android)`), solo quando la tocchi. La risposta: `{"version":1,"categories":[{"id":1,"name_en":"Fusion","name_ja":"フュージョン","aliases":[…]}, …]}`, in ordine di ID, con `name_ja` a `null` se il nome giapponese non c'è ancora.
+- Una sola richiesta `GET https://dokkants.app/api/v1/categories` (timeout 10 s per la connessione, 15 s per la risposta, risposta di 1 MiB al massimo, User-Agent `DokkanTSCategoryHelper/<versione> (Android)`), quando la tocchi o quando parte il controllo automatico. È l'unico accesso alla rete dell'app. La risposta: `{"version":1,"categories":[{"id":1,"name_en":"Fusion","name_ja":"フュージョン","aliases":[…]}, …]}`, in ordine di ID, con `name_ja` a `null` se il nome giapponese non c'è ancora.
 - **Aggiunge e basta.** Una categoria del sito si salta se non ha il nome giapponese, se una voce sul telefono ha lo stesso `gameId`, o se una voce senza `gameId` (fatta a mano o importata) ha lo stesso nome inglese o lo stesso nome giapponese (normalizzati come nella ricerca: così una categoria uscita prima in JP, aggiunta a mano con il nome della community, non si raddoppia quando arriva su Global con il nome ufficiale). Le voci esistenti, modificate o no, non cambiano mai e non vengono eliminate; recenti e preferiti restano come sono. Le nuove prendono il `gameId` e uno slug libero.
 - **Non riaggiunge quello che hai tolto.** I `gameId` delle categorie eliminate, o lasciate fuori da un import *Replace*, restano in un file a parte (`categories.removed`, non negli export), e il controllo li salta; **Undo** o un *Merge* che le riporta li tolgono da lì, **Restore the bundled dictionary** li dimentica. Una voce senza `gameId` prende quello della voce inclusa con lo stesso `id`, se nessun'altra ce l'ha: un dizionario della 0.4.0 (o un suo export) ha gli stessi slug, così le sue voci si riconoscono anche con i nomi cambiati. Per un dizionario modificato della 0.4.0 le categorie del gioco 1-99 che non ha contano come eliminate.
 - **Non segna il dizionario come modificato.** Aggiunge solo quello che c'è nei dati del gioco e manca sul telefono: un dizionario mai toccato resta «not edited», quindi un'app nuova con un dizionario incluso più recente (fatto dagli stessi dati) può ancora sostituirlo; uno modificato resta «edited». **Restore the bundled dictionary** toglie anche le categorie aggiunte così: il controllo successivo le riaggiunge, con lo stesso slug.
-- L'esito arriva in basso: «Added N new categories», «Already up to date», oppure l'errore (niente connessione, HTTP diverso da 200, risposta inattesa, oppure un formato più nuovo che chiede di aggiornare l'app).
+- Toccando il pulsante, l'esito arriva in basso: «Added N new categories», «Already up to date», oppure l'errore (niente connessione, HTTP diverso da 200, risposta inattesa, oppure un formato più nuovo che chiede di aggiornare l'app).
 - Finché il sito con `/api/v1/categories` non è in produzione la richiesta finisce in errore; finché il giro settimanale non ha scritto i nomi giapponesi, `name_ja` è `null` e il controllo non aggiunge niente.
+
+### Il controllo automatico
+
+Dalla 1.1.0, Impostazioni → **Dictionary** → **Check for updates automatically**, acceso di default.
+
+- **Quando parte.** Nel momento in cui l'app monitorata (Dokkan JP) arriva in primo piano e compare la bolla: il passaggio da un'altra app, dalla home o dallo schermo bloccato a Dokkan, non ogni evento mentre resta aperto. Conta anche l'accensione del servizio con Dokkan già aperto. Con **Show the bubble when Dokkan is open** spento non parte.
+- **Quanto spesso** (`update/AutoUpdatePolicy`): mai con l'interruttore spento; la prima volta subito; poi quando sono passate 24 ore dall'ultimo tentativo, oppure 1 ora se l'ultimo è fallito (alla prima apertura di Dokkan dopo quell'ora); se l'orologio del telefono è tornato indietro (l'ultimo tentativo risulta nel futuro), subito.
+- **Niente lavori pianificati.** Niente WorkManager né AlarmManager, nessun permesso o dipendenza nuova, il telefono non viene mai svegliato: se non apri Dokkan, il controllo automatico non parte.
+- **Uno alla volta.** L'ora del tentativo si salva prima della richiesta, e finché il controllo non finisce conta come fallito; un altro arrivo di Dokkan nel frattempo non ne fa partire un secondo. Il controllo gira nel servizio, fuori dal thread degli eventi, e si annulla se il servizio si ferma: allora resta «fallito» e si riprova dopo un'ora.
+- **Stessa richiesta, stessa regola** del pulsante (`UpdateCheck.run`): stesso URL, User-Agent, timeout e tetto di 1 MiB; aggiunge e basta, non riaggiunge le categorie eliminate, non segna il dizionario come modificato.
+- **L'esito.** Se aggiunge categorie compare per qualche secondo un breve avviso in basso, sopra il gioco, «DokkanTS Category Helper: Added N new categories» (in italiano «DokkanTS Category Helper: Aggiunte N categorie nuove»). Non è un toast ma una finestra del servizio come la bolla (`overlay/MessageOverlay`): i toast del servizio, da Android 13, il sistema li scarta. L'avviso compare solo se Dokkan è ancora in primo piano e l'interruttore è ancora acceso; se il dizionario è già aggiornato o il controllo fallisce, niente. Nelle impostazioni, sotto l'interruttore, la riga dell'ultimo controllo automatico: data e ora, e «Already up to date», «Added N new categories» oppure «Failed». Prima del primo controllo la riga non c'è; mentre un controllo è in corso dice «Failed», finché non finisce.
+- **Cosa salva**, nel DataStore `settings` (quindi anche nel backup): `auto_update` (l'interruttore), `last_auto_check_at` (l'ora del tentativo, in millisecondi), `last_auto_check_failed`, `last_auto_check_added`. Il pulsante non le tocca. Spegnere l'interruttore ferma subito i controlli automatici successivi; il pulsante funziona sempre.
 
 ## Il rilascio (lo fa il proprietario)
 
@@ -321,6 +335,15 @@ Deve dire `Verified using v2 scheme (APK Signature Scheme v2): true` e mostrare 
 5. **Aggiornamento dalla 0.4.0** (debug sopra debug): il dizionario non modificato passa alla versione 3, recenti e preferiti restano. Uno modificato resta com'è, e Check for updates non riaggiunge le categorie eliminate nella 0.4.0.
 6. **Instructions** in **About**: si apre la pagina del sito nel browser.
 7. **Release**: disinstallata la debug, l'APK della release si installa e il servizio si attiva (Android 13+: impostazioni con restrizioni).
+
+**1.1.0** (con il log diagnostico acceso: le righe `automatic update check` e `message shown` in `adb logcat -s DokkanHelper`). Per non aspettare un giorno si può spostare in avanti la data del telefono (Impostazioni → Data e ora, togli quella automatica); rimetterla giusta conta come orologio tornato indietro, e il controllo riparte all'apertura successiva. Per rifare il primo arrivo da zero: Info app → Spazio di archiviazione → Cancella dati (si perdono dizionario modificato e impostazioni; se Android spegne il servizio, riattivalo).
+
+1. **Primo arrivo**: con la 1.1.0 appena installata o aggiornata, apri Dokkan: parte un controllo, uno solo anche aprendo e chiudendo il pannello o passando dalla tendina notifiche. Nelle impostazioni compare la riga «Last automatic check» con data e ora.
+2. **Una volta al giorno**: esci e rientra in Dokkan più volte: nessun altro controllo nel log fino a 24 ore dopo.
+3. **Avviso**: quando il sito ha una categoria che il telefono non ha (per esempio una uscita dopo il dizionario incluso), a controllo dovuto apri Dokkan: in basso, sopra il gioco, compare per qualche secondo «DokkanTS Category Helper: Added N new categories», i tocchi passano al gioco, e la riga dice «Added N new categories». Con il dizionario già aggiornato non compare niente.
+4. **Senza rete** (modalità aereo), a controllo dovuto: apri Dokkan, nessun avviso, la riga dice «Failed». Riattiva la rete: rientrando in Dokkan prima di un'ora non parte niente, dopo un'ora sì.
+5. **Interruttore spento**: spegni **Check for updates automatically**: aprendo Dokkan non parte più niente, anche a controllo dovuto, e **Check for updates** a mano funziona.
+6. **Bolla automatica spenta**: con **Show the bubble when Dokkan is open** spento e l'interruttore acceso, a controllo dovuto aprendo Dokkan non parte niente (lo dice anche il testo sotto l'interruttore).
 
 ## Esito della Fase 0
 

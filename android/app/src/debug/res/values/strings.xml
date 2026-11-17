@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Debug build only (applicationIdSuffix ".debug"): names that tell it apart from the release on
+     the same phone, in the launcher, in Settings > Accessibility and in App info. Non-translatable,
+     like the release names in src/main/res/values/strings.xml. -->
+<resources>
+    <string name="app_name" translatable="false">DokkanTS Category Helper (debug)</string>
+    <string name="service_label" translatable="false">DokkanTS Category Helper (debug)</string>
+    <string name="launcher_name" translatable="false">CH debug</string>
+</resources>

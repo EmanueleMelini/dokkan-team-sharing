@@ -5,6 +5,7 @@ import android.content.Context
 import it.emanuelemelini.dokkants.categoryhelper.diagnostics.DebugLog
 import java.io.File
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -80,10 +81,10 @@ class DictionaryRepository private constructor(private val context: Context) {
     }
 
     /**
-     * The update check: appends the categories [pick] chooses given the current ones and the
-     * removed game ids, under the same lock as edits, so an edit made meanwhile is never
-     * overwritten. Existing entries are never changed or removed and the edited marker is left as
-     * it is. Returns what was added.
+     * The update check (the button or the automatic one): appends the categories [pick] chooses
+     * given the current ones and the removed game ids, under the same lock as edits, so an edit
+     * made meanwhile is never overwritten. Existing entries are never changed or removed and the
+     * edited marker is left as it is. Returns what was added.
      * @throws java.io.IOException if the dictionary cannot be saved (nothing is added then).
      */
     suspend fun addNew(pick: (local: List<Category>, removed: Set<Int>) -> List<Category>): List<Category> {
@@ -93,8 +94,14 @@ class DictionaryRepository private constructor(private val context: Context) {
             val added = pick(current.categories, removed)
             if (added.isNotEmpty()) {
                 val updated = current.copy(categories = current.categories + added)
-                withContext(Dispatchers.IO) { writeAtomically(file, DictionaryFormat.encode(updated)) }
-                state.value = updated
+                // Once the file is written the state must follow, or the next edit would drop what
+                // was just added. The caller's scope (the service, a settings screen) can be
+                // cancelled meanwhile: the block is not cancellable, and the state is set inside it
+                // because returning from it to another dispatcher would throw at once
+                withContext(Dispatchers.IO + NonCancellable) {
+                    writeAtomically(file, DictionaryFormat.encode(updated))
+                    state.value = updated
+                }
             }
             added
         }

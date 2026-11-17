@@ -164,10 +164,11 @@ export default function Privacy() {
         also copy it into your phone&apos;s backup in your Google account and onto a new phone when you move to one.
         Those copies follow your Android backup settings and are handled by Android and Google. On Android 9 and
         newer, if your phone has a screen lock (PIN, pattern or password), the backup is end-to-end encrypted with
-        it. The site never receives them. The app contacts the site only when you tap Check for updates, to
-        download the public list of game categories from {LEGALE.sito}/api/v1/categories. That request carries no
-        account, no device identifier and nothing from your dictionary: for the site it is the same as browsing
-        without an account.
+        it. The site never receives them. The app contacts the site only to download the public list of game
+        categories from {LEGALE.sito}/api/v1/categories: when you open Dokkan Battle, at most once a day or an
+        hour after a check that failed (you can turn this off in the app settings), and when you tap Check for
+        updates. The request is the same either way and carries no account, no device identifier and nothing
+        from your dictionary: for the site it is the same as browsing without an account.
       </p>
 
       <h2>Who else handles the data</h2>

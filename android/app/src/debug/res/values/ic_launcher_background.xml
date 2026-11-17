@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Debug build only: a rust background for the launcher icon and the bubble, so the debug app
+     and its bubble are told apart from the release (#0F111D, generated in src/main) at a glance.
+     Not generated: scripts/brand/icona-android.mjs writes only src/main. -->
+<resources>
+    <color name="ic_launcher_background">#5A2410</color>
+</resources>
