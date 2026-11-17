@@ -2,9 +2,12 @@
 # npm run db:test: tutte le verifiche, in fila, su un database di test.
 #
 #   reset -> schema -> API di scrittura -> account -> id delle carte dal wiki
-#   (anche le pagine abbozzate) -> immagini (i job anche senza pagina, la
-#   CDN, la provenienza, i limiti di spazio, la cornice delle miniature)
-#   -> fonti fresche e copia del
+#   (anche le pagine abbozzate) -> categorie, il piano (0037) -> dizionario
+#   dell'app Android (l'asset uguale al generatore) -> release dell'app
+#   Android (il workflow del tag, la firma, l'APK, le note) -> icona
+#   dell'app Android (uguale al marchio del sito) -> immagini
+#   (i job anche senza pagina, la CDN, la provenienza, i limiti di spazio,
+#   la cornice delle miniature) -> fonti fresche e copia del
 #   datamine -> configurazione di produzione (pool, TLS, cron, IP) ->
 #   deploy su Vercel (l'Ignored Build Step) ->
 #   import dei dati veri (carte del wiki, poi quelle solo nel gioco) -> query
@@ -34,7 +37,8 @@
 #   e il loro lato app (lib/notify: endpoint, payload, mittente, sw.js, giro)
 #   -> attivita' del sito per gli admin (0032: il feed, una push per
 #   azione, mai per email)
-#   -> carte solo nel gioco (load-game-cards) -> skill delle carte (0022)
+#   -> carte solo nel gioco (load-game-cards) -> categorie (0037: nomi
+#   giapponesi e alias) -> skill delle carte (0022)
 #   e la pagina della carta -> filtri dei clear
 #   -> finestre degli eventi dal
 #   gioco (load-windows) -> eventi creati dal gioco (load-game-events) ->
@@ -87,6 +91,36 @@ passo "account" verifica node_ts db/test/auth.test.mts
 # Funzioni pure, niente database: come load-cards e fetch-assets ricavano
 # l'id di una carta dalla pagina del wiki (db/import/wiki-card.mjs).
 passo "id delle carte dal wiki" verifica node db/test/wiki-card.test.mjs
+# Funzioni pure: i nomi giapponesi delle categorie dalle missioni dei titoli
+# (db/import/categories/japanese-names.mjs, sul missions.csv della cache:
+# 99 su 99 e le trappole), gli alias contro le 99 voci del dizionario
+# dell'app Android, e il piano di load-datamine su stati finti (lo scambio
+# di due nomi, l'ultimo nome noto, la riga "attenzione"), 0037.
+passo "categorie: nomi giapponesi e alias (piano)" verifica node db/test/category-names.test.mjs
+# Funzioni pure, niente database: il dizionario incluso nell'app Android
+# (android/app/src/main/assets/categories.json) e' quello che
+# db/import/categories/export-android.mjs scriverebbe adesso dalla cache del
+# datamine (rosso con una categoria nuova finche' non si rigenera), gli id
+# della versione 2 restano sullo stesso gameId, e la regola degli slug
+# dell'app riscritta in JavaScript.
+passo "dizionario dell'app Android (asset)" verifica node db/test/android-dictionary.test.mjs
+# Funzioni pure, niente database, niente Gradle: la release automatica
+# dell'app (.github/workflows/category-helper-release.yml) contro quello che
+# le sta intorno. Solo il tag category-helper-v*, permessi minimi, azioni
+# fissate a uno sha; il prefisso del tag, l'APK di :app:releaseApk e il nome
+# in fondo al link di lib/category-helper.ts, le note della versione di
+# build.gradle.kts (android/release-notes/), le variabili DCH_* lette da
+# Gradle, i quattro secret, la firma di debug che ferma il giro, --latest;
+# le controprove su copie ritoccate, e i passi del tag, delle note e del
+# keystore eseguiti con bash.
+passo "release dell'app Android (workflow)" verifica node db/test/android-release.test.mjs
+# Funzioni pure, niente database, niente Gradle: l'icona dell'app Android
+# (android/app/src/main/res/, adaptive icon) e la sua bolla sono quelle che
+# scripts/brand/icona-android.mjs scriverebbe adesso dalla maskable.svg
+# (rosso se cambia il marchio, finche' non si rigenerano), con i settori e i
+# colori del marchio del sito, tutto nella zona sicura e la lente staccata
+# dai settori.
+passo "icona dell'app Android (marchio)" verifica node db/test/android-icon.test.mjs
 # Funzioni pure: i job di fetch-assets anche per le carte senza pagina (i
 # nomi per convenzione del wiki), le risposte della CDN e i ritenti, la
 # provenienza (0033), i limiti di spazio (db/import/asset-limits.mjs) e la
@@ -334,6 +368,12 @@ passo "attivita' del sito" verifica node_ts db/test/attivita.test.mts
 # Rilancia load-game-cards e load-datamine, e prova il passaggio al wiki
 # con una pagina finta su 1034200 (poi rimette la carta com'era).
 passo "carte dal gioco" verifica node_ts db/test/game-cards.test.mts
+# Le categorie (0037) sul database: 99 nomi inglesi e 99 giapponesi, gli
+# alias, i vincoli di category_alias, un secondo load-datamine che non
+# riscrive nessuna riga (xmin compreso) e non svuota
+# equipment_limit_category, e l'ultimo nome noto con applyCategories in una
+# transazione annullata. Rilancia load-datamine; non crea utenti.
+passo "categorie: nomi giapponesi e alias" verifica node_ts db/test/categories.test.mts
 # La pagina della carta (0022): i vincoli di card_skill, set_prefers_animated
 # e le skill che load-cards scrive dalla cache vera (EZA, note con nome,
 # testi di card_text ripuliti, un secondo giro che non cambia niente).
@@ -409,8 +449,9 @@ passo "missioni" verifica node_ts db/test/missions.test.mts
 # immagini non sono "l'ultimo import"), le immagini mancanti anche senza
 # pagina, i vincoli della provenienza (0033, in transazioni annullate) e la
 # forma dei due workflow (permessi job per job, i passi Decide eseguiti
-# davvero). E il rinfresco dopo un giro (db/prod/rinfresco.mjs): niente
-# cambiato niente richiesta, i tag delle sole righe toccate da un giro delle
+# davvero, la voce delle categorie senza nome giapponese, 0037). E il
+# rinfresco dopo un giro (db/prod/rinfresco.mjs): niente cambiato niente
+# richiesta, i tag delle sole righe toccate da un giro delle
 # immagini (le carte, gli eventi e le copertine dietro gli asset, letti sul
 # database in una transazione annullata), le richieste da 50 con un fetch
 # finto, il giro fallito che rinfresca prima di uscire e quello dopo che

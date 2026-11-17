@@ -1,0 +1,31 @@
+# Gradle / build
+.gradle/
+.kotlin/
+build/
+/app/build/
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Local configuration (sdk.dir, release signing)
+local.properties
+
+# Signing: keystores and their passwords never enter the repository
+*.jks
+*.keystore
+*.p12
+*.pfx
+keystore.properties
+
+# IDE
+.idea/
+*.iml
+.DS_Store
+
+# Generated APK/AAB
+*.apk
+*.aab
+
+# Probe logs (may contain other apps' screen content)
+logs/
+probe*.txt

@@ -10,3 +10,5 @@
 /.next
 /.idea
 /backups
+# l'app Android (un progetto Gradle a parte, l'APK sta nelle release di GitHub)
+/android

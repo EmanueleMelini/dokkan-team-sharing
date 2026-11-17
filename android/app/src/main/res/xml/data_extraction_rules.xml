@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 12 and newer: what Android's backup to the user's Google account and the transfer to a
+     new phone copy. Both get everything the app keeps (the dictionary with its markers, favorites,
+     recents and settings in the "settings" DataStore), so a reinstall or a new phone gets them back.
+     Left out: the temporary files of the atomic writes (DictionaryRepository.writeAtomically and
+     DataStore's own), which only exist if the app stopped in the middle of a write. Without an
+     <include>, everything not excluded is copied; cache and no-backup directories never are. The
+     rules for Android 8 to 11 are in backup_rules.xml and must exclude the same paths. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="file" path="categories.json.tmp" />
+        <exclude domain="file" path="categories.removed.tmp" />
+        <exclude domain="file" path="datastore/settings.preferences_pb.tmp" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="file" path="categories.json.tmp" />
+        <exclude domain="file" path="categories.removed.tmp" />
+        <exclude domain="file" path="datastore/settings.preferences_pb.tmp" />
+    </device-transfer>
+</data-extraction-rules>

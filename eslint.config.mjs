@@ -43,6 +43,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // L'app Android: un progetto Gradle a parte, niente JavaScript, e
+    // migliaia di file nelle cartelle di build.
+    "android/**",
   ]),
 ]);
 

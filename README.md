@@ -141,7 +141,10 @@ immagini") ha solo `fetch-assets --offline` (`PIPELINE_IMAGES`).
    (`wiki-card.test.mjs`), i job delle immagini anche senza pagina, le
    risposte della CDN e i ritenti, la provenienza, i limiti di spazio e la
    cornice delle miniature (`assets.test.mjs`), le soglie della freschezza delle fonti e l'archivio
-   del datamine (`fonti.test.mjs`);
+   del datamine (`fonti.test.mjs`), il piano dei nomi giapponesi e degli
+   alias delle categorie (`category-names.test.mjs`), il dizionario dell'app
+   Android (`android-dictionary.test.mjs`), il workflow della sua release
+   (`android-release.test.mjs`) e la sua icona (`android-icon.test.mjs`);
 3. ci importa i dati veri dalle cache locali (carte, eventi, datamine), senza
    nessuna richiesta di rete;
 4. verifica le **query che alimentano le pagine** chiamando le funzioni vere
@@ -316,8 +319,10 @@ app/                          Next.js 16, App Router
   settings/                   l'account: handle, display, provider, clear nascosti, cancellazione; sign-in/ per rientrare
   admin/                      l'area dei moderatori: coda, nascosti, utenti, registro (404 per chi non e' admin)
   privacy/, terms/            le pagine legali (testi in lib/legale.ts)
+  category-helper/            la pagina dell'app Android DokkanTS Category Helper: statica, il download dell'APK, l'API per chi sviluppa
   api/                        auth/ (better-auth), me/ (chi guarda), cards/ e equipment/ (i picker),
-                              revalidate/ (dopo un import), cron/purge/ (la pulizia giornaliera), cron/digest/ (il digest email)
+                              revalidate/ (dopo un import), cron/purge/ (la pulizia giornaliera), cron/digest/ (il digest email),
+                              v1/categories/ (le categorie per l'app Android: un prerender, sezione "L'API delle categorie")
   robots.ts, sitemap.ts       cosa indicizzare: eventi, carte e profili; mai le viste filtrate, i tier e le pagine Japan (le regole in lib/robots.ts)
   icon.svg, favicon.ico, apple-icon.png, opengraph-image.png, twitter-image.png
                               le icone e l'anteprima dei link, file statici generati da scripts/brand/
@@ -348,6 +353,8 @@ lib/
   card-page.ts, card-art.ts   la pagina della carta (pura) e la scelta dell'artwork
   profiles.ts                 i profili (pure): solo dalla vista public_profile
   cards.ts, equipment.ts      le ricerche dei picker (anche GET /api/cards e /api/equipment)
+  categories.ts               le categorie di GET /api/v1/categories, coi nomi giapponesi e gli alias (pura)
+  category-helper.ts          i link dell'app Android: l'APK, le release, l'API (puro)
   parametri.ts, urls.ts       la query string letta con difesa, e tutti gli URL interni
   robots.ts                   le regole di robots.txt e il rel nofollow dei link verso le pagine escluse (puro)
   cache/                      'use cache' sopra le query pure, i tag, l'invalidazione, /api/revalidate, le vite dei dati (vita.ts, puro)
@@ -363,7 +370,7 @@ lib/
   db.ts, db-config.ts         la pool (una per processo) e le sue impostazioni: dimensioni, TLS
   cron.ts                     l'autenticazione delle rotte di Vercel Cron
 db/
-  migrations/                 NNNN_*.sql, applicate in ordine, mai modificate (0001-0036, elenco sotto)
+  migrations/                 NNNN_*.sql, applicate in ordine, mai modificate (0001-0037, elenco sotto)
   migrate.mjs                 runner: applica le pendenti, una transazione ciascuna (--check per sapere se e' indietro)
   reset.mjs                   ricostruisce un database da zero (--fixture per i test)
   env.mjs                     la sorgente unica di DATABASE_URL per gli script
@@ -375,6 +382,8 @@ db/
     load-game-cards.mjs, game-cards.mjs   le carte uscite su Global senza pagina wiki
     load-events.mjs           eventi, stage e difficolta' dal wiki
     load-datamine.mjs         correzioni e arricchimenti dal gioco
+    categories/               le categorie di load-datamine: i nomi giapponesi dalle missioni dei titoli, gli alias e il piano (puri), le scritture (0037);
+                              il dizionario incluso nell'app Android: le regole (android-dictionary.mjs, puro) e chi lo scrive (export-android.mjs)
     load-game-events.mjs, game-events/   gli eventi che il wiki non ha, e gli stage delle riedizioni
     load-windows.mjs, set-event-window.mjs, quest-refs.mjs   le finestre Global dal gioco
     mirror-japan.mjs, japan-mirror/   le date Japan dal 2025, copiate da Global (le regole e il piano, puri)
@@ -409,6 +418,7 @@ test/
   cpu.sh                      la CPU per richiesta su next start (npm run test:cpu)
 .github/workflows/weekly-data.yml   l'aggiornamento settimanale automatico
 .github/workflows/daily-images.yml  il giro giornaliero delle sole immagini (mai il venerdi')
+.github/workflows/category-helper-release.yml  la release dell'app Android: a ogni tag category-helper-vX.Y.Z l'APK firmato nella release di GitHub (android/README.md, "Il rilascio")
 scripts/assets-deploy.mjs     public/assets su Cloudflare Pages, con _headers (assets:deploy)
 scripts/vercel-ignore.mjs     l'Ignored Build Step di Vercel: un deploy di produzione si costruisce solo da release e solo se cambia il codice del sito
 scripts/vercel-ignore-decidi.mjs  le regole di quella decisione, senza effetti (le prova db/test/deploy.test.mts)
@@ -418,6 +428,7 @@ public/.well-known/security.txt   il contatto per chi trova una vulnerabilita' (
 public/assets/                le immagini ospitate da noi (non versionate)
 backups/                      le copie di prod:backup (non versionate)
 docs/                         l'analisi competitiva e le decisioni di progetto
+android/                      l'app Android DokkanTS Category Helper: un progetto Gradle a parte, fuori dal deploy (android/README.md); release-notes/ le note di ogni release
 ```
 
 Le migrazioni che contano per il sito, oltre allo schema dei dati (0001-0013, 0015, 0017):
@@ -445,6 +456,7 @@ Le migrazioni che contano per il sito, oltre allo schema dei dati (0001-0013, 00
 | `0034_thumb_frame.sql` | `asset.frame` e `asset_bare()`: le miniature senza cornice (le LR del wiki), che il sito incornicia |
 | `0035_set_region.sql` | `set_region`: la versione del sito (`app_user.reg`) salvata sull'account dall'interruttore |
 | `0036_japan_mirror.sql` | la provenienza `mirror`: le date Japan dal 2025 copiate da Global (`event_run`), e `card_release.source` |
+| `0037_category_alias.sql` | `category_alias`: gli alias delle categorie (iniziali e soprannomi); i nomi giapponesi stanno in `category_text` (`ja`) |
 
 ### Sulle migrazioni
 
@@ -470,7 +482,10 @@ scrive `asset` (sezione della 0033). Quando conta, lo dice la sezione
 della migrazione. La 0036 va online **prima** del codice che scrive
 `mirror`: il codice di prima la regge (una colonna con il default, vincoli
 che i suoi dati rispettano), e il codice nuovo senza di lei si ferma a
-`check-schema` (sezione "Il calendario Japan", "Il rilascio").
+`check-schema` (sezione "Il calendario Japan", "Il rilascio"). Allo stesso
+modo la 0037 va online **prima** del codice che scrive `category_alias`: il
+codice di prima non la conosce, quello nuovo senza di lei si ferma a
+`check-schema` (sezione "Le categorie", "Il rilascio").
 
 ## Due fonti, e nessuna sostituisce l'altra
 
@@ -2340,6 +2355,236 @@ evento si toglie. Il test (`db/test/missions.test.mts`) confronta
 riga per riga 552139 Looming Menace con i CSV: tre missioni nella corsa di
 aprile 2020, tre del 2026 senza scadenza.
 
+## Le categorie: nomi giapponesi e alias (migrazione 0037)
+
+Le 99 categorie del gioco (id e nome inglese da `card_categories.csv`)
+hanno anche il **nome giapponese** e degli **alias**: servono all'app
+Android DokkanTS Category Helper, che cerca una categoria in inglese e la
+scrive in giapponese nel campo di ricerca del gioco JP, e alla pagina
+`/category-helper` (`GET /api/v1/categories`). Li scrive `load-datamine`
+(moduli in `db/import/categories/`), nella stessa transazione del resto.
+
+**Da dove vengono i nomi giapponesi.** Il database Global non ha una colonna
+per il nome giapponese di una categoria, ma porta le "missioni dei titoli"
+del server giapponese, mai tradotte: `missions.csv` con
+`mission_category_id = 5` (称号ミッション). Per ogni categoria ce ne sono tre
+(10, 100 e 300 clear con sei personaggi della categoria), con le condizioni
+`{"all_card_category_ids": [N, N, ...]}` e la descrizione che comincia col
+nome: `「フュージョン」カテゴリに属する...`. Sulla fotografia del 2 ottobre
+escono 99 nomi su 99, gli stessi della lista fatta a mano dal database JP.
+La lettura (`japanese-names.mjs`) è severa, perché un nome sbagliato finisce
+nel campo di ricerca del gioco: solo la categoria di missioni 5, un solo id
+distinto nelle condizioni, la descrizione che comincia con `「…」カテゴリ`, e
+le missioni di un id che dicono tutte lo stesso nome. Le altre missioni con
+le stesse condizioni restano fuori: le nove della ドキドキ♥ヒロインバトル sulla
+categoria 4 (`[4, 4, 4, 4]`, 24844-24846, 24870-24872, 25150-25152) e quelle
+del 超激闘大全 su 21, 77, 78 e 81, che cominciano con `「超激闘大全」のステージ`.
+Due id con lo stesso nome restano senza (c'è `unique (locale, name)`). Le
+missioni di una categoria nuova arrivano nello stesso commit del datamine:
+il nome c'è dal primo giro. Le righe sono `category_text` con `locale = 'ja'`
+e `source = 'official'`; il sito legge solo `en`.
+
+**L'ultimo nome noto.** Una categoria per cui le missioni non danno un nome
+(sparite, in disaccordo, una categoria nuova senza missioni) tiene la riga
+`ja` che aveva, senza riscriverla, e il log lo dice:
+
+```
+  attenzione: categorie senza nome giapponese: 7 Resurrected Warriors
+    (resta l'ultimo nome noto: 7)
+```
+
+La riga c'è anche per le categorie che un nome giapponese non l'hanno mai
+avuto (`nessun nome giapponese: <id>`). Il giro settimanale la cerca nel log
+del giro di prova e la mette in "Needs attention". Un nome per un id che il
+datamine non ha si ignora (la chiave esterna lo rifiuterebbe), con una riga
+`(nome giapponese 「…」 per la categoria <id>, che il datamine non ha: lo
+ignoro)`. Un ultimo nome noto che le missioni danno a un'altra categoria
+passa a quella.
+
+**Gli alias** (`category_alias`, `aliases.mjs`) sono quelli del dizionario
+dell'app (versione 2), minuscoli, di due tipi:
+
+- `initials`: le iniziali del nome inglese, generate con la regola
+  dell'app. Gli apostrofi non spezzano una parola (Goku's Family `gf`), ogni
+  altro segno sì (Low-Class Warrior `lcw`, Androids/Cell Saga `acs`); ogni
+  parola conta, anche "of" e "and" (Bond of Master and Disciple `bomad`); un
+  numero entra intero (Universe 11 `u11`); niente iniziali per un nome di
+  una parola sola o con una sigla dentro (Fusion, DAIMA, DB Saga, GT
+  Heroes). Una categoria nuova ha le sue dal primo giro;
+- `nickname`: i soprannomi, scritti a mano in `NICKNAMES` per id del gioco
+  (`ssj`, `ssj3`, `top`, `u7`, `great ape`...). Uno nuovo si aggiunge lì.
+
+Lo stesso alias può stare su più categorie (`gf`: Giant Form, Ginyu Force,
+Goku's Family, Golden Fighters). L'ordine è quello di JavaScript (in SQL
+`collate "C"`).
+
+**Si aggiorna sul posto.** Prima `load-datamine` cancellava `category` e
+`category_text` e reinseriva solo i nomi inglesi: le righe `ja` sparivano a
+ogni giro, e la cascata svuotava `equipment_limit_category`, che
+`load-equipment` ricostruiva sei passi dopo (un `load-datamine` lanciato da
+solo la lasciava vuota). Ora si aggiungono gli id nuovi,
+si tolgono solo quelli spariti dal datamine (e allora la cascata è giusta),
+e i nomi e gli alias cambiano solo dove cambiano: le righe diverse si
+cancellano tutte prima di inserire le nuove, così due nomi che si scambiano
+non urtano `unique (locale, name)`. Un secondo giro non riscrive nessuna
+riga (nemmeno l'`xmin`). `card_category` e `card_link` si riscrivono come
+prima. Il log:
+
+```
+  categorie con gli id del gioco: 99 (nuove 0, tolte 0)
+  nomi giapponesi delle categorie: 99, 99 dalle missioni dei titoli (nuovi 0, cambiati 0); nomi inglesi cambiati: 0
+  alias delle categorie: 99 (iniziali 84, soprannomi 15; righe cambiate 0)
+```
+
+**I test.** `db/test/category-names.test.mjs`, funzioni pure: i nomi sul
+`missions.csv` della cache contro la lista fatta a mano delle 99 di ottobre
+2026 (un sottoinsieme: una categoria nuova deve solo essere in
+`card_categories.csv`), le trappole, righe finte (disaccordo, più
+categorie, condizioni illeggibili, lo stesso nome su due id), gli alias
+contro le 99 voci dell'app, e il piano su stati finti con i vincoli rifatti
+riga per riga. `db/test/categories.test.mts`, sul database dopo l'import:
+un nome inglese per categoria e uno giapponese per ognuna che le missioni
+nominano (i conti vengono dalla cache, così un datamine con una categoria
+nuova non li rompe), gli alias, i vincoli della 0037, un secondo
+`load-datamine` che non tocca niente e non svuota `equipment_limit_category`,
+e l'ultimo nome noto con `applyCategories` (il passo vero di
+`load-datamine`) chiamato con missioni ritoccate in una transazione
+annullata.
+
+**Il dizionario dell'app.** Gli stessi dati finiscono anche nel dizionario
+incluso nell'app (`android/app/src/main/assets/categories.json`), che non si
+scrive a mano: `node db/import/categories/export-android.mjs` lo rigenera
+dalla cache del datamine con le regole di `android-dictionary.mjs` (lo slug
+di una categoria non cambia mai, l'ultimo nome giapponese noto resta,
+`version` sale solo quando cambiano le categorie; `--check` esce 1 se va
+rigenerato). Il passo "dizionario dell'app Android (asset)" di
+`npm run db:test` (`db/test/android-dictionary.test.mjs`, puro) è rosso
+finché il file non è quello che il generatore scriverebbe: dopo un
+`db:fetch` che porta una categoria nuova, si rigenera e si fa uscire una
+release dell'app (un tag `category-helper-vX.Y.Z`, `android/README.md`,
+"Il rilascio").
+
+### Il rilascio
+
+1. **Prima la 0037**: `npm run prod:migrate -- --yes`, prima che il codice
+   che scrive `category_alias` arrivi su `main`. Il codice di prima non la
+   conosce. `prod:migrate` lancia `harden.mjs` subito dopo, che toglie ad
+   `anon` e `authenticated` ogni privilegio anche sulla tabella nuova. Al contrario
+   il codice nuovo senza la 0037 si ferma da solo (`migrate --check` nel
+   giro di prova, `check-schema` in `prod:update`), come per la 0036.
+2. **Poi il codice di `db/` su `main`.** Il primo giro applicato aggiunge 99
+   righe `ja` a `category_text` e gli alias, senza togliere niente: dentro i
+   limiti di `limits.json` senza `allow_deletions`. Il giro settimanale parte
+   solo con un commit nuovo del datamine (o con `force`): fino ad allora
+   l'API dà `name_ja` null e nessun alias (sezione seguente).
+3. **Poi la prima release dell'app, e solo dopo il deploy del sito**: il
+   tag `category-helper-v1.0.0` su `main`, il giro di
+   `category-helper-release.yml` verde e il link dell'APK che scarica,
+   prima di `git push origin main:release` (sezione seguente, "Il
+   rilascio").
+
+## L'API delle categorie e la pagina /category-helper
+
+L'app Android DokkanTS Category Helper prende le categorie nuove da
+`GET /api/v1/categories` (il pulsante "Check for updates": aggiunge quelle
+che non ha, non tocca le altre). La pagina `/category-helper` la presenta e
+la fa scaricare.
+
+**Il contratto** (`app/api/v1/categories/route.ts`), che l'app conosce:
+
+```json
+{"version":1,"categories":[{"id":1,"name_en":"Fusion","name_ja":"フュージョン","aliases":[]}, ...]}
+```
+
+- in ordine di `id` (l'id della categoria nel gioco); `name_en` da
+  `category_text` `en`, `name_ja` da `ja` con una left join, `null` finché
+  non si conosce; `aliases` da `category_alias`, in ordine di code unit
+  (`collate "C"`, lo stesso di `aliasesFor`);
+- `version` è la versione della forma (`CATEGORIES_API_VERSION` = 1 in
+  `lib/categories.ts`), non dei dati: niente orari e niente che cambi fra due
+  build con gli stessi dati. Una forma nuova vuole una versione nuova, e
+  l'app va aggiornata prima;
+- `200`, `Content-Type: application/json; charset=utf-8`,
+  `Cache-Control: public, max-age=300` (`CACHE_CATEGORIE` in
+  `lib/cache/headers.ts`). Niente CORS (la legge un'app, non la pagina di un
+  altro sito), niente chiave, niente cookie. Solo GET: gli altri metodi sono
+  un 405 di Next. `robots.txt` esclude già `/api/`.
+
+**Un prerender, non una funzione.** La lettura pura è
+`listCategoriesForApi` (`lib/categories.ts`), la cache
+`lib/cache/categories.ts` (`'use cache'`, `cacheLife('catalog')`,
+`cacheTag(TAG.catalog)`): niente tag suo, perché le categorie cambiano solo
+con un import, e ogni giro completo che cambia dati manda già `catalog`.
+`GET` non prende la richiesta e non legge né parametri, né header, né cookie:
+con `cacheComponents` il build la prerenderizza e la CDN la serve dalla
+cache ISR senza invocare funzioni (leggere la richiesta, anche solo un
+parametro, ne farebbe una funzione a ogni chiamata dell'app). Niente
+`CDN-Cache-Control`, al contrario di `/api/cards`: sopra la cache ISR
+terrebbe la copia vecchia per ore dopo il rinfresco di `catalog`.
+
+**Il costo.** La risposta pesa circa 8,4 KB con 99 categorie: circa 2 unità
+di scrittura ISR quando cambia davvero, cioè al più una volta a settimana
+(un import che cambia un nome o un alias), più il prerender di ogni deploy.
+Il revalidate di un giorno la rigenera uguale (ordine per chiave unica,
+niente orari) e non costa scritture. `db/test/queries.test.mts` la tiene
+sotto le 3 unità (24 KB).
+
+**La pagina** (`app/category-helper/page.tsx`, in inglese) è statica: niente
+dati, niente richiesta, un prerender del build che non si rigenera mai; le
+quattro categorie d'esempio sono scritte nella pagina. Dice cosa fa l'app, i
+requisiti (Android 8.0+, il gioco JP), il download (l'APK dell'ultima release
+del repository pubblico, nome fisso `dokkants-category-helper.apk`; i link in
+`lib/category-helper.ts`), l'installazione (le origini sconosciute,
+l'accessibilità, le impostazioni con restrizioni di Android 13+), l'uso, la
+privacy, che è non ufficiale, e la forma dell'API per chi sviluppa. Il menu
+ha la voce "Category Helper" per tutti: nel burger dopo Events, dai 1024px
+nell'header dopo l'interruttore della versione, che resta accanto a Events.
+**Il nome**: il sito non scrive mai "DokkanTS" nelle sue parti (header,
+PWA, banner), e la voce del menu e il `<title>` restano "Category Helper";
+l'app invece si chiama "DokkanTS Category Helper", e con quel nome la
+nominano il corpo della pagina (`CATEGORY_HELPER.nome`) e la Privacy Policy.
+Sulla home del telefono l'icona dice solo "Category Helper" (il nome intero
+verrebbe tagliato), e la pagina lo dice nel primo passo dell'installazione.
+Come Privacy e Terms non è nella sitemap: la trovano i link dell'header. La
+Privacy Policy ha un paragrafo sull'app ("The Android app"): ogni frase
+della pagina e della policy descrive quello che l'app fa davvero, e va
+cambiata con lei.
+
+**Le prove.** `cache-tags.test.mts`: `lib/categories.ts` fra i moduli puri e
+fra le letture in cache (l'ordine degli alias ha il suo vincolo nella
+guardia degli ORDER BY), la rotta senza orologio, senza richiesta, senza
+CORS e senza `CDN-Cache-Control`, la cache con `catalog`, la pagina senza
+dati e senza lineette lunghe. `queries.test.mts`, dopo l'import: la forma
+del payload, gli stessi nomi e alias del database, due letture uguali byte
+per byte, il peso. `versione-ui.test.mts`: il posto della voce nel burger e
+nell'header. `test:smoke`: 200, JSON in utf-8, almeno 99 categorie con id
+numerici in ordine, niente `Set-Cookie` né CORS, non privata, POST 405, la
+pagina col link all'APK e il link dell'header; con `SMOKE_EXPECT_CACHE=1` la
+rotta e la pagina escono dalla cache al secondo giro.
+
+**Il rilascio.** Dopo la 0037 in produzione: il build prerenderizza la rotta
+e legge `category_alias`, e senza la tabella si ferma lì. Lo stesso in
+locale: su `dokkan_dev` prima `npm run db:up` (e `npm run db:datamine` per
+nomi e alias), se no la rotta risponde 500 e `next build` fallisce.
+
+E **prima la release dell'app**, poi il deploy da `release` che porta
+`app/category-helper` e le voci del menu: il bottone "Download APK" punta a
+`releases/latest/download/dokkants-category-helper.apk`, che finché il
+repository non ha una release dell'app è un 404 di GitHub. `test:smoke`
+controlla solo l'`href`, non che il file ci sia. La release la fa
+`.github/workflows/category-helper-release.yml` (la sezione "Il rilascio"
+di `android/README.md`): una volta sola il keystore e i secret `DCH_*`,
+poi il codice dell'app e `android/release-notes/1.0.0.md` su `main`, il tag
+`category-helper-v1.0.0` su quel commit, il giro verde in Actions e il link
+`releases/latest/download/dokkants-category-helper.apk` aperto da un browser
+senza login che scarica l'APK. Solo dopo, `git push origin main:release`.
+Il workflow parte solo dai tag e non tocca il sito: `.github/` e
+`android/` sono in `NON_RUNTIME`, quindi il merge su `main` non costruisce
+niente su Vercel. `db/test/android-release.test.mjs` (passo "release
+dell'app Android (workflow)" di `npm run db:test`, puro) tiene allineati il
+workflow, la firma di `android/app/build.gradle.kts`, il nome dell'APK, il
+link di `lib/category-helper.ts` e le note.
+
 ## Gli account
 
 Si entra con Discord, Google, Twitch o con un link per email (magic link).
@@ -2877,7 +3122,7 @@ Gli SVG sorgente stanno in `scripts/brand/svg/`. Da lì si generano le icone e l
 npm run brand    # node --experimental-strip-types ... scripts/brand/genera.mjs
 ```
 
-Lo script scrive `app/icon.svg`, `app/favicon.ico` (16, 32 e 48 px), `app/apple-icon.png`, `app/opengraph-image.png`, `app/twitter-image.png` e i due `.alt.txt`. Per la PWA scrive anche `public/pwa/` (icone 192 e 512, maskable 192 e 512, badge 96) e `public/offline.html` (vedi la sezione PWA). Il flag `--experimental-strip-types` serve perché la pagina offline riusa `lib/tema/temi.ts`. Next li trova per nome: sono file statici, quindi niente codice al build e niente query. `metadataBase` in `app/layout.tsx` (da `BETTER_AUTH_URL`) rende assoluti gli URL di og:image e twitter:image.
+Lo script scrive `app/icon.svg`, `app/favicon.ico` (16, 32 e 48 px), `app/apple-icon.png`, `app/opengraph-image.png`, `app/twitter-image.png` e i due `.alt.txt`. Per la PWA scrive anche `public/pwa/` (icone 192 e 512, maskable 192 e 512, badge 96) e `public/offline.html` (vedi la sezione PWA). Per l'app Android scrive l'icona e la bolla in `android/app/src/main/res/` (`drawable/ic_launcher_foreground.xml`, `ic_launcher_monochrome.xml` e `ic_bubble_foreground.xml`, `mipmap-anydpi/ic_launcher.xml`, `values/ic_launcher_background.xml`): il marchio della maskable con la lente al posto del disco, da `scripts/brand/icona-android.mjs`, che gira anche da solo (`--check` non scrive ed esce 1 se vanno rigenerati). Quei file non si modificano a mano: `db/test/android-icon.test.mjs` è rosso finché non coincidono col marchio, e il workflow della release dell'app si ferma. Il flag `--experimental-strip-types` serve perché la pagina offline riusa `lib/tema/temi.ts`. Next li trova per nome: sono file statici, quindi niente codice al build e niente query. `metadataBase` in `app/layout.tsx` (da `BETTER_AUTH_URL`) rende assoluti gli URL di og:image e twitter:image.
 
 Per cambiare la forma o un colore si modifica `scripts/brand/sorgenti.mjs` (la geometria è in `anello.mjs`). Poi si lancia `node scripts/brand/sorgenti.mjs` e si ricopiano i `d` in `marchio.tsx` e i colori nelle regole del marchio di `app/globals.css`: `genera.mjs` si ferma se non coincidono (`scripts/brand/colori.mjs`, lo stesso controllo del test dei segnaposto).
 
@@ -3164,11 +3409,12 @@ per non arrivarci.
   per un giorno.
   **Il build legge il database** (solo SELECT): prerenderizza `/events`, la
   sitemap, fino a 100 eventi, 100 carte e 20 profili (sezione "Cache e
-  budget CPU"), quindi
+  budget CPU") e `/api/v1/categories`, quindi
   `DATABASE_URL` deve rispondere anche durante il build.
   `robots.txt` è statico e prende l'URL da `BETTER_AUTH_URL` **al build**.
-- `.vercelignore` lascia fuori `public/assets` (1,2 GB) e le cache
-  dell'import: il build non ne ha bisogno.
+- `.vercelignore` lascia fuori `public/assets` (1,2 GB), le cache
+  dell'import e `android/` (l'app Android, un progetto Gradle a parte):
+  il build non ne ha bisogno.
 
 Le variabili su Vercel, una per una, e tutti i passi della prima messa
 online sono nella sezione seguente. Le prove: `npm run db:test` (passi
@@ -3179,11 +3425,11 @@ online sono nella sezione seguente. Le prove: `npm run db:test` (passi
 Vercel Hobby dà 4 ore di CPU attiva al mese, senza extra. Per questo le pagine pubbliche (`/events`, `/events/<id>/…`, `/cards/<id>`, `/users/<handle>`) non leggono mai né la sessione né la query string: sono prerender (ISR) che la CDN serve senza invocare funzioni. Chi è dentro costa una sola richiesta a `/api/me` per pagina; chi non è dentro, niente.
 
 - **URL**: `/events` e `/events/japan` (statiche, le home di Global e Japan) · `/events/browse?region=&type=&status=&q=&page=` (viste filtrate, dinamiche, noindex, escluse da `robots.txt`) · `/events/<id>` · `/events/<id>/japan` · `/events/<id>[/japan]/t/<tier>` · `…/t/<tier>/p/<n>` (n ≥ 2) · `/events/<id>/clears?tier=&…` (la lista filtrata dei clear, dinamica, noindex, esclusa da `robots.txt`) · `/cards/<id>` · `/users/<handle>[/p/<n>]`. Si costruiscono solo con `lib/urls.ts` (`eventHref`, `browseHref`, `clearListHref`, `cardHref`, `profileHref`). Un tier che non è dell'evento, `p/1` o una pagina oltre l'ultima sono 404. Su `next start` e su Vercel la prima visita a un URL non prerenderizzato riceve lo shell con 200 e il 404 nello stream (noindex); dalla seconda visita è un 404 vero, dalla cache. `/` porta a `/events` con un 307 (`next.config.ts`). Restano con la query string le pagine per utente: `/events/<id>/submit?region=&tier=` (la regione c'è sempre, anche global) e `/events?account=deleted` dopo la cancellazione dell'account (l'avviso lo legge un'isola client). Un `?region=global` su una pagina evento la marca per chi ha scelto Japan (sezione "Versione Global/Japan"): la pagina non lo legge, è la stessa voce in cache. `/events`, `/events/japan` e ogni pagina evento hanno il loro `canonical`, quindi `?region=global` e `?account=deleted` non sono doppioni.
-- **Dati**: `lib/cache/*.ts` (`'use cache'` con `cacheLife` e `cacheTag`: `data.ts`, `cards.ts`, `tips.ts`, `filters.ts`, `profiles.ts`) avvolge i moduli di query (`lib/queries.ts`, `lib/clears.ts`, `lib/card-page.ts`, `lib/tips.ts`, `lib/profiles.ts`), che restano senza cache perché i test li importano fuori da Next (lo controlla una guardia in `cache-tags.test.mts`). eslint vieta a `lib/cache/*` di importare `lib/dal`, `lib/auth` e `next/headers`. Tag: `catalog`, `events-list`, `community`, `event:<id>`, `card:<id>`, `profile:<handle>`. Lo stato degli eventi (Ongoing/Ended) scade al prossimo inizio o fine di una run (minimo 5 minuti).
+- **Dati**: `lib/cache/*.ts` (`'use cache'` con `cacheLife` e `cacheTag`: `data.ts`, `cards.ts`, `tips.ts`, `filters.ts`, `profiles.ts`, `categories.ts`) avvolge i moduli di query (`lib/queries.ts`, `lib/clears.ts`, `lib/card-page.ts`, `lib/tips.ts`, `lib/profiles.ts`, `lib/categories.ts`), che restano senza cache perché i test li importano fuori da Next (lo controlla una guardia in `cache-tags.test.mts`). eslint vieta a `lib/cache/*` di importare `lib/dal`, `lib/auth` e `next/headers`. Tag: `catalog`, `events-list`, `community`, `event:<id>`, `card:<id>`, `profile:<handle>`. Lo stato degli eventi (Ongoing/Ended) scade al prossimo inizio o fine di una run (minimo 5 minuti).
 - **Invalidazione** (`lib/cache/invalidate.ts`): invio, revisione, cancellazione e commento rigenerano subito l'evento (`updateTag`), e invio, revisione e cancellazione anche le carte del clear e il profilo dell'autore; il voto lo segna vecchio senza rigenerare (`revalidateTag` `'max'`): gli altri vedono il voto dopo una visita, chi vota lo vede subito da `/api/me`. Cambio di handle, cancellazione dell'account e sospensione passano da `afterUserChanged`, che raccoglie dal database eventi, carte e handle toccati e li fa scadere uno per uno, quanti che siano (prima, sopra 300 id, scadeva tutto `community`: ogni pagina del sito da riscrivere). Mai `revalidatePath('/', 'layout')`, mai `community` in blocco.
 - **Chi guarda**: il cookie `dts_signed_in=1` (non segreto, non httpOnly) lo mette better-auth a ogni accesso e lo toglie l'uscita; solo con lui il browser chiama `/api/me` (private, no-store). Header, voto, Edit/Delete, commenti e invio sono isole client (`components/viewer`). La versione del sito è il cookie `dts_version` (non segreto, non httpOnly): lo legge lo script del `<head>`, mai una pagina pubblica, e i suoi redirect stanno in `next.config.ts`, cioè sulla CDN. Nessuna pagina cambia col cookie: con il cookie Japan un URL senza versione è un 307 (che non va in cache), e un URL marcato è lo stesso per tutti, quindi niente `Vary`. Chi non ha il cookie non paga niente, chi è su Japan una richiesta in più alla CDN per redirect, mai una funzione.
 - **Import**: in produzione `db/prod/update.mjs` chiama `POST /api/revalidate` (Bearer `CRON_SECRET`, la stessa variabile del cron; serve anche `PROD_SITE_URL`, da mettere nell'ambiente degli script di produzione per la routine a mano), e solo se il giro ha cambiato qualcosa: un giro delle immagini manda i tag delle sole carte ed eventi toccati (`db/prod/rinfresco.mjs`, sezione "Scritture ISR su Vercel Hobby"). In locale `db:import`, `db:refresh` e `db:demo` finiscono con `npm run cache:clear`; dopo una modifica a mano con psql lancialo tu, altrimenti `next dev` mostra i dati vecchi fino al riavvio. In `next dev` senza `CRON_SECRET` la rotta è aperta.
-- **Build**: legge il database (solo SELECT): fino a 100 eventi Global in corso o in arrivo, fino a 100 carte (le più usate nei clear), i 20 profili con più clear, `/events`, `/events/japan` e la sitemap (tutti gli eventi, `/events/japan` e le carte uscite su Global). Sulla macchina di sviluppo dura pochi secondi (6-9 s con la cache di Turbopack, 167 pagine generate). Se Supabase Free è in pausa, il build fallisce. Ogni deploy riparte con la cache vuota: è il costo più grande in scritture ISR (sezione seguente).
+- **Build**: legge il database (solo SELECT): fino a 100 eventi Global in corso o in arrivo, fino a 100 carte (le più usate nei clear), i 20 profili con più clear, `/events`, `/events/japan`, la sitemap (tutti gli eventi, `/events/japan` e le carte uscite su Global) e `GET /api/v1/categories`. Sulla macchina di sviluppo dura pochi secondi (6-9 s con la cache di Turbopack, 167 pagine generate). Se Supabase Free è in pausa, il build fallisce. Ogni deploy riparte con la cache vuota: è il costo più grande in scritture ISR (sezione seguente).
 - **Misure** (`test/cpu.sh` su `next start` locale, 200 richieste per classe, ms di CPU per richiesta). "Prima" è la base di partenza, con ogni pagina dinamica; "fase 1" è dopo la cache; "fase 4" è la misura finale prima della messa online, l'8 ottobre 2026, con filtri e profili (stesso metodo, `next build` e `next start -p 3550` su `dokkan_dev`, `CPU_PROFILE_HANDLE=demo_rotation`):
 
   | classe | prima (ogni pagina dinamica) | fase 1 | fase 1, NEXT_CACHE_MEMORY=0 | fase 4 (2026-10-08) |
@@ -3286,7 +3532,9 @@ era **266.000**, a una settimana dalla messa online.
   dell'ultimo deploy riuscito (`VERCEL_GIT_PREVIOUS_SHA`) e questo è
   cambiato un file fuori da `NON_RUNTIME`: i `.md` elencati lì (il README,
   `AGENTS.md`), `.gitignore`, `eslint.config.mjs`, `db/`, `test/`,
-  `docs/`, `scripts/` e `.github/`. Si salta solo quando ogni file
+  `docs/`, `scripts/`, `.github/` e `android/` (l'app Android: l'APK sta
+  nelle release di GitHub, che pubblica il workflow
+  `category-helper-release.yml` da un tag, e il sito non la serve). Si salta solo quando ogni file
   cambiato sta lì, e un percorso che lo script non conosce (una cartella
   `types/`, un `.npmrc`, un `vercel.ts`) costruisce. Nel dubbio si
   costruisce: il primo deploy, un commit che il clone poco profondo di
@@ -3404,7 +3652,12 @@ regole valgono subito) e il traffico bloccato non si paga. Su Hobby ci sono
 - **Rate limit**: percorso che comincia con `/events/` o `/cards/` (mai
   `/api/`), per esempio 120 richieste in 60 secondi per IP (o JA4), poi
   Deny o 429. Ferma gli scraper che ignorano robots.txt e i bot che provano
-  id a caso (ogni 404 in cache è una scrittura).
+  id a caso (ogni 404 in cache è una scrittura). Con la lista delle
+  categorie online, nella stessa regola (condizione in OR, nessuno slot in
+  più) anche il percorso che comincia con `/api/v1/`: è statica e dal CDN
+  non costa funzioni né scritture, ma ogni risposta (circa 8 KB) consuma
+  banda, e l'app fa una richiesta solo quando si tocca "Check for updates".
+  Il resto di `/api/` resta fuori.
 - **Domini**: `dokkants.emanuelemelini.dev` e il dominio `*.vercel.app` del
   progetto come redirect 308 verso `dokkants.app` (Settings → Domains),
   così la stessa pagina non ha una voce in cache per host.
@@ -3438,6 +3691,13 @@ regole valgono subito) e il traffico bloccato non si paga. Su Hobby ci sono
   `rinfresco.mjs` manda tag `card:<id>` ed `event:<id>` a gruppi di 50, e
   il `/api/revalidate` di `beff153` (il sito online) li accetta già, e le
   pagine di carte ed eventi li portano già.
+- **L'app Android non passa da `release`**: la sua release parte da un
+  tag `category-helper-vX.Y.Z` su un commit di `main`
+  (`.github/workflows/category-helper-release.yml`, `android/README.md`,
+  "Il rilascio"), e non costruisce niente su Vercel. La pagina
+  `/category-helper` invece arriva col deploy, e la prima release dell'app
+  va fatta prima (sezione "L'API delle categorie e la pagina
+  /category-helper", "Il rilascio").
 - **Le procedure scritte prima del branch `release`** (le migrazioni 0032,
   0033, 0034) dicono "il push su `main`" per il deploy del sito: ora è il
   merge su `main` seguito da `git push origin main:release`.
@@ -3496,6 +3756,18 @@ Per un fork, in breve:
    `migrate --check` (nel giro di prova) o a `check-schema` (in
    `prod:update`). L'ordine contrario invece fa fallire le righe nuove di
    `asset` del codice di prima (sezione "Da dove viene un'immagine").
+6. La release dell'app Android (`.github/workflows/category-helper-release.yml`)
+   parte solo da un tag `category-helper-v*` su un commit di `main`, gira
+   solo su questo repository e vuole i secret `DCH_KEYSTORE_BASE64`,
+   `DCH_KEYSTORE_PASSWORD`, `DCH_KEY_ALIAS` (e `DCH_KEY_PASSWORD` se la
+   password della chiave è un'altra): `android/README.md`, "Il rilascio".
+   In una fork vanno adattati la condizione `github.repository` e il link
+   dell'APK di `lib/category-helper.ts`, e la chiave è un'altra. Il job
+   `build` ha i secret e solo `contents: read`; `contents: write` l'ha solo
+   `publish`, che non ha secret e non compila niente. Consigliati, in
+   Settings: un ruleset sui rami `main` e `release` e uno sui tag
+   `category-helper-v*` (il proprietario nella bypass list), e l'immutabilità
+   delle release (`android/README.md`, "Il rilascio", "Una volta sola").
 
 ## Cosa manca, in ordine
 
@@ -3535,6 +3807,18 @@ può fare, e poi il lavoro sui dati e sulle pagine.
    2025 Japan resta col wiki, e 374 eventi Global restano "attivi, fine non
    nota" (312 del wiki, 62 del gioco). Le corse di un'area riaperta dopo più di un mese partono
    dall'ultimo blocco: la corsa di prima non ha una run del gioco sua.
+   I nomi giapponesi e gli alias delle categorie (0037): anche la 0037 va
+   online con `npm run prod:migrate -- --yes` prima che il suo codice arrivi
+   su `main` (sezione "Le categorie", "Il rilascio"), e nei riepiloghi una
+   voce "Some categories have no Japanese name" dice che una categoria tiene
+   l'ultimo nome noto o non ne ha.
+   La prima release dell'app Android esce prima del deploy che porta
+   `/category-helper` (il primo `git push origin main:release` con questo
+   codice), se no il bottone "Download APK" è un 404: una volta sola il
+   keystore, con la sua copia di sicurezza, e i secret `DCH_*`; poi il tag
+   `category-helper-v1.0.0` su `origin/main`, il giro verde in Actions e il
+   link dell'APK che scarica senza login (sezione "L'API delle categorie e
+   la pagina /category-helper", "Il rilascio").
 2. **Gli eventi del gioco, da completare.** Non hanno descrizione né banner
    (nessuna fonte: il datamine ha solo i percorsi dei file, il wiki non li
    carica più), e 19 non hanno nemmeno la copertina, perché il boss è una

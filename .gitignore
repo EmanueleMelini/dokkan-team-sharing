@@ -58,3 +58,24 @@ next-env.d.ts
 
 # la cache della settimana prima, per db/prod/sanity.mjs
 /db/import/.cache.prev
+
+# app Android (android/): build e cache di Gradle e Kotlin, la configurazione
+# della macchina (local.properties: sdk.dir e la firma delle release), i
+# log delle sonde, gli APK
+/android/.gradle/
+/android/.kotlin/
+/android/build/
+/android/app/build/
+/android/local.properties
+/android/logs/
+/android/captures/
+/android/.idea/
+*.apk
+*.aab
+# chiavi di firma: mai nel repository (stanno fuori: in locale le indica
+# android/local.properties, nel workflow della release i secret DCH_*)
+*.jks
+*.keystore
+*.p12
+*.pfx
+keystore.properties

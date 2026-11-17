@@ -1,6 +1,13 @@
 @import "tailwindcss";
 
 /*
+ * L'app Android (android/) non e' il sito: la scansione automatica la
+ * leggerebbe in locale ma non su Vercel (.vercelignore), e il CSS dei due
+ * build potrebbe divergere.
+ */
+@source not "../android";
+
+/*
  * La versione del sito (lib/versione): lo script del <head> mette
  * data-reg="japan" su <html> per chi ha scelto Japan, prima del primo
  * paint. Global e' la base (nessun attributo), japan: la sovrascrive:

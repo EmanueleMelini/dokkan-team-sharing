@@ -14,9 +14,9 @@
 //   - produzione solo se fra il commit dell'ultimo deploy riuscito
 //     (VERCEL_GIT_PREVIOUS_SHA) e questo e' cambiato un file fuori da
 //     NON_RUNTIME. Si salta solo quando OGNI file cambiato sta in una voce
-//     di NON_RUNTIME (README, db/, test/, docs/, scripts/, i workflow): un
-//     percorso che lo script non conosce (una cartella types/, un .npmrc, un
-//     vercel.ts) costruisce;
+//     di NON_RUNTIME (README, db/, test/, docs/, scripts/, i workflow,
+//     android/): un percorso che lo script non conosce (una cartella types/,
+//     un .npmrc, un vercel.ts) costruisce;
 //   - nel dubbio si costruisce: senza VERCEL_GIT_PREVIOUS_SHA (il primo
 //     deploy, un deploy dalla CLI), con un commit che il clone di Vercel non
 //     ha (e' poco profondo), con git che fallisce, e con lo stesso commit di
@@ -43,10 +43,16 @@ export const RUNTIME = [
   'postcss.config.mjs', 'vercel.json', '.vercelignore',
 ]
 
-/** Il resto del repository, che un deploy non deve aspettare. */
+/**
+ * Il resto del repository, che un deploy non deve aspettare. android/ e'
+ * l'app Android DokkanTS Category Helper: un progetto Gradle a parte, che il
+ * sito non esegue ne' serve (.vercelignore lo lascia fuori dall'upload).
+ * L'APK si scarica dalle release di GitHub, e la pagina /category-helper
+ * (in app/) punta li'.
+ */
 export const NON_RUNTIME = [
   '.github', '.gitignore', 'AGENTS.md', 'CLAUDE.md', 'README.md',
-  'db', 'docs', 'scripts', 'test', 'eslint.config.mjs',
+  'android', 'db', 'docs', 'scripts', 'test', 'eslint.config.mjs',
 ]
 
 const SHA = /^[0-9a-f]{7,40}$/i

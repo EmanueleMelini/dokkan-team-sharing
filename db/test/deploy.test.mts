@@ -72,6 +72,13 @@ console.log('la decisione, con un git finto')
   check('...e quali file costruiscono, i primi tre', /\(a\.ts, app\/1, app\/2 and 2 more\): building$/.test(motivo2), motivo2)
   check('saltabile: la prima voce del percorso', saltabile('db/test/x.mts') && saltabile('README.md') && saltabile('.github/workflows/a.yml') &&
     !saltabile('app/db/x.ts') && !saltabile('lib/README.md') && !saltabile('dbx/a'))
+  // l'app Android (android/): un progetto Gradle che il sito non esegue
+  const android = { file: ['android/app/build.gradle.kts', 'android/app/src/main/assets/categories.json', 'android/README.md'] }
+  check('solo l\'app Android (android/): si salta (0)', decidi(prod, git(0, android)).esito === 0)
+  check('...ma con la pagina che la presenta (app/): si costruisce',
+    decidi(prod, git(0, { file: [...android.file, 'app/category-helper/page.tsx'] })).esito === 1)
+  check('...e un file che solo somiglia (android.ts, app/android/x.ts): si costruisce',
+    !saltabile('android.ts') && !saltabile('app/android/x.ts') && saltabile('android/gradlew'))
 }
 
 console.log('su un repository git vero (cartella temporanea)')
@@ -188,6 +195,10 @@ console.log('le guardie sul repository')
   const cli = readFileSync(SCRIPT, 'utf8').split('\n').filter((l) => !/^\s*\/\//.test(l)).join('\n')
   check('lo script decide sempre: nessun controllo sul modulo principale (import.meta.url, argv)',
     !/import\.meta\.url|process\.argv/.test(cli) && /r = decidi\(process\.env, git\)/.test(cli) && /process\.exit\(r\.esito === 0 \? 0 : 1\)/.test(cli))
+  // android/ resta fuori anche dall'upload della CLI (la cartella di build
+  // di Gradle pesa decine di MB), e l'app non e' runtime del sito
+  const vercelignore = readFileSync(join(RADICE, '.vercelignore'), 'utf8').split('\n').map((r) => r.trim())
+  check('.vercelignore lascia fuori /android, e android e\' NON_RUNTIME', vercelignore.includes('/android') && NON_RUNTIME.includes('android') && !RUNTIME.includes('android'))
   const doppi = RUNTIME.filter((x) => NON_RUNTIME.includes(x))
   check('nessuna voce e\' insieme runtime e no', doppi.length === 0, doppi.join(', '))
   // le voci di primo livello del repository (tracciate o nuove, non ignorate)

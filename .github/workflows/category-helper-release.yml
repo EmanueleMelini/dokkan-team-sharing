@@ -1,0 +1,271 @@
+# La release dell'app Android DokkanTS Category Helper (android/), come per
+# le altre app Android del proprietario: a ogni tag category-helper-vX.Y.Z
+# compila l'APK firmato e lo pubblica nella release di GitHub del tag, con
+# il nome fisso dokkants-category-helper.apk. La pagina /category-helper del
+# sito (lib/category-helper.ts) punta a
+# releases/latest/download/dokkants-category-helper.apk: le release di questo
+# repository sono solo dell'app, e ognuna esce come Latest.
+#
+# Due job, perche' il token che scrive nel repository non stia mai nello
+# stesso job del codice di terzi di Gradle (plugin, dipendenze, lint):
+# - build, con contents: read e i secret della firma:
+#   1. il commit del tag deve stare su main: una release e' sempre codice
+#      rivisto, mai un commit di dev o di un ramo qualunque;
+#   2. il tag deve essere category-helper-v + versionName di
+#      android/app/build.gradle.kts, e android/release-notes/<versione>.md
+#      (le note della release) deve esserci, con almeno una riga "- "; l'icona
+#      e la bolla dell'app sono quelle che scripts/brand/icona-android.mjs
+#      genera adesso dal marchio del sito;
+#   3. il keystore arriva dal secret DCH_KEYSTORE_BASE64 in $RUNNER_TEMP, le
+#      password dagli altri secret, solo nell'env del passo che le usa;
+#   4. test, lint e :app:releaseApk; poi apksigner: la firma non e' mai
+#      quella di debug, e lo SHA-256 del certificato va nel riepilogo;
+#      aapt2: package e versione dentro l'APK sono quelli del tag;
+#   5. l'APK e le note in un artifact di un giorno;
+# - publish, con contents: write, senza secret, senza checkout ne' Gradle:
+#   6. la release Latest di adesso, se c'e', deve avere una versione piu'
+#      vecchia e lo stesso certificato (se no Android rifiuta
+#      l'aggiornamento a chi ha gia' l'app);
+#   7. gh release create con --latest e --verify-tag.
+#
+# Il repository e' pubblico: si parte solo da un tag (niente pull_request
+# ne' workflow_dispatch), nessun secret dentro uno script run:, niente
+# set -x, e la cache di Gradle e' spenta (una release non ripristina niente
+# scritto da altri giri; da un tag la cache non si scriverebbe comunque).
+# I secret del repository: DCH_KEYSTORE_BASE64, DCH_KEYSTORE_PASSWORD,
+# DCH_KEY_ALIAS e, solo se diversa da quella del keystore, DCH_KEY_PASSWORD
+# (android/README.md, "Il rilascio").
+name: Category Helper release
+
+on:
+  push:
+    tags:
+      - 'category-helper-v*'
+
+permissions:
+  contents: read
+
+# Un giro alla volta per tutti i tag, mai interrotto a meta': una versione
+# piu' vecchia non diventa Latest solo perche' ha finito dopo (e il passo
+# che guarda la Latest di adesso vale anche per un Re-run)
+concurrency:
+  group: category-helper-release
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    if: github.repository == 'EmanueleMelini/dokkan-team-sharing'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: android
+    outputs:
+      version: ${{ steps.tag.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # tutta la storia, con origin/main: serve al passo dopo
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check that the tagged commit is on main
+        run: |
+          if ! git merge-base --is-ancestor HEAD origin/main; then
+            echo "::error::$GITHUB_REF_NAME points to $(git rev-parse --short HEAD), which is not on main: tag a commit of main"
+            exit 1
+          fi
+
+      # Java 25 come il toolchain del daemon di Gradle
+      # (android/gradle/gradle-daemon-jvm.properties, senza vendor: va bene
+      # questo JDK, Gradle non ne scarica un altro)
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+        with:
+          distribution: temurin
+          java-version: 25
+
+      # Valida gradle-wrapper.jar contro i checksum ufficiali di Gradle
+      - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
+        with:
+          cache-disabled: true
+
+      - name: Check that the tag matches the app version
+        id: tag
+        run: |
+          version=$(sed -n 's/^ *versionName = "\([^"]*\)"$/\1/p' app/build.gradle.kts)
+          if ! [[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::cannot read one X.Y.Z versionName from android/app/build.gradle.kts"
+            exit 1
+          fi
+          if [ "category-helper-v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME doesn't match versionName $version in android/app/build.gradle.kts (expected category-helper-v$version)"
+            exit 1
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      # Il testo della release su GitHub, in inglese: prima della build, cosi'
+      # una nota mancante ferma il giro subito
+      - name: Check the release notes
+        run: |
+          notes="release-notes/$VERSION.md"
+          if ! grep -q '^- ' "$notes" 2>/dev/null; then
+            echo "::error::android/$notes is missing or has no '- ' bullet"
+            exit 1
+          fi
+
+      # L'icona e la bolla dell'app si generano dal marchio del sito: se il
+      # marchio e' cambiato senza rigenerarle, la release si ferma qui. Basta
+      # il node del runner: lo script usa solo moduli node:, niente npm install
+      - name: Check that the app icon is generated from the site mark
+        run: node ../scripts/brand/icona-android.mjs --check
+
+      - name: Restore the signing keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.DCH_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::error::The DCH_KEYSTORE_BASE64 secret is empty"
+            exit 1
+          fi
+          umask 077
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/dokkants-category-helper.jks"
+          if [ ! -s "$RUNNER_TEMP/dokkants-category-helper.jks" ]; then
+            echo "::error::The DCH_KEYSTORE_BASE64 secret decodes to an empty file"
+            exit 1
+          fi
+
+      # app/build.gradle.kts legge queste variabili al posto di
+      # local.properties; DCH_KEY_PASSWORD vuoto vale la password del keystore
+      - name: Test, lint and build the signed APK
+        env:
+          DCH_KEYSTORE_PATH: ${{ runner.temp }}/dokkants-category-helper.jks
+          DCH_KEYSTORE_PASSWORD: ${{ secrets.DCH_KEYSTORE_PASSWORD }}
+          DCH_KEY_ALIAS: ${{ secrets.DCH_KEY_ALIAS }}
+          DCH_KEY_PASSWORD: ${{ secrets.DCH_KEY_PASSWORD }}
+        run: ./gradlew testDebugUnitTest lintDebug :app:releaseApk
+
+      # Lo SHA-256 del certificato nel riepilogo. La chiave di debug ferma
+      # tutto (checkReleaseSigning non la usa mai: questa e' la seconda
+      # difesa). I build-tools: l'ultima versione stabile, mai una -rc
+      - name: Check the APK signature
+        run: |
+          apk=app/build/dist/dokkants-category-helper.apk
+          tools=$(ls -d "$ANDROID_HOME"/build-tools/* | grep -E '/[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)
+          "$tools/apksigner" verify --verbose --print-certs "$apk" > "$RUNNER_TEMP/certs.txt"
+          cat "$RUNNER_TEMP/certs.txt"
+          if grep -q 'CN=Android Debug' "$RUNNER_TEMP/certs.txt"; then
+            echo "::error::$apk is signed with the Android debug key"
+            exit 1
+          fi
+          if ! grep -q 'certificate SHA-256 digest' "$RUNNER_TEMP/certs.txt"; then
+            echo "::error::apksigner printed no certificate for $apk"
+            exit 1
+          fi
+          {
+            echo "### DokkanTS Category Helper $VERSION: signing certificate"
+            echo '```'
+            grep -E 'certificate (DN|SHA-256 digest)' "$RUNNER_TEMP/certs.txt"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # La riga package: si cerca, non si conta: un avviso di aapt2 prima
+      # non la sposta
+      - name: Check the package and version inside the APK
+        run: |
+          apk=app/build/dist/dokkants-category-helper.apk
+          tools=$(ls -d "$ANDROID_HOME"/build-tools/* | grep -E '/[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)
+          dump=$("$tools/aapt2" dump badging "$apk")
+          badging=$(grep -m1 '^package:' <<< "$dump" || true)
+          echo "$badging"
+          name=$(sed -n "s/^package: name='\([^']*\)'.*/\1/p" <<< "$badging")
+          version=$(sed -n "s/.* versionName='\([^']*\)'.*/\1/p" <<< "$badging")
+          if [ "$name" != 'it.emanuelemelini.dokkants.categoryhelper' ] || [ "$version" != "$VERSION" ]; then
+            echo "::error::$apk is $name $version, not it.emanuelemelini.dokkants.categoryhelper $VERSION"
+            exit 1
+          fi
+
+      # Il nome del file e' quello dell'asset: gh lo carica con questo nome
+      - name: Stage the APK and the notes for publishing
+        run: |
+          mkdir -p "$RUNNER_TEMP/release"
+          cp app/build/dist/dokkants-category-helper.apk "$RUNNER_TEMP/release/dokkants-category-helper.apk"
+          cp "release-notes/$VERSION.md" "$RUNNER_TEMP/release/notes.md"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dokkants-category-helper-release
+          path: ${{ runner.temp }}/release
+          if-no-files-found: error
+          retention-days: 1
+
+  # Il solo job con contents: write: niente secret, niente checkout, niente
+  # Gradle. Prende l'APK gia' controllato da build e lo pubblica
+  publish:
+    needs: build
+    if: github.repository == 'EmanueleMelini/dokkan-team-sharing'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.build.outputs.version }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dokkants-category-helper-release
+          path: ${{ runner.temp }}/release
+
+      # Il link del sito serve sempre la Latest: una versione piu' vecchia
+      # (un Re-run di un tag superato) o un'altra chiave (Android non la
+      # installa sopra l'app che c'e') non deve diventarlo. La prima release
+      # non ha niente con cui confrontarsi
+      - name: Check the release against the current Latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          apk="$RUNNER_TEMP/release/dokkants-category-helper.apk"
+          latest=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName,isLatest --jq '.[] | select(.isLatest) | .tagName')
+          if [ -z "$latest" ]; then
+            echo "No Latest release yet: $GITHUB_REF_NAME is the first one"
+            exit 0
+          fi
+          if ! [[ $latest =~ ^category-helper-v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            echo "::error::The Latest release is $latest, not a category-helper-vX.Y.Z release of the app"
+            exit 1
+          fi
+          previous=${BASH_REMATCH[1]}
+          if [ "$previous" = "$VERSION" ] || [ "$(printf '%s\n' "$previous" "$VERSION" | sort -V | tail -1)" != "$VERSION" ]; then
+            echo "::error::The Latest release is already $previous: $VERSION is not newer and would replace it as Latest"
+            exit 1
+          fi
+          gh release download "$latest" --repo "$GITHUB_REPOSITORY" --pattern dokkants-category-helper.apk --dir "$RUNNER_TEMP/previous"
+          tools=$(ls -d "$ANDROID_HOME"/build-tools/* | grep -E '/[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)
+          # La riga cambia con la versione di apksigner: "Signer #1 certificate
+          # SHA-256 digest: ..." in locale, "V2 Signer: certificate SHA-256
+          # digest: ..." sul runner (giro della release di Steno, 2026-10-29).
+          # Conta solo il digest, l'ultimo campo della prima riga
+          sha() { "$tools/apksigner" verify --print-certs "$1" | awk '/certificate SHA-256 digest: / { print $NF; exit }'; }
+          old=$(sha "$RUNNER_TEMP/previous/dokkants-category-helper.apk")
+          new=$(sha "$apk")
+          if [ -z "$new" ] || [ "$new" != "$old" ]; then
+            echo "::error::$VERSION is signed with certificate ${new:-?}, the Latest $previous with ${old:-?}: Android would not install it over the app"
+            exit 1
+          fi
+          echo "Same signing certificate as $latest: $new" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Publish the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" "$RUNNER_TEMP/release/dokkants-category-helper.apk" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "DokkanTS Category Helper $VERSION" \
+            --notes-file "$RUNNER_TEMP/release/notes.md" \
+            --latest --verify-tag

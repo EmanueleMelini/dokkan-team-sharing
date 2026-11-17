@@ -11,6 +11,7 @@
 //   public/pwa/maskable-192.png, -512.png  icone maskable (Android le ritaglia)
 //   public/pwa/badge-96.png              badge delle notifiche (fase 4)
 //   public/offline.html                  la pagina offline del service worker
+//   android/app/src/main/res/...         l'icona e la bolla dell'app Android (icona-android.mjs)
 //
 //   npm run brand
 //
@@ -31,6 +32,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import sharp from 'sharp'
 import { differenzeMarchio } from './colori.mjs'
+import { iconaDalRepository, scriviIconaAndroid } from './icona-android.mjs'
 import { paginaOffline } from './offline.mjs'
 
 const ROOT = join(fileURLToPath(new URL('.', import.meta.url)), '..', '..')
@@ -142,6 +144,10 @@ function controllaComponente() {
 }
 
 controllaComponente()
+// Anche l'icona Android, prima di scrivere qualunque file: se col marchio
+// nuovo la lente tocca i settori o l'anello esce dalla zona sicura,
+// iconaAndroid lancia qui e le icone del sito restano com'erano.
+iconaDalRepository(ROOT)
 
 const scrivi = (nome, dati) => {
   writeFileSync(join(APP, nome), dati)
@@ -187,3 +193,7 @@ for (const lato of [192, 512]) {
 // Il badge resta trasparente: Android ne usa solo il canale alfa.
 scriviPublic('pwa/badge-96.png', await png(sorgente('badge.svg'), 96))
 scriviPublic('offline.html', paginaOffline(ROOT))
+
+// L'adaptive icon dell'app Android e la sua bolla: il marchio con la lente
+// al posto del disco, dalla maskable.svg. Scrive solo i file che cambiano.
+for (const percorso of scriviIconaAndroid(ROOT)) console.log(percorso)

@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- INTERNET only for the manual "Check for updates" (settings and dictionary editor): one
+         HTTPS GET of https://dokkants.app/api/v1/categories when the user taps it. Nothing runs in
+         the background, no analytics, nothing else goes online. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- Makes launchable apps visible to PackageManager (Android 11+), so the settings can list
+         the installed Dokkan packages without QUERY_ALL_PACKAGES. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
+
+    <!-- usesCleartextTraffic: no plain HTTP, also on Android 8.x where it is allowed by default.
+         Backup on: Android's backup and the transfer to a new phone copy the dictionary, favorites,
+         recents and settings (data_extraction_rules.xml from Android 12, backup_rules.xml before);
+         nothing in them is sensitive, and the site never receives them.
+         backupInForeground: with the accessibility service on, the process always counts as
+         foreground, and Android would put off the nightly backup forever. The backup runs while
+         the phone is idle and charging; afterwards Android restarts the process, and the system
+         binds the service again. -->
+    <application
+        android:allowBackup="true"
+        android:backupInForeground="true"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
+        android:usesCleartextTraffic="false"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.DokkanTSCategoryHelper">
+
+        <!-- The home screen (and the recent apps screen) shows this label, short enough not to be
+             cut; App info and the install dialogs show the application label, the full name. -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:label="@string/launcher_name">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name=".DictionaryActivity"
+            android:exported="false"
+            android:label="@string/editor_title"
+            android:windowSoftInputMode="adjustResize" />
+
+        <service
+            android:name=".service.DokkanAccessibilityService"
+            android:exported="true"
+            android:label="@string/service_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_service_config" />
+        </service>
+    </application>
+</manifest>

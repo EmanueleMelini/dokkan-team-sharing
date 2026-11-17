@@ -1,0 +1,143 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Italian translation of values/strings.xml (non-translatable strings live only there). -->
+<resources xmlns:tools="http://schemas.android.com/tools" tools:locale="it">
+    <string name="service_description">Mostra una piccola bolla sopra Dokkan Battle JP per cercare le categorie in inglese e inserirne il nome giapponese nel campo di ricerca del gioco. Legge solo quale app è in primo piano e il campo di ricerca del gioco. Va in rete solo quando tocchi «Controlla aggiornamenti».</string>
+
+    <!-- Service -->
+    <string name="section_service">Servizio di accessibilità</string>
+    <string name="service_status_active">Attivo</string>
+    <string name="service_status_not_connected">Abilitato nelle impostazioni ma non connesso: disattivalo e riattivalo</string>
+    <string name="service_status_disabled">Disattivato: senza il servizio la bolla non compare</string>
+    <string name="open_accessibility_settings">Apri impostazioni accessibilità</string>
+
+    <string name="section_restricted">Android 13+: impostazioni con restrizioni</string>
+    <string name="restricted_instructions">Se hai installato l\'APK da file (file manager, browser), Android blocca il servizio di accessibilità. Prova prima ad attivarlo una volta, poi: Info app → menu ⋮ in alto a destra → «Consenti impostazioni con restrizioni» → conferma, e riattiva il servizio. Con «adb install» di solito il blocco non c\'è.</string>
+    <string name="open_app_info">Apri Info app</string>
+
+    <!-- Appearance -->
+    <string name="section_appearance">Comparsa</string>
+    <string name="auto_show">Mostra la bolla quando Dokkan è aperto</string>
+    <string name="target_package">Package dell\'app da monitorare</string>
+    <string name="target_package_blank">Vuoto: si usa quello di Dokkan JP</string>
+    <string name="installed_apps">App Dokkan installate</string>
+    <string name="installed_none">Nessuna app Dokkan installata.</string>
+    <string name="kind_other">altro</string>
+
+    <!-- Bubble -->
+    <string name="section_bubble">Bolla</string>
+    <string name="bubble_opacity">Opacità: %1$d%%</string>
+    <string name="bubble_size">Dimensione: %1$d dp</string>
+    <string name="bubble_reset_position">Riporta la bolla al bordo destro</string>
+    <string name="bubble_hint">La bolla si trascina e si aggancia al bordo più vicino; la posizione resta salvata. Mentre la tocchi diventa opaca.</string>
+
+    <!-- Diagnostics -->
+    <string name="section_diagnostics">Diagnostica</string>
+    <string name="debug_log">Log diagnostico</string>
+    <string name="debug_log_help">Scrive in Logcat quale app risulta in primo piano e quali campi prendono il focus in Dokkan. Lettura dal computer:</string>
+
+    <!-- Insertion -->
+    <string name="section_insert">Inserimento</string>
+    <string name="insert_auto">Automatico: scrive il nome nel campo di ricerca del gioco</string>
+    <string name="insert_clipboard">Solo appunti: lo incolli tu</string>
+    <string name="insert_hint">In entrambi i casi il nome va anche negli appunti. In automatico, dopo la scelta tocca il campo di ricerca del gioco entro 30 secondi: finché il nome è in attesa la bolla resta piena, con un bordo bianco. Se il campo era già aperto, il nome entra subito.</string>
+    <string name="insert_failed">Inserimento non riuscito: incolla a mano, il nome è negli appunti</string>
+
+    <!-- Dictionary -->
+    <string name="section_dictionary">Dizionario</string>
+    <string name="dictionary_summary">Categorie: %1$d (versione %2$d) · Preferiti: %3$d · Recenti: %4$d</string>
+    <string name="dictionary_loading">Caricamento…</string>
+    <string name="dictionary_bundled">Non modificato nell\'app: un aggiornamento dell\'app con un dizionario più nuovo lo sostituisce.</string>
+    <string name="dictionary_edited">Modificato nell\'app: gli aggiornamenti dell\'app non lo toccano più (salvo «Ripristina» nell\'editor).</string>
+    <string name="open_editor">Apri l\'editor</string>
+    <string name="clear_recents">Svuota i recenti</string>
+    <string name="update_check">Controlla aggiornamenti</string>
+    <string name="update_checking">Controllo in corso…</string>
+    <string name="update_hint">Aggiunge le categorie nuove del gioco, da Dokkan Team Sharing. Non modifica né elimina quelle che hai già, e non riaggiunge quelle che hai eliminato.</string>
+    <plurals name="update_added">
+        <item quantity="one">Aggiunta %d categoria nuova</item>
+        <item quantity="many">Aggiunte %d categorie nuove</item>
+        <item quantity="other">Aggiunte %d categorie nuove</item>
+    </plurals>
+    <string name="update_none">Il dizionario è già aggiornato</string>
+    <string name="update_failed_network">Dokkan Team Sharing non risponde: controlla la connessione e riprova.</string>
+    <string name="update_failed_http">Controllo non riuscito (HTTP %1$d): riprova più tardi.</string>
+    <string name="update_failed_invalid">Controllo non riuscito: risposta inattesa.</string>
+    <string name="update_failed_newer">I dati aggiornati richiedono una versione più recente dell\'app: installa l\'ultima release.</string>
+    <string name="update_failed_storage">Non è stato possibile salvare le categorie nuove. Controlla che il telefono abbia spazio libero e riprova.</string>
+
+    <!-- About -->
+    <string name="section_about">Informazioni</string>
+    <string name="about_version">Versione %1$s</string>
+    <string name="about_instructions">Istruzioni</string>
+    <string name="about_no_browser">Nessun browser per aprire %1$s</string>
+
+    <!-- Dictionary editor -->
+    <string name="editor_title">Dizionario</string>
+    <plurals name="editor_subtitle_bundled">
+        <item quantity="one">%d categoria · non modificato</item>
+        <item quantity="many">%d categorie · non modificato</item>
+        <item quantity="other">%d categorie · non modificato</item>
+    </plurals>
+    <plurals name="editor_subtitle_edited">
+        <item quantity="one">%d categoria · modificato</item>
+        <item quantity="many">%d categorie · modificato</item>
+        <item quantity="other">%d categorie · modificato</item>
+    </plurals>
+    <string name="editor_back">Indietro</string>
+    <string name="editor_menu">Altre azioni</string>
+    <string name="editor_import">Importa JSON…</string>
+    <string name="editor_export">Esporta JSON…</string>
+    <string name="editor_restore">Ripristina il dizionario incluso</string>
+    <string name="editor_add">Nuova categoria</string>
+    <string name="editor_search">Cerca</string>
+    <string name="editor_empty">Nessuna categoria. Aggiungine una con + o importa un file JSON.</string>
+    <string name="editor_no_results">Nessuna categoria per «%1$s»</string>
+    <string name="editor_aliases">Alias: %1$s</string>
+
+    <string name="edit_new_title">Nuova categoria</string>
+    <string name="edit_title">Modifica categoria</string>
+    <string name="edit_en">Nome inglese *</string>
+    <string name="edit_jp">Nome giapponese *</string>
+    <string name="edit_aliases">Alias, separati da virgola</string>
+    <string name="edit_duplicate">Esiste già una categoria con questo nome inglese</string>
+    <string name="edit_id">ID: %1$s</string>
+    <string name="edit_game_id">ID del gioco: %1$d</string>
+    <string name="edit_save">Salva</string>
+    <string name="edit_cancel">Annulla</string>
+    <string name="edit_delete">Elimina</string>
+
+    <string name="deleted">Eliminata «%1$s»</string>
+    <string name="undo">Annulla</string>
+
+    <string name="import_title">Importa dizionario</string>
+    <string name="import_summary">Nel file: %1$d categorie valide.\nDizionario attuale: %2$d categorie.</string>
+    <string name="import_dropped">%1$d voci scartate (senza nome inglese o giapponese, o con ID duplicato).</string>
+    <string name="import_explain">Unisci: aggiunge le nuove e aggiorna quelle con lo stesso ID, ID del gioco o nome inglese.\nSostituisci: il dizionario attuale viene rimpiazzato.</string>
+    <string name="import_merge">Unisci</string>
+    <string name="import_replace">Sostituisci</string>
+    <string name="import_done">Categorie importate: %1$d</string>
+    <string name="import_invalid">File non valido: %1$s</string>
+    <string name="import_none">Nessuna categoria valida nel file</string>
+    <string name="export_done">Dizionario esportato</string>
+    <string name="export_failed">Esportazione non riuscita: %1$s</string>
+
+    <string name="restore_title">Ripristinare il dizionario incluso?</string>
+    <string name="restore_text">Le modifiche fatte nell\'app andranno perse, e così le categorie aggiunte con «Controlla aggiornamenti» (il controllo successivo le riaggiunge, anche quelle che avevi eliminato). Se vuoi conservare le modifiche, esportale prima.</string>
+    <string name="restore_confirm">Ripristina</string>
+    <string name="restore_done">Dizionario incluso ripristinato</string>
+
+    <!-- Overlay -->
+    <string name="bubble_description">Cerca una categoria</string>
+    <string name="panel_search_hint">Cerca in inglese (es. pure saiyans)</string>
+    <string name="panel_clear">Cancella la ricerca</string>
+    <string name="panel_close">Chiudi</string>
+    <string name="panel_loading">Caricamento del dizionario…</string>
+    <string name="panel_no_results">Nessuna categoria per «%1$s»</string>
+    <string name="panel_empty_dictionary">Il dizionario è vuoto.</string>
+    <string name="panel_favorites">Preferiti</string>
+    <string name="panel_recents">Recenti</string>
+    <string name="panel_all">Tutte le categorie</string>
+    <string name="panel_favorite">Aggiungi ai preferiti</string>
+    <string name="panel_unfavorite">Togli dai preferiti</string>
+    <string name="copied_toast">Copiato «%1$s»: incollalo nel campo di ricerca del gioco</string>
+</resources>

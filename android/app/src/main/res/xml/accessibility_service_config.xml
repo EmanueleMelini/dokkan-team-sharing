@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  - No packageNames filter: events from every app are needed to see when Dokkan leaves the
+    foreground; filtering happens in code.
+  - typeWindowsChanged instead of the spec's typeWindowContentChanged: window changes are what
+    tells the foreground app, while content changes of every app would only cost battery
+    (Phase 0 showed the search field announces itself with typeViewFocused).
+-->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:accessibilityEventTypes="typeWindowStateChanged|typeWindowsChanged|typeViewFocused"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:accessibilityFlags="flagReportViewIds|flagRetrieveInteractiveWindows|flagIncludeNotImportantViews"
+    android:canRetrieveWindowContent="true"
+    android:description="@string/service_description"
+    android:notificationTimeout="100"
+    android:settingsActivity="it.emanuelemelini.dokkants.categoryhelper.MainActivity" />

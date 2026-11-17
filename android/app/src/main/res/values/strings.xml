@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- English UI (default). The Italian translation is in values-it/strings.xml. -->
+<resources xmlns:tools="http://schemas.android.com/tools" tools:locale="en">
+    <!-- The full name: App info, install dialogs, the settings title. The accessibility service
+         keeps the same name, the one users tap in Settings > Accessibility. -->
+    <string name="app_name" translatable="false">DokkanTS Category Helper</string>
+    <string name="service_label" translatable="false">DokkanTS Category Helper</string>
+    <!-- Label of the launcher activity only (home screen, recent apps): the full name would be cut there. -->
+    <string name="launcher_name" translatable="false">Category Helper</string>
+    <string name="service_description">Shows a small bubble over Dokkan Battle JP so you can search categories in English and put the Japanese name into the game\'s search field. It only reads which app is in front and the game\'s search field. It goes online only when you tap Check for updates.</string>
+
+    <!-- Service -->
+    <string name="section_service">Accessibility service</string>
+    <string name="service_status_active">On</string>
+    <string name="service_status_not_connected">Enabled in the settings but not connected: turn it off and on again</string>
+    <string name="service_status_disabled">Off: without the service the bubble does not appear</string>
+    <string name="open_accessibility_settings">Open accessibility settings</string>
+
+    <string name="section_restricted">Android 13+: restricted settings</string>
+    <string name="restricted_instructions">If you installed the APK from a file (file manager, browser), Android blocks the accessibility service. Try to turn it on once, then: App info → ⋮ menu at the top right → “Allow restricted settings” → confirm, and turn the service on again. With “adb install” the block usually does not show up.</string>
+    <string name="open_app_info">Open app info</string>
+
+    <!-- Appearance -->
+    <string name="section_appearance">Visibility</string>
+    <string name="auto_show">Show the bubble when Dokkan is open</string>
+    <string name="target_package">Package of the app to watch</string>
+    <string name="target_package_blank">Empty: Dokkan JP is used</string>
+    <string name="installed_apps">Installed Dokkan apps</string>
+    <string name="installed_none">No Dokkan app installed.</string>
+    <string name="installed_chip" translatable="false">%1$s · %2$s</string>
+    <string name="kind_jp" translatable="false">JP</string>
+    <string name="kind_global" translatable="false">Global</string>
+    <string name="kind_other">other</string>
+
+    <!-- Bubble -->
+    <string name="section_bubble">Bubble</string>
+    <string name="bubble_opacity">Opacity: %1$d%%</string>
+    <string name="bubble_size">Size: %1$d dp</string>
+    <string name="bubble_reset_position">Move the bubble back to the right edge</string>
+    <string name="bubble_hint">Drag the bubble anywhere: it snaps to the nearest edge and keeps its position. It turns solid while you touch it.</string>
+
+    <!-- Diagnostics -->
+    <string name="section_diagnostics">Diagnostics</string>
+    <string name="debug_log">Diagnostic log</string>
+    <string name="debug_log_help">Writes to Logcat which app is in front and which fields get the focus in Dokkan. To read it from a computer:</string>
+    <string name="debug_log_command" translatable="false">adb logcat -s DokkanHelper</string>
+
+    <!-- Insertion -->
+    <string name="section_insert">Insertion</string>
+    <string name="insert_auto">Automatic: types the name into the game\'s search field</string>
+    <string name="insert_clipboard">Clipboard only: you paste it</string>
+    <string name="insert_hint">Either way the name also goes to the clipboard. In automatic mode, tap the game\'s search field within 30 seconds of your pick: while the name is waiting, the bubble stays solid with a white ring. If the field was already open, the name goes in right away.</string>
+    <string name="insert_failed">Could not type the name: paste it yourself, it is on the clipboard</string>
+
+    <!-- Dictionary -->
+    <string name="section_dictionary">Dictionary</string>
+    <string name="dictionary_summary">Categories: %1$d (version %2$d) · Favorites: %3$d · Recent: %4$d</string>
+    <string name="dictionary_loading">Loading…</string>
+    <string name="dictionary_bundled">Not edited in the app: an app update with a newer dictionary replaces it.</string>
+    <string name="dictionary_edited">Edited in the app: app updates leave it alone (unless you restore it in the editor).</string>
+    <string name="open_editor">Open the editor</string>
+    <string name="clear_recents">Clear recents</string>
+    <string name="update_check">Check for updates</string>
+    <string name="update_checking">Checking…</string>
+    <string name="update_hint">Adds the categories that are new in the game, from Dokkan Team Sharing. It never changes or removes the ones you have, and never adds back one you deleted.</string>
+    <plurals name="update_added">
+        <item quantity="one">Added %d new category</item>
+        <item quantity="other">Added %d new categories</item>
+    </plurals>
+    <string name="update_none">Already up to date</string>
+    <string name="update_failed_network">Could not reach Dokkan Team Sharing. Check your connection and try again.</string>
+    <string name="update_failed_http">Update check failed (HTTP %1$d). Try again later.</string>
+    <string name="update_failed_invalid">Update check failed: unexpected response.</string>
+    <string name="update_failed_newer">The update data needs a newer version of this app. Install the latest release.</string>
+    <string name="update_failed_storage">Could not save the new categories. Check that the phone has free space and try again.</string>
+
+    <!-- About -->
+    <string name="section_about">About</string>
+    <string name="about_version">Version %1$s</string>
+    <string name="about_instructions">Instructions</string>
+    <string name="about_no_browser">No browser to open %1$s</string>
+
+    <!-- Dictionary editor -->
+    <string name="editor_title">Dictionary</string>
+    <plurals name="editor_subtitle_bundled">
+        <item quantity="one">%d category · not edited</item>
+        <item quantity="other">%d categories · not edited</item>
+    </plurals>
+    <plurals name="editor_subtitle_edited">
+        <item quantity="one">%d category · edited</item>
+        <item quantity="other">%d categories · edited</item>
+    </plurals>
+    <string name="editor_back">Back</string>
+    <string name="editor_menu">More actions</string>
+    <string name="editor_import">Import JSON…</string>
+    <string name="editor_export">Export JSON…</string>
+    <string name="editor_restore">Restore the bundled dictionary</string>
+    <string name="editor_add">New category</string>
+    <string name="editor_search">Search</string>
+    <string name="editor_empty">No categories. Add one with + or import a JSON file.</string>
+    <string name="editor_no_results">No categories for “%1$s”</string>
+    <string name="editor_aliases">Aliases: %1$s</string>
+
+    <string name="edit_new_title">New category</string>
+    <string name="edit_title">Edit category</string>
+    <string name="edit_en">English name *</string>
+    <string name="edit_jp">Japanese name *</string>
+    <string name="edit_aliases">Aliases, separated by commas</string>
+    <string name="edit_duplicate">A category with this English name already exists</string>
+    <string name="edit_id">ID: %1$s</string>
+    <string name="edit_game_id">Game ID: %1$d</string>
+    <string name="edit_save">Save</string>
+    <string name="edit_cancel">Cancel</string>
+    <string name="edit_delete">Delete</string>
+
+    <string name="deleted">Deleted “%1$s”</string>
+    <string name="undo">Undo</string>
+
+    <string name="import_title">Import dictionary</string>
+    <string name="import_summary">Valid categories in the file: %1$d\nCategories in the current dictionary: %2$d</string>
+    <string name="import_dropped">Entries skipped: %1$d (no English or Japanese name, or a duplicate ID).</string>
+    <string name="import_explain">Merge: adds the new ones and updates those with the same ID, game ID or English name.\nReplace: the current dictionary is replaced.</string>
+    <string name="import_merge">Merge</string>
+    <string name="import_replace">Replace</string>
+    <string name="import_done">Categories imported: %1$d</string>
+    <string name="import_invalid">Invalid file: %1$s</string>
+    <string name="import_none">No valid categories in the file</string>
+    <string name="export_done">Dictionary exported</string>
+    <string name="export_failed">Export failed: %1$s</string>
+
+    <string name="restore_title">Restore the bundled dictionary?</string>
+    <string name="restore_text">Changes made in the app will be lost, and so will the categories added by Check for updates (the next check adds them back, also the ones you had deleted). To keep your changes, export them first.</string>
+    <string name="restore_confirm">Restore</string>
+    <string name="restore_done">Bundled dictionary restored</string>
+
+    <!-- Overlay -->
+    <string name="bubble_description">Search a category</string>
+    <string name="panel_search_hint">Search in English (e.g. pure saiyans)</string>
+    <string name="panel_clear">Clear the search</string>
+    <string name="panel_close">Close</string>
+    <string name="panel_loading">Loading the dictionary…</string>
+    <string name="panel_no_results">No categories for “%1$s”</string>
+    <string name="panel_empty_dictionary">The dictionary is empty.</string>
+    <string name="panel_favorites">Favorites</string>
+    <string name="panel_recents">Recent</string>
+    <string name="panel_all">All categories</string>
+    <string name="panel_section_count" translatable="false">%1$s (%2$d)</string>
+    <string name="panel_favorite">Add to favorites</string>
+    <string name="panel_unfavorite">Remove from favorites</string>
+    <string name="copied_toast">Copied “%1$s”: paste it into the game\'s search field</string>
+</resources>
