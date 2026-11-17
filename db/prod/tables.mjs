@@ -33,6 +33,8 @@ export const TABLES = {
   card_skill: { class: 'content', key: ['card_id', 'locale', 'kind', 'tier', 'seq'] },
   category: { class: 'content' },
   category_text: { class: 'content' },
+  // gli alias delle categorie (0037): li scrive load-datamine
+  category_alias: { class: 'content' },
   link_skill: { class: 'content' },
   link_skill_text: { class: 'content' },
   event: { class: 'content', ignore: ['imported_at'] },

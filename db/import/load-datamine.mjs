@@ -24,7 +24,12 @@
 //
 // ADOTTA GLI ID DEL GIOCO per categorie e link skill: i nostri erano
 // numeri che avevo assegnato io scorrendo il wiki, arbitrari. Quelli del
-// datamine sono i veri, quindi le tabelle si ricostruiscono.
+// datamine sono i veri. Le link skill si ricostruiscono; le categorie si
+// aggiornano sul posto (db/import/categories/, migrazione 0037): i nomi
+// inglesi dal datamine, quelli giapponesi dalle missioni dei titoli (con
+// l'ultimo nome noto quando mancano), gli alias ricalcolati. Una categoria
+// che non cambia non si tocca, e la cascata non porta piu' via le regole
+// delle sfere (equipment_limit_category) a ogni giro.
 //
 //   node db/import/load-datamine.mjs [--dry-run]
 import { existsSync, readFileSync } from 'node:fs'
@@ -33,6 +38,8 @@ import { fileURLToPath } from 'node:url'
 import pg from 'pg'
 import { connectionString, describeTarget } from '../env.mjs'
 import { decodeElement, decodeRarity, isPlayable } from './datamine.mjs'
+import { extractJapaneseNames } from './categories/japanese-names.mjs'
+import { applyCategories } from './categories/write.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const DIR = join(HERE, '.cache', 'datamine')
@@ -93,8 +100,10 @@ const cats = load('card_categories')
 const cardCats = load('card_card_categories')
 const links = load('link_skills')
 const routes = load('card_awakening_routes')
+// i nomi giapponesi delle categorie stanno nelle missioni dei titoli
+const missions = load('missions')
 console.log(`  cards ${cards.length}  categorie ${cats.length}  legami ${cardCats.length}`)
-console.log(`  link skill ${links.length}  risvegli ${routes.length}\n`)
+console.log(`  link skill ${links.length}  risvegli ${routes.length}  missioni ${missions.length}\n`)
 
 const byId = new Map(cards.map((c) => [String(c.id), c]))
 const classed = cards.filter((c) => isPlayable(c) && decodeElement(c.element)?.cls)
@@ -111,6 +120,9 @@ if (DRY) {
     const lname = (id) => links.find((l) => int(l.id) === int(id))?.name ?? `?${id}`
     console.log(`    link: ${ls.map(lname).join(', ')}`)
   }
+  const jp = extractJapaneseNames(missions)
+  console.log(`\n  nomi giapponesi delle categorie dalle missioni dei titoli: ${jp.names.size}`)
+  for (const p of jp.problems) console.log(`    (${p.msg})`)
   console.log('\n  --dry-run: non ho scritto niente')
   process.exit(0)
 }
@@ -134,21 +146,17 @@ try {
   const absent = mine.length - ids.length
   if (absent) console.log(`  (${absent} non nel datamine: sono le carte finte dei dati di prova)`)
 
-  // 1. categorie e link skill: si adottano gli id del gioco
+  // 1. categorie e link skill: si adottano gli id del gioco. I legami con
+  //    le carte si riscrivono (passi 3 e 4); le categorie si aggiornano sul
+  //    posto, e si cancellano solo quelle sparite dal datamine
   await client.query('delete from card_category')
   await client.query('delete from card_link')
-  await client.query('delete from category_text')
-  await client.query('delete from category')
   await client.query('delete from link_skill_text')
   await client.query('delete from link_skill')
 
   const cat = cats.filter((c) => int(c.id) && c.name)
-  await client.query(`insert into category (id) select unnest($1::smallint[])`, [cat.map((c) => int(c.id))])
-  await client.query(`
-    insert into category_text (category_id, locale, name, source)
-    select * from unnest($1::smallint[], $2::text[], $3::text[], $4::text_source[])`,
-    [cat.map((c) => int(c.id)), cat.map(() => LOCALE), cat.map((c) => c.name), cat.map(() => 'official')])
-  console.log(`  categorie con gli id del gioco: ${cat.length}`)
+  const { plan: categorie, lines } = await applyCategories(client, { categories: cat, missions })
+  for (const l of lines) console.log(l)
 
   const lk = links.filter((l) => int(l.id) && l.name)
   await client.query(`insert into link_skill (id) select unnest($1::smallint[])`, [lk.map((l) => int(l.id))])
@@ -205,8 +213,10 @@ try {
   }
   console.log(`  legami carta-link: ${cl.length}`)
 
-  // 4. le categorie
-  const validCat = new Set(cat.map((c) => int(c.id)))
+  // 4. le categorie: solo gli id che applyCategories ha tenuto (interi
+  //    positivi), cosi' un id del CSV che lei scarta non diventa un legame
+  //    verso una categoria che non c'e'
+  const validCat = new Set(categorie.ids)
   const cc = cardCats
     .filter((r) => wanted.has(String(r.card_id)) && validCat.has(int(r.card_category_id)))
     .map((r) => [Number(r.card_id), int(r.card_category_id)])

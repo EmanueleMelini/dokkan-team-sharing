@@ -7,7 +7,8 @@
 // specchio Japan (0036) dentro i limiti, migrate --check,
 // import_run (e i giri delle sole immagini), le immagini che mancano anche
 // alle carte senza pagina, la provenienza degli asset (0033), e la forma
-// dei due workflow.
+// dei due workflow (con la voce delle categorie senza nome giapponese in
+// "Needs attention", 0037).
 //
 // Crea solo l'utente weeklytest+author@example.invalid (e lo toglie) e un
 // database usa e getta <test>_mc_test per migrate --check (e lo cancella).
@@ -31,6 +32,7 @@ import {
 import { TAG_MAX } from '@/lib/cache/revalidate'
 import { TABLES, unclassified } from '../prod/tables.mjs'
 import { headersFor, resolveCommit } from '../import/datamine-source.mjs'
+import { MARCA_SENZA_GIAPPONESE } from '../import/categories/plan.mjs'
 import { ASSET_ADOTTA_SQL, ASSET_SCARICA_SQL, selectJobs, siMuove } from '../import/asset-select.mjs'
 import { takeSnapshot } from '../prod/snapshot.mjs'
 import { db } from '@/lib/db'
@@ -865,6 +867,32 @@ console.log('i workflow')
           "always() && steps.datamine.outcome == 'success' && steps.sanity.outcome == 'success' " +
           "&& (env.GO == 'false' || (env.GO == 'true' && steps.compare.outcome == 'success'))", archIf)
       check('...e dopo di loro', wsteps.indexOf(arch!) > wsteps.indexOf(cmp!) && wsteps.indexOf(cmp!) > wsteps.indexOf(sanity!))
+      // 0037: la riga di load-datamine sulle categorie senza nome giapponese
+      // finisce in "Needs attention". Il passo vero, eseguito con due
+      // fotografie vuote (compare.mjs vero) e un log del giro di prova finto
+      {
+        const marca = `'^  ${MARCA_SENZA_GIAPPONESE.replace(/:$/, '')}'`
+        check('weekly: "Compare and enforce the limits" cerca nel log la riga di load-datamine sulle categorie',
+          (cmp?.run ?? '').includes(`grep -qE ${marca} "$RUNNER_TEMP/rehearsal.log"`), marca)
+        const vuota = JSON.stringify({ version: 1, tables: {}, names: {} })
+        writeFileSync(join(tmp, 'before.json'), vuota)
+        writeFileSync(join(tmp, 'after.json'), vuota)
+        const giro = (log: string) => {
+          writeFileSync(join(tmp, 'rehearsal.log'), log)
+          rmSync(join(tmp, 'attention.md'), { force: true })
+          const r = esegui(cmp?.run ?? 'exit 9', {})
+          let att = ''
+          try { att = readFileSync(join(tmp, 'attention.md'), 'utf8') } catch { /* nessuna riga */ }
+          return { status: r.status, att }
+        }
+        const con = giro(`  categorie con gli id del gioco: 100 (nuove 1, tolte 0)\n  ${MARCA_SENZA_GIAPPONESE} 100 New Category\n` +
+          '    (nessun nome giapponese: 100)\n')
+        check('...e con la riga nel log, una voce in Needs attention', con.status === 0 &&
+          /^- Some categories have no Japanese name from the title missions: .*'categorie senza nome giapponese'/m.test(con.att),
+          `uscita ${con.status}: ${con.att.trim()}`)
+        const senza = giro('  categorie con gli id del gioco: 99 (nuove 0, tolte 0)\n')
+        check('...e senza la riga nessuna', senza.status === 0 && !/Japanese name/.test(senza.att), `uscita ${senza.status}: ${senza.att.trim()}`)
+      }
       // l'artifact pubblico non porta i CSV del datamine
       const up = passo(wsteps, 'Upload the import cache')
       const upPath = String(up?.with?.path ?? '').trim().split('\n').map((x: string) => x.trim())

@@ -338,6 +338,11 @@ jobs:
           if grep -qE '^  attenzione: lo specchio cambia ancora' "$RUNNER_TEMP/rehearsal.log"; then
             echo "- The Japan mirror was still changing on its last pass: next week's run may change those events again (see the rehearsal log)." >> "$RUNNER_TEMP/attention.md"
           fi
+          # load-datamine (0037): una categoria senza nome giapponese dalle
+          # missioni dei titoli tiene l'ultimo nome noto, o resta senza
+          if grep -qE '^  attenzione: categorie senza nome giapponese' "$RUNNER_TEMP/rehearsal.log"; then
+            echo "- Some categories have no Japanese name from the title missions: they keep their last known name, or have none (see the rehearsal log, line 'categorie senza nome giapponese')." >> "$RUNNER_TEMP/attention.md"
+          fi
           if [ "$rc" = 3 ]; then
             echo "::error::deletion limits exceeded, production not touched. If the deletions are expected, run again with allow_deletions."
           fi
