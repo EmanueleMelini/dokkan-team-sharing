@@ -2506,9 +2506,14 @@ la fa scaricare.
   l'app va aggiornata prima;
 - `200`, `Content-Type: application/json; charset=utf-8`,
   `Cache-Control: public, max-age=300` (`CACHE_CATEGORIE` in
-  `lib/cache/headers.ts`). Niente CORS (la legge un'app, non la pagina di un
-  altro sito), niente chiave, niente cookie. Solo GET: gli altri metodi sono
-  un 405 di Next. `robots.txt` esclude già `/api/`.
+  `lib/cache/headers.ts`). La rotta non mette CORS (la legge un'app, non la
+  pagina di un altro sito), niente chiave, niente cookie. In produzione la
+  CDN di Vercel aggiunge da sola `access-control-allow-origin: *` a ogni
+  prerender e file statico (anche `/robots.txt` e `/offline.html`; mai alle
+  pagine ISR o dinamiche, visto il 17/11/2026): è innocuo per dati
+  pubblici senza credenziali, e `test:smoke` lo accetta solo su Vercel.
+  Solo GET: gli altri metodi sono un 405 di Next. `robots.txt` esclude già
+  `/api/`.
 
 **Un prerender, non una funzione.** La lettura pura è
 `listCategoriesForApi` (`lib/categories.ts`), la cache

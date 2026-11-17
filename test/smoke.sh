@@ -513,8 +513,20 @@ case "$esito" in
   *) fail "/api/v1/categories: $esito" ;;
 esac
 grep -qi '^set-cookie' <<<"$intestazioni" && fail "/api/v1/categories manda un cookie" || pass "/api/v1/categories senza Set-Cookie"
-grep -qi '^access-control-allow-origin' <<<"$intestazioni" && fail "/api/v1/categories con un header CORS" \
-  || pass "/api/v1/categories senza header CORS"
+# La rotta non mette header CORS. La CDN di Vercel pero' aggiunge
+# "access-control-allow-origin: *" a ogni prerender e file statico (anche
+# /robots.txt e /offline.html; mai alle pagine ISR o dinamiche, verificato
+# il 17/11/2026): su Vercel quello si accetta, altro no. Le credenziali mai.
+acao=$(grep -i '^access-control-allow-origin:' <<<"$intestazioni" | head -1 | tr -d '\r')
+if grep -qi '^access-control-allow-credentials' <<<"$intestazioni"; then
+  fail "/api/v1/categories con Access-Control-Allow-Credentials"
+elif [ -z "$acao" ]; then
+  pass "/api/v1/categories senza header CORS"
+elif [ "$(tr '[:upper:]' '[:lower:]' <<<"${acao#*: }")" = '*' ] && grep -qiE '^(server: Vercel|x-vercel-id:)' <<<"$intestazioni"; then
+  pass "/api/v1/categories: solo l'access-control-allow-origin: * che la CDN di Vercel mette ai prerender"
+else
+  fail "/api/v1/categories con un header CORS inatteso ($acao)"
+fi
 cc=$(grep -i '^cache-control:' <<<"$intestazioni" | head -1)
 if [ -n "$cc" ] && ! grep -qiE 'private|no-store' <<<"$cc"; then pass "/api/v1/categories non e' privata (${cc#*: })"
 else fail "/api/v1/categories: ${cc:-senza Cache-Control}"; fi

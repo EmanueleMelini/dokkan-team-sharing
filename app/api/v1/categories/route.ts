@@ -4,8 +4,11 @@ import { CACHE_CATEGORIE } from '@/lib/cache/headers'
 
 // Le categorie per l'app Android DokkanTS Category Helper (il pulsante
 // "Check for updates") e per chiunque le voglia: pubbliche, uguali per
-// tutti, in sola lettura. Niente CORS (la legge un'app, non una pagina di
-// un altro sito), niente chiave.
+// tutti, in sola lettura. La rotta non mette header CORS (la legge un'app,
+// non una pagina di un altro sito); in produzione la CDN di Vercel aggiunge
+// da sola ai prerender l'header CORS aperto a ogni origine (README, "L'API
+// delle categorie"), ed e' innocuo: dati pubblici, niente cookie, niente
+// credenziali. Niente chiave.
 //
 // Non legge niente della richiesta (nessun parametro, header o cookie) e i
 // dati stanno in 'use cache': con cacheComponents la rotta e' un prerender
