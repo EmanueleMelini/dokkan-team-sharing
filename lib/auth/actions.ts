@@ -153,6 +153,29 @@ export async function unlinkProviderAction(_prev: AccountState, form: FormData):
   redirect(`/settings?unlinked=${provider.id}`)
 }
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/**
+ * Toglie una passkey dell'account della sessione. Le regole (che sia sua,
+ * e che resti un modo di entrare) le impone delete_passkey sotto lock: la
+ * rotta /passkey/delete-passkey di better-auth e' spenta (config.ts).
+ * Toglie solo la chiave pubblica dal sito: la passkey resta nel gestore
+ * di password dell'utente, che la cancella da li' se vuole.
+ */
+export async function deletePasskeyAction(_prev: AccountState, form: FormData): Promise<AccountState> {
+  const user = await requireFreshUser('/settings')
+  if (!user) return { reauth: true }
+  const id = form.get('passkey')
+  if (typeof id !== 'string' || !UUID.test(id)) return { error: 'That passkey is no longer on your account.' }
+  try {
+    await sql('select delete_passkey($1::uuid, $2::uuid)', [user.id, id])
+  } catch (e) {
+    return accountError(e)
+  }
+  revalidatePath('/settings')
+  redirect('/settings?passkey=removed')
+}
+
 /**
  * Cancella l'account della sessione: la conferma e' l'handle scritto,
  * che delete_account ricontrolla. Tutto il resto lo porta via la cascata,

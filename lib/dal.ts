@@ -4,6 +4,7 @@ import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { auth } from '@/lib/auth/auth'
 import { isFreshSession } from '@/lib/auth/fresh'
+import { passkeyLabel } from '@/lib/auth/passkey-label'
 import { safeNext } from '@/lib/auth/safe-next'
 import { fineSospensione, isSospeso } from '@/lib/moderation/sospensione'
 import { hasUnread } from '@/lib/notify/kinds'
@@ -119,6 +120,18 @@ export async function linkedProviderIds(): Promise<string[]> {
   await requireUser('/settings')
   const accounts = await auth.api.listUserAccounts({ headers: await headers() })
   return accounts.map((a) => a.providerId)
+}
+
+/**
+ * Le passkey dell'utente della sessione (0038), dalla piu' vecchia: solo
+ * cio' che Settings mostra, mai la chiave pubblica o l'id della credenziale.
+ */
+export async function accountPasskeys(): Promise<{ id: string; label: string; createdAt: Date }[]> {
+  await requireUser('/settings')
+  const lista = await auth.api.listPasskeys({ headers: await headers() })
+  return lista
+    .map((p) => ({ id: p.id, label: passkeyLabel(p), createdAt: new Date(p.createdAt) }))
+    .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
 }
 
 /**

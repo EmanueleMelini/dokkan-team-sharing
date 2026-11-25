@@ -1,16 +1,17 @@
-// Verifica Settings (migrazione 0019, lib/auth/account.ts): scollegare un
-// provider solo se resta un modo di entrare, e cancellare l'account con
-// tutto quello che l'utente ha scritto, senza toccare gli altri.
+// Verifica Settings (migrazioni 0019 e 0038, lib/auth/account.ts):
+// scollegare un provider o togliere una passkey solo se resta un modo di
+// entrare, e cancellare l'account con tutto quello che l'utente ha
+// scritto, senza toccare gli altri.
 //
 // Gira sul database di test (npm run db:test). Crea solo utenti
 // settingstest+...@example.invalid e li toglie alla fine, anche se
 // qualcosa fallisce.
 import { randomBytes } from 'node:crypto'
 import { readFileSync } from 'node:fs'
-import { createAuth } from '@/lib/auth/config'
+import { CHIAVE_MAX_BYTE, createAuth } from '@/lib/auth/config'
 import { readAuthEnv } from '@/lib/auth/env'
 import {
-  ACCOUNT_CONSTRAINTS, canUnlink, friendlyAccountError, handleMatches, signInMethodsLeft,
+  ACCOUNT_CONSTRAINTS, canRemovePasskey, canUnlink, friendlyAccountError, handleMatches, signInMethodsLeft,
 } from '@/lib/auth/account'
 import { db } from '@/lib/db'
 import {
@@ -30,18 +31,33 @@ function pure() {
     signInMethodsLeft(['discord', 'twitch'], true, 'discord') === 2 &&
     signInMethodsLeft(['discord', 'twitch'], false, 'discord') === 1 &&
     signInMethodsLeft([], false) === 0)
+  check('ogni passkey conta come un modo di entrare',
+    signInMethodsLeft(['discord'], false, 'discord', 2) === 2 && signInMethodsLeft([], true, undefined, 1) === 2)
+  check('un provider, email non verificata, una passkey: si scollega (resta la passkey)',
+    canUnlink(['discord'], false, 'discord', 1))
+  check('l\'unica passkey, senza provider e senza email verificata: non si toglie', !canRemovePasskey([], false, 1))
+  check('una passkey si toglie se resta l\'email verificata, un provider o un\'altra passkey',
+    canRemovePasskey([], true, 1) && canRemovePasskey(['google'], false, 1) && canRemovePasskey([], false, 2))
+  check('senza passkey non c\'e\' niente da togliere', !canRemovePasskey(['google'], true, 0))
   check('l\'handle coincide senza badare a maiuscole e spazi', handleMatches('  GoKu_99 ', 'goku_99'))
   check('un handle diverso non coincide', !handleMatches('goku_9', 'goku_99') && !handleMatches('goku_99x', 'goku_99'))
   check('vuoto o non testo non coincide', !handleMatches('', 'goku_99') && !handleMatches(null, 'goku_99') &&
     !handleMatches('goku', ''))
 
-  // Ogni nome di vincolo che 0019 alza ha una frase inglese.
-  const sql = readFileSync(new URL('../migrations/0019_account_settings.sql', import.meta.url), 'utf8')
+  // Ogni nome di vincolo che 0019 e 0038 alzano ha una frase inglese.
+  const sql = ['0019_account_settings.sql', '0038_passkey.sql']
+    .map((f) => readFileSync(new URL(`../migrations/${f}`, import.meta.url), 'utf8')).join('\n')
   const nomi = [...new Set([...sql.matchAll(/constraint = '([a-z_]+)'/g)].map((m) => m[1]))]
   const senza = nomi.filter((n) => !friendlyAccountError({ constraint: n }))
-  check('ogni rifiuto di 0019 ha una frase', nomi.length === 4 && senza.length === 0, senza.join(', '))
+  check('ogni rifiuto di 0019 e 0038 ha una frase', nomi.length === 5 && senza.length === 0, senza.join(', '))
   check('e la tabella delle frasi non ha nomi in piu\'', ACCOUNT_CONSTRAINTS.every((n) => nomi.includes(n)))
   check('un errore sconosciuto non ha frase (e un guasto)', friendlyAccountError({ code: '23505' }) === null)
+
+  // Il tetto della chiave pubblica: quello del plugin (config.ts) in
+  // base64 e' quello di auth_passkey_shape.
+  const tetto = /char_length\(public_key\) between 1 and (\d+)/.exec(sql)?.[1]
+  check('CHIAVE_MAX_BYTE in base64 e\' il tetto di public_key in 0038',
+    tetto !== undefined && 4 * Math.ceil(CHIAVE_MAX_BYTE / 3) === Number(tetto), `${CHIAVE_MAX_BYTE} byte, ${tetto} caratteri`)
 }
 
 /** Ogni FK verso le persone e i clear cancella a cascata: nessun residuo possibile. */
@@ -75,7 +91,7 @@ async function cascate() {
     setNull.map((f) => `${f.nome}=${f.del}`).join(', '))
   const versoUtente = fk.filter((f) => f.madre === 'app_user').map((f) => f.figlia).sort()
   check('le tabelle che puntano a app_user sono quelle note',
-    versoUtente.join(',') === 'auth_account,auth_session,clear,clear_comment,clear_vote,clear_write_log,' +
+    versoUtente.join(',') === 'auth_account,auth_passkey,auth_session,clear,clear_comment,clear_vote,clear_write_log,' +
       'handle_history,moderation_action,moderation_action,notification,notification,notification,notification_pref,' +
       'push_sent,push_sent,push_subscription,report,report,team,tip,tip_vote',
     versoUtente.join(','))
@@ -95,6 +111,15 @@ async function collega(u: string, ...lista: string[]) {
       [`${P}-${p}-${randomBytes(4).toString('hex')}`, p, u])
   }
 }
+
+/** Una passkey finta (0038): per le regole basta la riga, la firma non serve. */
+async function passkey(u: string): Promise<string> {
+  return (await one<{ id: string }>(
+    `insert into auth_passkey (user_id, credential_id, public_key, device_type, backed_up)
+     values ($1, $2, 'pk', 'multiDevice', true) returning id::text`,
+    [u, `${P}-${randomBytes(8).toString('hex')}`])).id
+}
+const passkeys = (u: string) => num('select count(*) from auth_passkey where user_id = $1', [u])
 
 async function scollega() {
   console.log('\n  -- unlink_provider')
@@ -143,6 +168,58 @@ async function scollega() {
   }
   check('due scollegamenti in parallelo: il secondo e\' rifiutato', secondo === '23514 last_sign_in_method', secondo)
   check('e resta un provider', (await providers(c)).join() === 'twitch')
+
+  // 0038: una passkey conta tra i modi che restano
+  const e = await utente(P, 'stunlink_e')
+  await collega(e, 'discord')
+  check('email non verificata, un provider: l\'ultimo no', await esito(UNLINK, [e, 'discord']) === '23514 last_sign_in_method')
+  await passkey(e)
+  check('con una passkey si scollega anche l\'ultimo provider', await esito(UNLINK, [e, 'discord']) === 'ok')
+  check('e resta la passkey', (await providers(e)).length === 0 && await passkeys(e) === 1)
+}
+
+const DELETE_PASSKEY = 'select delete_passkey($1::uuid, $2::uuid)'
+
+/** Togliere una passkey (0038): solo una propria, e solo se resta un modo di entrare. */
+async function togliPasskey() {
+  console.log('\n  -- delete_passkey')
+  const a = await utente(P, 'stpasskey_a')
+  const b = await utente(P, 'stpasskey_b')
+  const k1 = await passkey(a)
+  const k2 = await passkey(a)
+  const kb = await passkey(b)
+
+  check('la passkey di un altro: passkey_not_found', await esito(DELETE_PASSKEY, [a, kb]) === '23514 passkey_not_found')
+  check('  e quella di b resta', await passkeys(b) === 1)
+  check('un id che non esiste: passkey_not_found',
+    await esito(DELETE_PASSKEY, [a, '00000000-0000-0000-0000-00000000beef']) === '23514 passkey_not_found')
+  check('un utente inesistente: account_missing',
+    await esito(DELETE_PASSKEY, ['00000000-0000-0000-0000-00000000dead', k1]) === '42501 account_missing')
+  check('email non verificata, due passkey: la prima si toglie', await esito(DELETE_PASSKEY, [a, k1]) === 'ok')
+  check('l\'ultima no: last_sign_in_method', await esito(DELETE_PASSKEY, [a, k2]) === '23514 last_sign_in_method')
+  check('  e resta', await passkeys(a) === 1)
+  await collega(a, 'google')
+  check('con un provider collegato anche l\'ultima si toglie', await esito(DELETE_PASSKEY, [a, k2]) === 'ok')
+  check('  e a non ha piu\' passkey', await passkeys(a) === 0)
+  const kb2 = await passkey(b)
+  await db.query('update app_user set email_verified = true where id = $1', [b])
+  check('con l\'email verificata si tolgono tutte, anche l\'ultima',
+    await esito(DELETE_PASSKEY, [b, kb]) === 'ok' && await esito(DELETE_PASSKEY, [b, kb2]) === 'ok' && await passkeys(b) === 0)
+  const nuova = `insert into auth_passkey (user_id, credential_id, public_key, device_type, backed_up)
+                 values ($1, $2, 'pk', 'multiDevice', true)`
+  const stessa = `${P}-stessa-${randomBytes(4).toString('hex')}`
+  await db.query(nuova, [a, stessa])
+  check('la stessa credenziale non entra due volte (credential_id unique)',
+    await esito(nuova, [b, stessa]) === '23505 auth_passkey_credential_id_key')
+  check('la forma della riga: device_type sconosciuto rifiutato',
+    await esito(`insert into auth_passkey (user_id, credential_id, public_key, device_type, backed_up)
+                 values ($1, $2, 'pk', 'other', true)`, [a, `${P}-forma`]) === '23514 auth_passkey_shape')
+  const chiave = `insert into auth_passkey (user_id, credential_id, public_key, device_type, backed_up)
+                  values ($1, $2, $3, 'multiDevice', true)`
+  check('una chiave pubblica di 4097 caratteri rifiutata (auth_passkey_shape)',
+    await esito(chiave, [a, `${P}-lunga`, 'A'.repeat(4097)]) === '23514 auth_passkey_shape')
+  check('  e una vuota', await esito(chiave, [a, `${P}-vuota`, '']) === '23514 auth_passkey_shape')
+  check('  ma una di 4096 entra (RSA-8192 sta sotto i 1500)', await esito(chiave, [a, `${P}-giusta`, 'A'.repeat(4096)]) === 'ok')
 }
 
 /** La rotta HTTP di better-auth per scollegare e' spenta: resta solo la Server Action. */
@@ -158,6 +235,8 @@ async function rotteSpente() {
   }))
   check('POST /unlink-account risponde 404', (await post('/unlink-account')).status === 404)
   check('POST /delete-user risponde 404', (await post('/delete-user')).status === 404)
+  check('POST /passkey/delete-passkey risponde 404 (resta delete_passkey)', (await post('/passkey/delete-passkey')).status === 404)
+  check('POST /passkey/update-passkey risponde 404', (await post('/passkey/update-passkey')).status === 404)
   const lista = await auth.handler(new Request(`${BASE}/api/auth/list-accounts`, { headers: { 'x-forwarded-for': '10.9.8.2' } }))
   check('le altre rotte restano (list-accounts senza sessione: 401)', lista.status === 401, String(lista.status))
 }
@@ -169,7 +248,7 @@ const versione = async (clear: string) =>
 /** Quante righe di ogni tabella collegata parlano dell'utente o dei suoi clear. */
 async function residui(u: string, clears: string[]): Promise<Record<string, number>> {
   const r: Record<string, number> = {}
-  for (const t of ['auth_account', 'auth_session', 'clear_write_log', 'team', 'tip', 'tip_vote', 'clear_vote']) {
+  for (const t of ['auth_account', 'auth_passkey', 'auth_session', 'clear_write_log', 'team', 'tip', 'tip_vote', 'clear_vote']) {
     const col = t === 'team' ? 'owner_id' : t === 'tip' ? 'author_id' : 'user_id'
     r[t] = await num(`select count(*) from ${t} where ${col} = $1`, [u])
   }
@@ -192,6 +271,7 @@ async function cancella() {
   const a = await utente(P, 'stdelete_a')
   const b = await utente(P, 'stdelete_b')
   await collega(a, 'discord', 'google')
+  await passkey(a)
   await db.query(`insert into auth_session (token, user_id, expires_at) values ($1, $2, now() + interval '1 day')`,
     [`${P}-${randomBytes(8).toString('hex')}`, a])
   // una sfera che la carta dello slot puo' montare (le esclusive, 0021)
@@ -344,6 +424,7 @@ try {
   pure()
   await cascate()
   await scollega()
+  await togliPasskey()
   await rotteSpente()
   await cancella()
   await cancellaInsieme()

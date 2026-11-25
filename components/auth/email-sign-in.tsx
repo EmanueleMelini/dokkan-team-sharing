@@ -8,12 +8,14 @@ import { authClient } from '@/lib/auth/client'
  * l'indirizzo sia iscritto o no e anche se e' in pausa: la pagina non
  * deve dire a nessuno chi ha un account. `errorPath` e `defaultEmail`
  * servono a /settings/sign-in: chi rientra e' gia' dentro, e /login lo
- * rimanderebbe via perdendo l'errore.
+ * rimanderebbe via perdendo l'errore. `webauthn`: il campo propone anche
+ * le passkey (il suggerimento di PasskeySignIn con autofill).
  */
-export function EmailSignIn({ next, errorPath = '/login', defaultEmail = '' }: {
+export function EmailSignIn({ next, errorPath = '/login', defaultEmail = '', webauthn = false }: {
   next: string
   errorPath?: string
   defaultEmail?: string
+  webauthn?: boolean
 }) {
   const [email, setEmail] = useState(defaultEmail)
   const [state, setState] = useState<'idle' | 'sending' | 'sent'>('idle')
@@ -70,7 +72,7 @@ export function EmailSignIn({ next, errorPath = '/login', defaultEmail = '' }: {
         id="email"
         name="email"
         type="email"
-        autoComplete="email"
+        autoComplete={webauthn ? 'email webauthn' : 'email'}
         required
         value={email}
         onChange={(e) => setEmail(e.target.value)}

@@ -21,5 +21,7 @@ const MESSAGES: Record<string, string> = {
 
 export function authErrorMessage(code: string | undefined | null): string | null {
   if (!code) return null
-  return MESSAGES[code] ?? 'Something went wrong while signing in. Please try again.'
+  // Object.hasOwn: ?error=__proto__ o =constructor darebbero un oggetto o
+  // una funzione al posto della frase, e la pagina andrebbe in errore.
+  return Object.hasOwn(MESSAGES, code) ? MESSAGES[code] : 'Something went wrong while signing in. Please try again.'
 }

@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto'
 import { BASE_ERROR_CODES, betterAuth, type BetterAuthPlugin } from 'better-auth'
 import { APIError, createAuthMiddleware, getSessionFromCtx } from 'better-auth/api'
 import { magicLink } from 'better-auth/plugins/magic-link'
+import { PASSKEY_ERROR_CODES, passkey } from '@better-auth/passkey'
 import { db } from '@/lib/db'
 import type { MagicLinkSender } from '@/lib/auth/email'
 import type { AuthEnv } from '@/lib/auth/env'
@@ -13,12 +14,28 @@ import { cookieVersione } from '@/lib/versione/versione'
 export const MAGIC_LINK_TTL_SECONDS = 600
 export const SESSION_DAYS = 30
 
+/** La rotta di better-auth dove una passkey firma l'accesso (il plugin passkey). */
+export const PASSKEY_SIGN_IN = '/passkey/verify-authentication'
+
+/**
+ * La chiave pubblica piu' grande che una passkey puo' salvare: 3072 byte,
+ * 4096 caratteri in base64, il tetto di auth_passkey_shape (0038). Una
+ * chiave vera sta sotto i 1100 byte (RSA-8192).
+ */
+export const CHIAVE_MAX_BYTE = 3072
+
+/** Quanto dello user agent resta nella riga di auth_session. */
+export const USER_AGENT_MAX = 512
+
 /**
  * Le rotte di better-auth dove nasce la sessione di un accesso: il magic
- * link, il ritorno da un provider OAuth e il suo accesso con un idToken.
- * Le altre che danno una sessione nuova la rinnovano o la riscrivono.
+ * link, il ritorno da un provider OAuth, il suo accesso con un idToken e
+ * la passkey. Le altre che danno una sessione nuova la rinnovano o la
+ * riscrivono.
  */
-export const ACCESSI: ReadonlySet<string> = new Set(['/magic-link/verify', '/callback/:id', '/sign-in/social'])
+export const ACCESSI: ReadonlySet<string> = new Set([
+  '/magic-link/verify', '/callback/:id', '/sign-in/social', PASSKEY_SIGN_IN,
+])
 
 type Options = {
   env: AuthEnv
@@ -54,12 +71,17 @@ export function createAuth({ env, sendMagicLink, plugins = [] }: Options) {
     database: db,
     telemetry: { enabled: false },
     // Scollegare e cancellare passano solo dalle Server Action di Settings
-    // (unlink_provider e delete_account, 0019), che impongono le regole
-    // sotto lock. La rotta di better-auth per lo scollegamento conta solo
-    // i provider, non il magic link; /delete-user e' gia' spenta per
-    // difetto, la si elenca per non riaccenderla per sbaglio. Vale solo
-    // per le richieste HTTP: auth.api resta usabile dal server.
-    disabledPaths: ['/unlink-account', '/delete-user'],
+    // (unlink_provider e delete_account, 0019; delete_passkey, 0038), che
+    // impongono le regole sotto lock. La rotta di better-auth per lo
+    // scollegamento conta solo i provider, non il magic link; quella per
+    // togliere una passkey non guarda se resta un modo di entrare, e non
+    // chiede una sessione fresca. /delete-user e' gia' spenta per difetto,
+    // la si elenca per non riaccenderla per sbaglio. Rinominare una
+    // passkey il sito non lo offre. Vale solo per le richieste HTTP:
+    // auth.api resta usabile dal server.
+    disabledPaths: [
+      '/unlink-account', '/delete-user', '/passkey/delete-passkey', '/passkey/update-passkey',
+    ],
     // Gli errori del callback OAuth tornano alla pagina di accesso, che li
     // traduce, invece che alla pagina d'errore grezza di better-auth.
     onAPIError: { errorURL: new URL('/login', env.baseURL).toString() },
@@ -160,7 +182,16 @@ export function createAuth({ env, sendMagicLink, plugins = [] }: Options) {
     rateLimit: {
       enabled: true,
       customStorage: rateLimitStorage,
-      customRules: { '/sign-in/magic-link': { window: 60, max: 3 } },
+      customRules: {
+        '/sign-in/magic-link': { window: 60, max: 3 },
+        // Le passkey (il plugin non ne mette): ogni richiesta di opzioni
+        // scrive una sfida in auth_verification, e /login ne chiede una a
+        // ogni apertura per il suggerimento nel campo email.
+        '/passkey/generate-authenticate-options': { window: 60, max: 20 },
+        [PASSKEY_SIGN_IN]: { window: 60, max: 10 },
+        '/passkey/generate-register-options': { window: 60, max: 10 },
+        '/passkey/verify-registration': { window: 60, max: 10 },
+      },
     },
     socialProviders,
     advanced: {
@@ -199,6 +230,17 @@ export function createAuth({ env, sendMagicLink, plugins = [] }: Options) {
       // /api/me e dalle azioni) o /update-user la riscrive, e li' una
       // risposta partita prima di un cambio lo disfarebbe.
       after: createAuthMiddleware(async (ctx) => {
+        // Le opzioni d'accesso con passkey chiedono la verifica dell'utente
+        // (impronta, volto, PIN, password principale del gestore): il plugin
+        // la scrive 'preferred' e non la lascia cambiare, e con 'preferred'
+        // certi gestori di password rispondono senza chiederla. La risposta
+        // si riscrive qui; i cookie della sfida restano. Il server la
+        // pretende comunque (authentication.afterVerification, sotto).
+        if (ctx.path === '/passkey/generate-authenticate-options') {
+          const r = ctx.context.returned
+          if (r && typeof r === 'object' && 'challenge' in r) ctx.context.returned = { ...r, userVerification: 'required' }
+          return
+        }
         const opzioni = hintOptions(env.baseURL, SESSION_DAYS * 24 * 60 * 60)
         if (ctx.path === '/sign-out') ctx.setCookie(HINT_COOKIE, '', { ...opzioni, maxAge: 0 })
         else if (ctx.context.newSession) {
@@ -228,6 +270,16 @@ export function createAuth({ env, sendMagicLink, plugins = [] }: Options) {
           }),
         },
       },
+      // Lo user agent della sessione non lo legge nessuno, e l'header lo
+      // sceglie chi entra: si tiene corto. Con le passkey uno script entra
+      // dieci volte al minuto, e ogni accesso e' una riga di auth_session.
+      session: {
+        create: {
+          before: async (session) => ({
+            data: { ...session, userAgent: String(session.userAgent ?? '').slice(0, USER_AGENT_MAX) },
+          }),
+        },
+      },
       account: {
         create: { before: async (account) => ({ data: { ...account, ...senzaToken } }) },
         update: { before: async (account) => ({ data: { ...account, ...senzaToken } }) },
@@ -243,6 +295,55 @@ export function createAuth({ env, sendMagicLink, plugins = [] }: Options) {
         sendMagicLink: async ({ email, url }) => {
           if (!(await mayEmail(email))) return
           await sendMagicLink({ email, url })
+        },
+      }),
+      // Le passkey (0038): WebAuthn sul nostro server, la chiave privata
+      // resta sul dispositivo o nel gestore di password. Aggiungerne una
+      // chiede una sessione fresca (freshSessionMiddleware del plugin, con
+      // freshAge sopra), come collegare un provider; un account nuovo non
+      // nasce mai da una passkey. Origine e dominio vengono da BETTER_AUTH_URL,
+      // non dall'header Origin della richiesta (il default del plugin).
+      passkey({
+        rpID: new URL(env.baseURL).hostname,
+        rpName: 'Dokkan Team Sharing',
+        origin: new URL(env.baseURL).origin,
+        // Una passkey che si trova da sola (/login non chiede l'email prima),
+        // e sempre con la verifica dell'utente: chi trova una chiave o un
+        // computer sbloccato non entra solo toccandola.
+        authenticatorSelection: { residentKey: 'required', requireResidentKey: true, userVerification: 'required' },
+        // Il plugin verifica con requireUserVerification: false, scritto
+        // fisso: la verifica dell'utente la si pretende qui, prima che la
+        // passkey si salvi o che nasca la sessione.
+        // Qui si rifiuta anche una chiave pubblica fuori misura, prima del
+        // database (auth_passkey_shape la rifiuterebbe comunque): la
+        // misura non la controlla nessun altro.
+        registration: {
+          afterVerification: ({ verification }) => {
+            const info = verification.registrationInfo
+            if (!info?.userVerified || info.credential.publicKey.byteLength > CHIAVE_MAX_BYTE) {
+              throw APIError.from('BAD_REQUEST', PASSKEY_ERROR_CODES.FAILED_TO_VERIFY_REGISTRATION)
+            }
+          },
+        },
+        authentication: {
+          afterVerification: ({ verification }) => {
+            if (!verification.authenticationInfo.userVerified) {
+              throw APIError.from('UNAUTHORIZED', PASSKEY_ERROR_CODES.AUTHENTICATION_FAILED)
+            }
+          },
+        },
+        schema: {
+          passkey: {
+            modelName: 'auth_passkey',
+            fields: {
+              publicKey: 'public_key',
+              userId: 'user_id',
+              credentialID: 'credential_id',
+              deviceType: 'device_type',
+              backedUp: 'backed_up',
+              createdAt: 'created_at',
+            },
+          },
         },
       }),
       ...plugins, // nextCookies() deve restare l'ultimo

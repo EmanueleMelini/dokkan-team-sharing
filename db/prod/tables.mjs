@@ -75,6 +75,8 @@ export const TABLES = {
   auth_account: { class: 'user' },
   auth_session: { class: 'user' },
   auth_verification: { class: 'user' },
+  // le passkey (0038): le aggiunge l'utente da Settings
+  auth_passkey: { class: 'user' },
   auth_rate_limit: { class: 'user' },
   auth_email_send: { class: 'user' },
   team: { class: 'user' },

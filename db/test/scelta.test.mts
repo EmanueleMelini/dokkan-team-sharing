@@ -642,9 +642,16 @@ function struttura() {
   const versione = pkg.dependencies['@headlessui/react']
   check('@headlessui/react a una versione 2.x esatta', /^2\.\d+\.\d+$/.test(versione ?? ''), versione)
   vale('il lockfile ha la stessa versione', lock.packages['node_modules/@headlessui/react']?.version, versione)
-  vale('le dipendenze: quelle di prima piu\' @headlessui/react', Object.keys(pkg.dependencies).sort(), [
-    '@headlessui/react', '@phosphor-icons/react', 'better-auth', 'next', 'pg', 'react', 'react-dom', 'resend', 'server-only', 'web-push',
+  vale('le dipendenze: quelle di prima piu\' @headlessui/react (e il plugin passkey con il suo core)', Object.keys(pkg.dependencies).sort(), [
+    '@better-auth/core', '@better-auth/passkey', '@headlessui/react', '@phosphor-icons/react', 'better-auth', 'next', 'pg', 'react',
+    'react-dom', 'resend', 'server-only', 'web-push',
   ])
+  // il plugin passkey vuole il suo core alla stessa versione di better-auth:
+  // senza il core diretto npm ne prende uno piu' nuovo e l'installazione fallisce
+  vale('better-auth, @better-auth/core e @better-auth/passkey alla stessa versione esatta',
+    [pkg.dependencies['@better-auth/core'], pkg.dependencies['@better-auth/passkey']],
+    [pkg.dependencies['better-auth'], pkg.dependencies['better-auth']])
+  check('better-auth a una versione esatta', /^\d+\.\d+\.\d+$/.test(pkg.dependencies['better-auth'] ?? ''), pkg.dependencies['better-auth'])
   vale('le dipendenze di sviluppo non cambiano', Object.keys(pkg.devDependencies).sort(), [
     '@tailwindcss/postcss', '@types/node', '@types/pg', '@types/react', '@types/react-dom', '@types/web-push', 'eslint',
     'eslint-config-next', 'tailwindcss', 'typescript',

@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import { Key } from '@phosphor-icons/react/dist/ssr'
 import { ArtPreference } from '@/components/auth/art-preference'
 import { ChangeHandle } from '@/components/auth/change-handle'
 import { HandleLink } from '@/components/handle-link'
@@ -8,17 +9,18 @@ import { DigestEmail } from '@/components/notifiche/digest-email'
 import { AttivitaSito } from '@/components/notifiche/attivita-sito'
 import { BannerSospeso } from '@/components/moderation/banner-sospeso'
 import { LinkProvider } from '@/components/auth/link-provider'
+import { AddPasskey, RemovePasskey } from '@/components/auth/passkeys'
 import { ProviderLogo } from '@/components/auth/provider-logo'
 import { SignOutButton } from '@/components/auth/sign-out-button'
 import { AvvisoIOS } from '@/components/pwa/avviso-ios'
 import { SceltaTema } from '@/components/tema/scelta-tema'
 import { SceltaVersione } from '@/components/versione/scelta-versione'
 import { UnlinkProvider } from '@/components/auth/unlink-provider'
-import { canUnlink } from '@/lib/auth/account'
+import { canRemovePasskey, canUnlink } from '@/lib/auth/account'
 import { PROVIDERS } from '@/lib/auth/env'
 import { providers } from '@/lib/auth/auth'
 import { authErrorMessage } from '@/lib/auth/messages'
-import { accountEmail, linkedProviderIds, requireOnboardedUser, sessionIsFresh } from '@/lib/dal'
+import { accountEmail, accountPasskeys, linkedProviderIds, requireOnboardedUser, sessionIsFresh } from '@/lib/dal'
 import { hiddenClearsOf } from '@/lib/clears'
 import { nextHandleChange } from '@/lib/auth/handle-change'
 import { handleChangedAt } from '@/lib/auth/handle-state'
@@ -48,8 +50,8 @@ export default async function SettingsPage({ searchParams }: PageProps<'/setting
   // Le push solo con le chiavi VAPID: senza, la riga Browser non c'e'.
   const push = readPushEnv()
   const admin = user.role === 'admin'
-  const [linked, { email, verified }, fresh, nascosti, cambiato, digest, dispositivi, pushKinds, attivita] = await Promise.all([
-    linkedProviderIds(), accountEmail(), sessionIsFresh(), hiddenClearsOf(user.id), handleChangedAt(user.id),
+  const [linked, { email, verified }, fresh, passkeys, nascosti, cambiato, digest, dispositivi, pushKinds, attivita] = await Promise.all([
+    linkedProviderIds(), accountEmail(), sessionIsFresh(), accountPasskeys(), hiddenClearsOf(user.id), handleChangedAt(user.id),
     emailDigestOn(user.id), push ? pushDevicesOf(user.id) : [], push ? pushKindsOn(user.id) : [],
     // il feed degli admin (0032): agli altri la riga non si mostra, e la query non parte
     admin ? siteActivityOn(user.id) : false,
@@ -58,14 +60,19 @@ export default async function SettingsPage({ searchParams }: PageProps<'/setting
   const error = authErrorMessage(one(sp.error))
   const justLinked = PROVIDERS.find((p) => p.id === one(sp.linked) && linked.includes(p.id))
   const justUnlinked = PROVIDERS.find((p) => p.id === one(sp.unlinked) && !linked.includes(p.id))
-  const notice = justLinked ? `${justLinked.label} is now linked.` : justUnlinked ? `${justUnlinked.label} is unlinked.` : null
+  const passkeyParam = one(sp.passkey)
+  const passkeyNotice = passkeyParam === 'added' && passkeys.length > 0 ? 'Passkey added. You can sign in with it now.'
+    : passkeyParam === 'removed' ? 'Passkey removed.' : null
+  const notice = justLinked ? `${justLinked.label} is now linked.` : justUnlinked ? `${justUnlinked.label} is unlinked.` : passkeyNotice
 
   // Con cosa si entrera' dopo aver scollegato `id`: la frase della conferma.
   const fallback = (id: string) => {
     const altri = PROVIDERS.filter((p) => p.id !== id && linked.includes(p.id)).map((p) => p.label)
+    if (passkeys.length) altri.push(passkeys.length > 1 ? 'your passkeys' : 'your passkey')
     if (verified) altri.unshift(`an email link to ${email}`)
     return altri.join(' or ')
   }
+  const passkeyRemovable = canRemovePasskey(linked, verified, passkeys.length)
 
   // Quelli gia' collegati si mostrano anche se il provider e' stato spento
   // dopo: l'utente deve vedere cosa e' legato al suo account.
@@ -188,7 +195,8 @@ export default async function SettingsPage({ searchParams }: PageProps<'/setting
           Sign-in methods
         </h2>
         <p className="mt-1 text-[12px] leading-relaxed text-tenue">
-          Link another account to sign in with it too. Only accounts you link here are connected.
+          Link another account or add a passkey to sign in with it too. Only accounts you link here
+          are connected.
         </p>
 
         {/* Solo nell'app installata su iOS: il magic link si aprirebbe in Safari */}
@@ -221,13 +229,42 @@ export default async function SettingsPage({ searchParams }: PageProps<'/setting
               </p>
               {!linked.includes(p.id) ? (
                 <LinkProvider id={p.id} label={p.label} fresh={fresh} />
-              ) : canUnlink(linked, verified, p.id) ? (
+              ) : canUnlink(linked, verified, p.id, passkeys.length) ? (
                 <UnlinkProvider id={p.id} label={p.label} fallback={fallback(p.id)} fresh={fresh} />
               ) : (
                 <span className="text-[12px] text-tenue">Your only way to sign in</span>
               )}
             </li>
           ))}
+          {passkeys.map((k) => (
+            <li key={k.id} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-4 py-3">
+              <div className="flex items-center gap-2">
+                <Key size={17} weight="bold" aria-hidden className="shrink-0 text-oro" />
+                <div>
+                  <p className="text-[13px] text-inchiostro">{k.label}</p>
+                  <p className="text-[12px] text-tenue">Passkey, added {soloGiorno(k.createdAt)}</p>
+                </div>
+              </div>
+              {passkeyRemovable ? (
+                <RemovePasskey id={k.id} label={k.label} added={soloGiorno(k.createdAt)} fresh={fresh} />
+              ) : (
+                <span className="text-[12px] text-tenue">Your only way to sign in</span>
+              )}
+            </li>
+          ))}
+          <li className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-4 py-3">
+            <div className="flex items-center gap-2">
+              <Key size={17} weight="bold" aria-hidden className="shrink-0 text-tenue" />
+              <div>
+                <p className="text-[13px] text-inchiostro">{passkeys.length ? 'Another passkey' : 'Passkey'}</p>
+                <p className="text-[12px] text-tenue">
+                  Sign in with your fingerprint, face or screen lock. It stays on your device or in your
+                  password manager.
+                </p>
+              </div>
+            </div>
+            <AddPasskey fresh={fresh} />
+          </li>
         </ul>
       </section>
 

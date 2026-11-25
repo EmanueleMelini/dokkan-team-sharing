@@ -39,6 +39,14 @@ export default function Privacy() {
           (performance of a contract, GDPR Art. 6(1)(b)).
         </li>
         <li>
+          <strong>Passkeys.</strong> If you add a passkey, the site stores its public key, its
+          credential id, a signature counter, whether it syncs between devices, how your browser
+          said it can reach it (built in, USB, NFC, Bluetooth or another phone), the model id of the
+          password manager or security key that holds it (to show its name in Settings) and when
+          you added it. The private key never leaves your device or password manager, and your
+          fingerprint or face never reaches the site. Same legal basis as above.
+        </li>
+        <li>
           <strong>Display preference.</strong> Whether card pages show the still or the animated
           artwork by default, stored with your account until you change it or delete the account.
           Same legal basis as above.
@@ -143,8 +151,9 @@ export default function Privacy() {
       <h2>Cookies</h2>
       <p>
         One cookie keeps you signed in, and a few short-lived ones protect the sign-in step from
-        forgery while it happens. They are strictly necessary, so no consent banner is needed.
-        Nothing is set when you only browse.
+        forgery while it happens. Opening the sign-in page sets one of them, for 5 minutes, so your
+        browser can offer your passkeys. They are strictly necessary, so no consent banner is
+        needed. Nothing is set on other pages when you only browse.
       </p>
       <p>
         If you switch a card&apos;s artwork between still and animated on its page, your browser
@@ -213,7 +222,11 @@ export default function Privacy() {
           someone else can then pick them.
         </li>
         <li>Sessions: 30 days after your last visit, then removed.</li>
-        <li>Sign-in links: 10 minutes. Sign-in counters: 1 hour. The sign-in email log: 1 day.</li>
+        <li>Passkeys: until you remove them in Settings or delete your account.</li>
+        <li>
+          Sign-in links: 10 minutes. Passkey challenges (signing in or adding a passkey): 5 minutes.
+          Sign-in counters: 1 hour. The sign-in email log: 1 day.
+        </li>
         <li>
           The daily email counts: {LEGALE.giorniContatoriEmail} days. Your digest consent: until you
           turn the digest off. The time of the last digest: as long as your account exists.

@@ -8,7 +8,7 @@ export const LEGALE = {
   paese: 'Italy',
   contatto: 'privacy@dokkants.app',
   sito: 'dokkants.app',
-  aggiornato: 'November 17, 2026',
+  aggiornato: 'November 24, 2026',
   etaMinima: 16,
   /** dopo quanti giorni si cancellano le segnalazioni chiuse (purge_resolved_reports, 0024) */
   giorniSegnalazioni: 180,

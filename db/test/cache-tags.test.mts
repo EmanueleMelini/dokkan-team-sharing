@@ -458,6 +458,7 @@ console.log('niente Date.now o Math.random nel render delle pagine')
 {
   const AMMESSI = new Map([
     ['components/clears/fuoco-filtri.ts', 'nel sessionStorage dopo un clic, solo nel browser: mai nel render'],
+    ['components/auth/passkey-sign-in.tsx', "l'eta' della sfida del suggerimento, nell'effetto e nel suo intervallo: mai nel render"],
   ])
   const radici = [
     ...sorgenti('app').filter((r) => !/^app\/(api|admin)\//.test(r)), ...sorgenti('components'), ...sorgenti('lib/cache'),

@@ -2,6 +2,7 @@ import Link from 'next/link'
 import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
 import { EmailSignIn } from '@/components/auth/email-sign-in'
+import { PasskeySignIn } from '@/components/auth/passkey-sign-in'
 import { ProviderButtons } from '@/components/auth/provider-buttons'
 import { AvvisoIOS } from '@/components/pwa/avviso-ios'
 import { providers } from '@/lib/auth/auth'
@@ -44,24 +45,22 @@ export default async function LoginPage({ searchParams }: PageProps<'/login'>) {
         {/* Solo nell'app installata su iOS: il magic link si aprirebbe in Safari */}
         <AvvisoIOS providers={providers.map((p) => p.label)} dove="login" className="mt-5" />
 
-        {providers.length > 0 && (
-          <div className="mt-6">
-            <ProviderButtons providers={providers} next={next} />
-            <div className="my-5 flex items-center gap-3 text-[11px] text-tenue" aria-hidden="true">
-              <span className="h-px flex-1 bg-linea" />
-              or
-              <span className="h-px flex-1 bg-linea" />
-            </div>
-          </div>
-        )}
-
-        <div className={providers.length > 0 ? '' : 'mt-6'}>
-          <EmailSignIn next={next} />
+        <div className="mt-6 space-y-2">
+          <ProviderButtons providers={providers} next={next} />
+          {/* Il browser propone le passkey anche nel campo email (autofill) */}
+          <PasskeySignIn next={next} autofill />
+        </div>
+        <div className="my-5 flex items-center gap-3 text-[11px] text-tenue" aria-hidden="true">
+          <span className="h-px flex-1 bg-linea" />
+          or
+          <span className="h-px flex-1 bg-linea" />
         </div>
 
+        <EmailSignIn next={next} webauthn />
+
         <p className="mt-6 text-[11px] leading-relaxed text-tenue">
-          New here? Signing in creates your account. You will pick a handle next. By continuing you
-          agree to the{' '}
+          New here? Signing in creates your account. You will pick a handle next. A passkey works
+          once you add one in Settings. By continuing you agree to the{' '}
           <Link href="/terms" className="underline decoration-oro-linea underline-offset-2 hover:text-inchiostro">
             Terms of Service
           </Link>{' '}

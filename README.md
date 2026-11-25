@@ -61,8 +61,8 @@ Tre regole recenti da sapere:
   import in locale: `npm run cache:clear`.
 
 - **Le azioni sensibili chiedono un accesso recente.** Scollegare o
-  collegare un provider, cambiare l'handle, sospendere un utente e
-  cancellare l'account passano solo con una
+  collegare un provider, aggiungere o togliere una passkey, cambiare
+  l'handle, sospendere un utente e cancellare l'account passano solo con una
   sessione nata da meno di 15 minuti; altrimenti si rientra da
   `/settings/sign-in`, senza uscire (sezione "Gli account").
 - **Le Skill Orb esclusive si rispettano.** Il builder mostra solo le sfere
@@ -370,7 +370,7 @@ lib/
   db.ts, db-config.ts         la pool (una per processo) e le sue impostazioni: dimensioni, TLS
   cron.ts                     l'autenticazione delle rotte di Vercel Cron
 db/
-  migrations/                 NNNN_*.sql, applicate in ordine, mai modificate (0001-0037, elenco sotto)
+  migrations/                 NNNN_*.sql, applicate in ordine, mai modificate (0001-0038, elenco sotto)
   migrate.mjs                 runner: applica le pendenti, una transazione ciascuna (--check per sapere se e' indietro)
   reset.mjs                   ricostruisce un database da zero (--fixture per i test)
   env.mjs                     la sorgente unica di DATABASE_URL per gli script
@@ -457,6 +457,7 @@ Le migrazioni che contano per il sito, oltre allo schema dei dati (0001-0013, 00
 | `0035_set_region.sql` | `set_region`: la versione del sito (`app_user.reg`) salvata sull'account dall'interruttore |
 | `0036_japan_mirror.sql` | la provenienza `mirror`: le date Japan dal 2025 copiate da Global (`event_run`), e `card_release.source` |
 | `0037_category_alias.sql` | `category_alias`: gli alias delle categorie (iniziali e soprannomi); i nomi giapponesi stanno in `category_text` (`ja`) |
+| `0038_passkey.sql` | `auth_passkey`: le passkey (plugin di better-auth, solo la chiave pubblica), `delete_passkey` che lascia sempre un modo di entrare, e `unlink_provider` che conta anche le passkey |
 
 ### Sulle migrazioni
 
@@ -485,7 +486,12 @@ che i suoi dati rispettano), e il codice nuovo senza di lei si ferma a
 `check-schema` (sezione "Il calendario Japan", "Il rilascio"). Allo stesso
 modo la 0037 va online **prima** del codice che scrive `category_alias`: il
 codice di prima non la conosce, quello nuovo senza di lei si ferma a
-`check-schema` (sezione "Le categorie", "Il rilascio").
+`check-schema` (sezione "Le categorie", "Il rilascio"). Anche la 0038 va
+online **prima** del codice delle passkey, per lo stesso motivo, ma il push
+segue subito, nella stessa seduta: il `main` di prima non ha `auth_passkey`
+in `db/prod/tables.mjs`, e lo snapshot del giro settimanale o di quello
+delle immagini si fermerebbe sulla tabella senza classe (sezione "Gli
+account").
 
 ## Due fonti, e nessuna sostituisce l'altra
 
@@ -2612,11 +2618,15 @@ alto della *Latest*.
 
 ## Gli account
 
-Si entra con Discord, Google, Twitch o con un link per email (magic link).
-Niente password: non c'è nessun `emailAndPassword` da tenere al sicuro.
-La libreria è [better-auth](https://www.better-auth.com) **1.7.7**, fissata
-esatta in `package.json` (con `resend` 6.32.1 e `server-only` 0.0.1): sugli
-aggiornamenti si leggono gli avvisi di sicurezza prima di cambiare numero.
+Si entra con Discord, Google, Twitch, con un link per email (magic link) o
+con una passkey. Niente password: non c'è nessun `emailAndPassword` da tenere
+al sicuro. La libreria è [better-auth](https://www.better-auth.com) **1.7.7**,
+fissata esatta in `package.json` (con `resend` 6.32.1 e `server-only` 0.0.1):
+sugli aggiornamenti si leggono gli avvisi di sicurezza prima di cambiare
+numero. Le passkey sono il suo plugin ufficiale `@better-auth/passkey`,
+fissato alla stessa 1.7.7, con `@better-auth/core` 1.7.7 tra le dipendenze
+dirette: senza, npm risolve il plugin contro un core più nuovo e l'albero non
+si installa. Plugin, core e better-auth si aggiornano insieme.
 
 **Dove sta cosa.**
 
@@ -2662,6 +2672,28 @@ aggiornamenti si leggono gli avvisi di sicurezza prima di cambiare numero.
 - Magic link: salvato come hash, monouso, 10 minuti. Al massimo 3 richieste
   al minuto per IP, e per indirizzo una ogni 60 secondi e 3 ogni 15 minuti.
   La pagina risponde sempre "check your inbox": non rivela chi è iscritto.
+- Passkey (migrazione 0038, tabella `auth_passkey`): WebAuthn sul nostro
+  server, nessun servizio esterno; qui c'è solo la chiave pubblica, la
+  privata resta sul dispositivo o nel gestore di password. Una passkey non
+  crea account: si aggiunge da Settings a un account che esiste, con un
+  accesso recente come collegare un provider (il `freshSessionMiddleware`
+  del plugin). Dominio e origine vengono da `BETTER_AUTH_URL` (in locale
+  `localhost`: le passkey create lì non valgono in produzione), la passkey
+  deve trovarsi da sola (`residentKey: 'required'`, così `/login` non chiede
+  l'email) e la verifica dell'utente (impronta, volto, PIN) è obbligatoria:
+  il plugin la lascia facoltativa e fissa, quindi `config.ts` riscrive le
+  opzioni d'accesso nell'hook after e rifiuta una risposta senza verifica
+  negli `afterVerification`. Toglierne una passa solo da `delete_passkey`
+  (la rotta del plugin è spenta), che vuole che resti un modo di entrare;
+  `unlink_provider` conta anche le passkey. `/login` le propone anche nel
+  campo email (autofill, `components/auth/passkey-sign-in.tsx`), con la
+  sfida rinnovata prima dei suoi 5 minuti, e mai chiesta da una scheda
+  nascosta: il cookie della sfida è uno solo per il browser. La chiave
+  pubblica ha un tetto (3072 byte, `CHIAVE_MAX_BYTE` in `config.ts`, e
+  4096 caratteri in `auth_passkey_shape`): SimpleWebAuthn non ne limita la
+  misura. Con le passkey uno script può entrare dieci volte al minuto, quindi
+  lo user agent delle sessioni si taglia a 512 caratteri
+  (`databaseHooks.session`).
 - Sessioni nel database (30 giorni, rinnovate al più una volta al giorno),
   niente cache nel cookie: uscire o revocare vale subito.
 - Alla prima entrata l'utente ha un handle provvisorio `user_xxxxxxxx` e
@@ -2742,12 +2774,13 @@ parte**, apposta.
   `/events?account=deleted`, con un avviso che chi è dentro non vede.
 - Il limite è nella natura: si cancella una volta, e si scollegano al più
   tre provider.
-- *La sessione fresca.* Scollegare, collegare un provider, cambiare
-  l'handle e cancellare l'account chiedono un accesso di meno di 15 minuti (`lib/auth/fresh.ts`,
+- *La sessione fresca.* Scollegare, collegare un provider, aggiungere o
+  togliere una passkey, cambiare l'handle e cancellare l'account chiedono un accesso di meno di 15 minuti (`lib/auth/fresh.ts`,
   `isFreshSession`): conta `auth_session.created_at`, che il rinnovo
   giornaliero non sposta, quindi solo un accesso vero. Così un cookie di
   sessione vecchio, anche rubato, non basta per agganciare un altro
-  provider né per chiudere l'account. Le due Server Action partono da
+  provider né per chiudere l'account. Le Server Action (scollegare,
+  togliere una passkey, cancellare l'account) partono da
   `requireFreshUser` in `lib/dal.ts`: con una sessione vecchia rispondono
   `{ reauth: true }` senza toccare il database. Collegare passa dalla rotta
   `/link-social` di better-auth, che da sola non controlla: lo fa un hook
@@ -2755,7 +2788,8 @@ parte**, apposta.
   soglia è `session.freshAge`. In pagina, al clic, al posto della conferma
   compare "Sign in again" (`components/auth/reauth-notice.tsx`), che porta a
   `/settings/sign-in`: lì si rientra con un modo di entrare di questo
-  account (un provider collegato, o il link se l'email è verificata) senza
+  account (un provider collegato, una passkey, o il link se l'email è
+  verificata) senza
   uscire, e si torna a Settings con una sessione nuova. Dalla moderazione
   (sospendere chiede la stessa sessione fresca) il link porta
   `?next=<pagina di /admin>` e si torna lì; ogni altro `next` vale
@@ -2764,7 +2798,9 @@ parte**, apposta.
   "account" (`db/test/auth.test.mts`).
 - Il test è il passo "settings dell'account"
   (`db/test/account-settings.test.mts`): regole pure, FK tutte a cascata,
-  `unlink_provider` (anche in parallelo), le rotte di better-auth spente,
+  `unlink_provider` (anche in parallelo, e con le passkey tra i modi che
+  restano), `delete_passkey` (solo le proprie, mai l'ultimo modo di
+  entrare) e la forma di `auth_passkey`, le rotte di better-auth spente,
   e un utente con clear, build, prove, squadre, voti, commenti, tip e
   segnalazioni che si cancella senza lasciare righe e senza toccare
   l'altro utente.
@@ -3841,6 +3877,12 @@ può fare, e poi il lavoro sui dati e sulle pagine.
    su `main` (sezione "Le categorie", "Il rilascio"), e nei riepiloghi una
    voce "Some categories have no Japanese name" dice che una categoria tiene
    l'ultimo nome noto o non ne ha.
+   Le passkey (0038): la 0038 va online con `npm run prod:migrate -- --yes`
+   prima che il loro codice arrivi su `main`, e il push segue nella stessa
+   seduta, mai a cavallo di un giro programmato (sezione "Sulle
+   migrazioni"). Dopo il deploy su `release`, da dokkants.app: aggiungere
+   una passkey in Settings, entrare col bottone e dal campo email,
+   toglierla.
    La prima release dell'app Android esce prima del deploy che porta
    `/category-helper` (il primo `git push origin main:release` con questo
    codice), se no il bottone "Download APK" è un 404: una volta sola il

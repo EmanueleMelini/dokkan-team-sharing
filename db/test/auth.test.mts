@@ -6,7 +6,7 @@
 // un'email @example.invalid e se ne va alla fine, anche se qualcosa fallisce.
 import { randomBytes } from 'node:crypto'
 import pg from 'pg'
-import { ACCESSI, SESSION_DAYS, createAuth } from '@/lib/auth/config'
+import { ACCESSI, SESSION_DAYS, USER_AGENT_MAX, createAuth } from '@/lib/auth/config'
 import { readAuthEnv } from '@/lib/auth/env'
 import { FRESH_SESSION_SECONDS, isFreshSession } from '@/lib/auth/fresh'
 import { suggestHandle } from '@/lib/auth/handle'
@@ -217,7 +217,10 @@ try {
       headers: { 'content-type': 'application/json', origin: BASE, 'x-forwarded-for': daIp },
       body: JSON.stringify({ email: indirizzo, callbackURL: '/welcome?next=/events', ...extra }),
     }))
-  const apri = (link: string) => auth.handler(new Request(link, { headers: { 'x-forwarded-for': `10.9.1.${ip++}` } }))
+  // uno user agent lungo: nella riga di auth_session ne resta l'inizio (USER_AGENT_MAX)
+  const apri = (link: string) => auth.handler(new Request(link, {
+    headers: { 'x-forwarded-for': `10.9.1.${ip++}`, 'user-agent': `authtest ${'x'.repeat(5000)}` },
+  }))
 
   const em = email('magic')
   let res = await chiedi(em)
@@ -243,6 +246,11 @@ try {
     'select onboarded_at, role, reg from app_user where email = $1', [em])
   check('nel database: onboarded_at nullo, ruolo e regione di default', riga?.onboarded_at === null
     && riga.role === 'member' && riga.reg === 'global', JSON.stringify(riga))
+  const ua = await one<{ n: number; inizio: string }>(
+    `select char_length(s.user_agent) as n, left(s.user_agent, 9) as inizio
+       from auth_session s join app_user u on u.id = s.user_id where u.email = $1`, [em])
+  check(`lo user agent della sessione tagliato a ${USER_AGENT_MAX} caratteri (databaseHooks.session)`,
+    ua?.n === USER_AGENT_MAX && ua.inizio === 'authtest ', JSON.stringify(ua))
 
   // L'indizio dts_signed_in (lib/viewer/hint.ts): le pagine in cache non
   // leggono la sessione, e' lui a dire al browser di chiedere /api/me.
@@ -435,6 +443,43 @@ try {
     c = await codice(res)
     check('  e /link-social la lascia passare', c !== 'SESSION_NOT_FRESH', `${res.status} ${c}`)
 
+    // Le passkey (0038, il plugin passkey): aggiungerne una chiede la stessa
+    // sessione fresca; le opzioni hanno il dominio di BETTER_AUTH_URL e
+    // vogliono una passkey che si trova da sola (/login non chiede l'email).
+    const opzioni = (path: string, c?: string) => auth.handler(new Request(`${BASE}/api/auth${path}`, {
+      headers: { ...(c ? { cookie: c } : {}), 'x-forwarded-for': `10.9.4.${ip++}` },
+    }))
+    const sfida = (r: Response) => r.headers.getSetCookie().some((x) => x.startsWith('dts.better-auth-passkey='))
+    res = await opzioni('/passkey/generate-register-options', cookie)
+    c = await codice(res)
+    check('passkey: aggiungerla con la sessione di 16 minuti fa risponde 403 SESSION_NOT_FRESH',
+      res.status === 403 && c === 'SESSION_NOT_FRESH', `${res.status} ${c}`)
+    res = await opzioni('/passkey/generate-register-options')
+    check('  senza sessione 401', res.status === 401, String(res.status))
+    res = await opzioni('/passkey/generate-register-options', cookie2)
+    const reg = res.status === 200 ? await res.json() : null
+    check('  con la sessione fresca: le opzioni, per localhost, con la passkey che si trova da sola e la verifica dell\'utente',
+      reg?.rp?.id === 'localhost' && reg?.rp?.name === 'Dokkan Team Sharing' && reg?.user?.name === em &&
+        reg?.authenticatorSelection?.residentKey === 'required' &&
+        reg?.authenticatorSelection?.userVerification === 'required' && sfida(res),
+      `${res.status} ${JSON.stringify(reg?.rp)} ${JSON.stringify(reg?.authenticatorSelection)}`)
+    res = await opzioni('/passkey/generate-authenticate-options')
+    const acc = res.status === 200 ? await res.json() : null
+    check('  accedere: le opzioni anche senza sessione, senza elenco di credenziali, e il cookie della sfida',
+      acc?.rpId === 'localhost' && typeof acc?.challenge === 'string' && !acc?.allowCredentials?.length && sfida(res),
+      `${res.status} ${acc?.rpId}`)
+    // il plugin la scrive 'preferred': la riscrive l'hook after di config.ts
+    check('  ...e la verifica dell\'utente obbligatoria', acc?.userVerification === 'required', String(acc?.userVerification))
+    res = await auth.handler(new Request(`${BASE}/api/auth/passkey/verify-authentication`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', origin: BASE, 'x-forwarded-for': `10.9.4.${ip++}` },
+      body: JSON.stringify({ response: { id: 'nessuna', rawId: 'nessuna', type: 'public-key', response: {} } }),
+    }))
+    c = await codice(res)
+    check('  una risposta senza la sfida: 400 CHALLENGE_NOT_FOUND, e nessuna sessione',
+      res.status === 400 && c === 'CHALLENGE_NOT_FOUND' && !res.headers.getSetCookie().some((x) => x.startsWith('dts.session_token=')),
+      `${res.status} ${c}`)
+
     // L'uscita dalla rotta di better-auth toglie anche l'indizio
     res = await auth.handler(new Request(`${BASE}/api/auth/sign-out`, {
       method: 'POST',
@@ -502,7 +547,7 @@ try {
       `rinnovata=${rinnovata(daApi)} ${versioneIn(daApi) || 'non toccato'}`)
     // le rotte degli accessi sono quelle di better-auth: un nome sbagliato non scriverebbe mai il cookie
     const rotte = new Set(Object.values(auth.api).map((f) => (f as { path?: string }).path))
-    check('ACCESSI: rotte vere di better-auth', ACCESSI.size === 3 && [...ACCESSI].every((p) => rotte.has(p)),
+    check('ACCESSI: rotte vere di better-auth', ACCESSI.size === 4 && [...ACCESSI].every((p) => rotte.has(p)),
       [...ACCESSI].filter((p) => !rotte.has(p)).join(', '))
 
     r = await auth.handler(new Request(`${BASE}/api/auth/sign-out`, {

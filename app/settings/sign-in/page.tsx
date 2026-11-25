@@ -1,11 +1,13 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { EmailSignIn } from '@/components/auth/email-sign-in'
+import { PasskeySignIn } from '@/components/auth/passkey-sign-in'
+import { SePasskey } from '@/components/auth/se-passkey'
 import { ProviderButtons } from '@/components/auth/provider-buttons'
 import { providers } from '@/lib/auth/auth'
 import { authErrorMessage } from '@/lib/auth/messages'
 import { safeNext } from '@/lib/auth/safe-next'
-import { accountEmail, linkedProviderIds, requireOnboardedUser, sessionIsFresh } from '@/lib/dal'
+import { accountEmail, accountPasskeys, linkedProviderIds, requireOnboardedUser, sessionIsFresh } from '@/lib/dal'
 
 export const metadata: Metadata = { title: 'Sign in again', robots: { index: false } }
 
@@ -43,8 +45,25 @@ export default async function SignInAgainPage({ searchParams }: PageProps<'/sett
   const sp = await searchParams
   const back = ritorno(one(sp.next))
   const admin = back !== NEXT
-  const [linked, { email, verified }, fresh] = await Promise.all([linkedProviderIds(), accountEmail(), sessionIsFresh()])
+  const [linked, { email, verified }, fresh, passkeys] = await Promise.all([
+    linkedProviderIds(), accountEmail(), sessionIsFresh(), accountPasskeys(),
+  ])
   const mine = providers.filter((p) => linked.includes(p.id))
+  // Con una passkey l'accesso nuovo e' una sessione nuova come gli altri.
+  const conPasskey = passkeys.length > 0
+  const sopra = mine.length > 0 || conPasskey
+  const oppure = (
+    <div className="my-5 flex items-center gap-3 text-[11px] text-tenue" aria-hidden="true">
+      <span className="h-px flex-1 bg-linea" />
+      or
+      <span className="h-px flex-1 bg-linea" />
+    </div>
+  )
+  const nessuno = (
+    <p className="mt-6 text-[12px] leading-relaxed text-testo">
+      None of your sign-in methods is available right now. Sign out, then sign in from the sign-in page.
+    </p>
+  )
   const error = authErrorMessage(one(sp.error))
 
   return (
@@ -69,28 +88,31 @@ export default async function SignInAgainPage({ searchParams }: PageProps<'/sett
           </p>
         )}
 
-        {mine.length > 0 && (
-          <div className="mt-6">
-            <ProviderButtons providers={mine} next={back} errorPath={HERE} />
-          </div>
-        )}
-        {mine.length > 0 && verified && (
-          <div className="my-5 flex items-center gap-3 text-[11px] text-tenue" aria-hidden="true">
-            <span className="h-px flex-1 bg-linea" />
-            or
-            <span className="h-px flex-1 bg-linea" />
-          </div>
-        )}
+        {/* Con la sola passkey, in un browser che non la sa usare, il
+            riquadro sopra resterebbe vuoto: al suo posto lo spazio prima
+            del link per email, o la frase di nessun modo disponibile */}
+        {sopra && (mine.length === 0 ? (
+          <SePasskey altrimenti={verified ? <div className="mt-6" aria-hidden="true" /> : nessuno}>
+            <div className="mt-6">
+              <PasskeySignIn next={back} />
+            </div>
+            {verified && oppure}
+          </SePasskey>
+        ) : (
+          <>
+            <div className="mt-6 space-y-2">
+              <ProviderButtons providers={mine} next={back} errorPath={HERE} />
+              {conPasskey && <PasskeySignIn next={back} />}
+            </div>
+            {verified && oppure}
+          </>
+        ))}
         {verified && (
-          <div className={mine.length > 0 ? '' : 'mt-6'}>
+          <div className={sopra ? '' : 'mt-6'}>
             <EmailSignIn next={back} errorPath={HERE} defaultEmail={email} />
           </div>
         )}
-        {mine.length === 0 && !verified && (
-          <p className="mt-6 text-[12px] leading-relaxed text-testo">
-            None of your sign-in methods is available right now. Sign out, then sign in from the sign-in page.
-          </p>
-        )}
+        {!sopra && !verified && nessuno}
 
         <p className="mt-6 text-[12px]">
           <Link href={back} className="text-oro underline underline-offset-2">
